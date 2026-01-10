@@ -234,6 +234,150 @@ pip install -r requirements.txt
 
 ---
 
+## **HuggingFace Hub Integration**
+
+This project supports uploading and downloading model checkpoints to/from HuggingFace Hub for easy sharing, versioning, and remote storage.
+
+### **Authentication**
+
+First, authenticate with HuggingFace Hub:
+
+```bash
+# Option 1: Using CLI (recommended)
+huggingface-cli login
+
+# Option 2: Set environment variable
+export HUGGINGFACE_HUB_TOKEN=your_token_here
+
+# Option 3: Programmatically (in Python)
+from training.hub_utils import authenticate
+authenticate(token="your_token_here")
+```
+
+Get your token from: https://huggingface.co/settings/tokens
+
+### **Configuration**
+
+Enable HuggingFace Hub integration in your `config.yaml`:
+
+```yaml
+huggingface:
+  enabled: true                    # Toggle Hub integration
+  repo_id: "username/model-name"   # Repository ID (or auto-generated from config name)
+  push_best: true                  # Upload best_model.pth automatically
+  push_checkpoints: false          # Upload regular checkpoints (can be expensive)
+  push_interval: 5                 # Upload every N epochs if push_checkpoints=True
+  private: false                   # Create private repository if it doesn't exist
+```
+
+If `repo_id` is not specified, it will be auto-generated from the config name as `{username}/{name}-autoencoder`.
+
+### **Automatic Upload During Training**
+
+When enabled, checkpoints are automatically uploaded to the Hub during training:
+
+- `best_model.pth` is uploaded automatically when a new best model is saved (if `push_best: true`)
+- Regular checkpoints are uploaded according to `push_interval` (if `push_checkpoints: true`)
+
+The training config file is also uploaded once at initialization.
+
+### **Loading Models from Hub**
+
+You can load checkpoints directly from HuggingFace Hub using repository IDs:
+
+```python
+from training.train import Trainer
+
+# Load checkpoint from Hub
+trainer = Trainer("config.yaml")
+trainer.build_model()
+start_epoch, best_val_loss = trainer.load_checkpoint("username/model-name")
+```
+
+Or in evaluation scripts:
+
+```python
+# In evaluation/reconstruct.py or evaluation/sample_diffusion.py
+# Use Hub ID instead of local path
+python evaluation/reconstruct.py --config evaluation/config.yaml
+# In config.yaml, set checkpoint: "username/model-name"
+# The script will automatically download from Hub if not found locally
+```
+
+Supported checkpoint path formats:
+- Local path: `checkpoints/stft-vocoder/best_model.pth`
+- Hub ID: `username/model-name` (loads `best_model.pth` from repo)
+- Hub path: `username/model-name/checkpoints/checkpoint_10.pth` (specific file)
+- Hub prefix: `hub://username/model-name` (explicit Hub identifier)
+
+### **Uploading Existing Checkpoints**
+
+Upload checkpoints that were trained before Hub integration:
+
+```bash
+# Upload a single checkpoint
+python scripts/upload_to_hub.py \
+    --checkpoint checkpoints/stft-vocoder/best_model.pth \
+    --repo-id username/model-name
+
+# Upload all checkpoints from a directory
+python scripts/upload_to_hub.py \
+    --checkpoint-dir checkpoints/stft-vocoder \
+    --repo-id username/model-name \
+    --upload-all
+
+# Upload config file as well
+python scripts/upload_to_hub.py \
+    --checkpoint checkpoints/stft-vocoder/best_model.pth \
+    --repo-id username/model-name \
+    --config config.yaml
+```
+
+### **Repository Structure on Hub**
+
+Uploaded repositories follow this structure:
+
+```
+username/model-name/
+├── README.md                    # Model card (auto-generated)
+├── config.yaml                  # Training configuration
+├── best_model.pth              # Best checkpoint
+└── checkpoints/                 # Regular checkpoints (if enabled)
+    ├── checkpoint_10.pth
+    ├── checkpoint_20.pth
+    └── ...
+```
+
+### **Listing Available Checkpoints**
+
+List all checkpoints available in a Hub repository:
+
+```python
+from training.hub_utils import list_hub_checkpoints
+
+checkpoints = list_hub_checkpoints("username/model-name")
+print(checkpoints)
+# ['best_model.pth', 'checkpoints/checkpoint_10.pth', ...]
+```
+
+### **Troubleshooting**
+
+**Authentication errors:**
+- Make sure you've run `huggingface-cli login` or set `HUGGINGFACE_HUB_TOKEN`
+- Verify your token has write permissions at https://huggingface.co/settings/tokens
+
+**Upload failures:**
+- Check your internet connection
+- Verify repository exists and you have write access
+- Check file size limits (free tier has 10GB limit per repository)
+
+**Download failures:**
+- Verify the repository ID and filename are correct
+- Check if the repository is private and you have access
+- Ensure you have sufficient disk space
+
+---
+
 ## **Status: Research Prototype**
 
 This repository is not yet optimized for production.

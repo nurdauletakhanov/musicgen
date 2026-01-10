@@ -17,6 +17,7 @@ import yaml
 import soundfile as sf
 
 from models.autoencoder import Autoencoder
+from training.hub_utils import resolve_checkpoint_path
 
 
 # -------------------------
@@ -113,7 +114,12 @@ def safe_peak_norm(x: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
 # Loading
 # -------------------------
 def load_model(checkpoint_path: str, device: torch.device) -> Autoencoder:
-    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    # Resolve checkpoint path (download from Hub if necessary)
+    resolved_path = resolve_checkpoint_path(checkpoint_path)
+    if resolved_path != checkpoint_path:
+        print(f"Downloaded checkpoint from Hub to: {resolved_path}")
+    
+    ckpt = torch.load(resolved_path, map_location=device, weights_only=False)
     model = Autoencoder(**ckpt["model_config"])
     model.load_state_dict(ckpt["model_state_dict"])
     model.to(device).eval()
@@ -185,13 +191,19 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
+    # Resolve checkpoint path (download from Hub if necessary)
+    checkpoint_path = cfg["checkpoint"]
+    resolved_checkpoint = resolve_checkpoint_path(checkpoint_path)
+    if resolved_checkpoint != checkpoint_path:
+        print(f"Downloaded checkpoint from Hub to: {resolved_checkpoint}")
+    
     # Load model + read important params from checkpoint config
-    ckpt = torch.load(cfg["checkpoint"], map_location="cpu", weights_only=False)
+    ckpt = torch.load(resolved_checkpoint, map_location="cpu", weights_only=False)
     model_cfg = ckpt["model_config"]
     num_segments = int(model_cfg["num_segments"])
     target_length = int(model_cfg["target_length"])
 
-    model = load_model(cfg["checkpoint"], device)
+    model = load_model(resolved_checkpoint, device)
 
     # STFT params for analysis / cheat-phase audio
     stft_cfg = cfg["stft"]

@@ -52,3 +52,12 @@ stft:
   hop_length: 256      # Hop between frames
   win_length: 1024     # Window length (same as n_fft)
 
+# HuggingFace Hub integration
+huggingface:
+  enabled: false       # Toggle Hub integration
+  repo_id: null        # e.g., "username/model-name" or auto-generated from config name
+  push_best: true      # Upload best_model.pth automatically
+  push_checkpoints: false  # Upload regular checkpoints (can be expensive)
+  push_interval: 5     # Upload every N epochs if push_checkpoints=True
+  private: false       # Create private repository if it doesn't exist
+

@@ -5,4 +5,5 @@ pyyaml
 tqdm
 soundfile
 wandb
+huggingface_hub
 

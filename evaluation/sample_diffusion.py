@@ -29,6 +29,7 @@ from tqdm import tqdm
 
 from models.diffusion import LatentDiffusion, NoiseScheduler
 from models.autoencoder import Autoencoder
+from training.hub_utils import resolve_checkpoint_path
 
 
 def get_device(gpu_index: int = 0) -> torch.device:
@@ -76,11 +77,16 @@ def load_autoencoder(config_path: str, checkpoint_path: str, device: torch.devic
         'dropout': 0.0,
     }
     
+    # Resolve checkpoint path (download from Hub if necessary)
+    resolved_checkpoint = resolve_checkpoint_path(checkpoint_path)
+    if resolved_checkpoint != checkpoint_path:
+        print(f"Downloaded autoencoder checkpoint from Hub to: {resolved_checkpoint}")
+    
     # Build model
     autoencoder = Autoencoder(**ae_config).to(device)
     
     # Load weights
-    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    ckpt = torch.load(resolved_checkpoint, map_location=device, weights_only=False)
     autoencoder.load_state_dict(ckpt['model_state_dict'])
     autoencoder.eval()
     
@@ -114,8 +120,13 @@ def load_diffusion_model(config_path: str, checkpoint_path: str, device: torch.d
         schedule=d_cfg.get('schedule', 'cosine'),
     ).to(device)
     
+    # Resolve checkpoint path (download from Hub if necessary)
+    resolved_checkpoint = resolve_checkpoint_path(checkpoint_path)
+    if resolved_checkpoint != checkpoint_path:
+        print(f"Downloaded diffusion checkpoint from Hub to: {resolved_checkpoint}")
+    
     # Load weights
-    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    ckpt = torch.load(resolved_checkpoint, map_location=device, weights_only=False)
     
     if use_ema and 'ema_state_dict' in ckpt:
         # Load EMA weights into model

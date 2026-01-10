@@ -14,6 +14,14 @@ from torch.amp import autocast, GradScaler
 from models.autoencoder import Autoencoder
 from training.utils import print_logger
 from data.dataloader import build_dataloaders
+from training.hub_utils import (
+    check_authentication,
+    authenticate,
+    get_repo_id_from_config,
+    upload_checkpoint_to_hub,
+    upload_config_to_hub,
+    resolve_checkpoint_path,
+)
 
 
 def get_device(gpu_index: int = 0) -> torch.device:
@@ -34,10 +42,12 @@ class Trainer:
             cfg = yaml.safe_load(f)
         
         self.cfg = cfg
+        self.config_path = config_path  # Store for later Hub upload
         train_cfg = cfg['train']
         model_cfg = cfg['model']
         data_cfg = cfg['data']
         stft_cfg = cfg.get('stft', {})
+        hf_cfg = cfg.get('huggingface', {})
         
         # Device setup
         self.device = get_device(train_cfg.get('gpu_index', 0))
@@ -156,6 +166,45 @@ class Trainer:
         self.use_amp = self.device.type == "cuda"
         self.scaler = GradScaler("cuda", enabled=self.use_amp)
         self.logs.info(f"Mixed precision (AMP): {'enabled' if self.use_amp else 'disabled'}")
+        
+        # HuggingFace Hub setup
+        self.hf_enabled = hf_cfg.get('enabled', False)
+        self.hf_repo_id = hf_cfg.get('repo_id', None)
+        self.hf_push_best = hf_cfg.get('push_best', True)
+        self.hf_push_checkpoints = hf_cfg.get('push_checkpoints', False)
+        self.hf_push_interval = hf_cfg.get('push_interval', 5)
+        self.hf_private = hf_cfg.get('private', False)
+        
+        if self.hf_enabled:
+            # Check authentication
+            is_auth, username = check_authentication()
+            if not is_auth:
+                self.logs.warning(
+                    "HuggingFace Hub integration enabled but not authenticated. "
+                    "Run: huggingface-cli login"
+                )
+                self.hf_enabled = False
+            else:
+                # Determine repo_id
+                if self.hf_repo_id is None:
+                    try:
+                        config_name = cfg.get('name', 'default')
+                        self.hf_repo_id = get_repo_id_from_config(config_name, username)
+                    except Exception as e:
+                        self.logs.warning(f"Could not auto-generate repo_id: {e}. Disabling Hub integration.")
+                        self.hf_enabled = False
+                
+                if self.hf_enabled:
+                    self.logs.info(f"HuggingFace Hub integration enabled. Repo ID: {self.hf_repo_id}")
+                    # Upload config file once at initialization if repo is new
+                    try:
+                        upload_config_to_hub(
+                            self.config_path,
+                            self.hf_repo_id,
+                            commit_message="Initial config upload"
+                        )
+                    except Exception as e:
+                        self.logs.warning(f"Could not upload config to Hub: {e}")
 
     def build_model(self):
         """Build model, optimizer, and scheduler."""
@@ -198,7 +247,17 @@ class Trainer:
     def load_checkpoint(self, checkpoint_path: str) -> tuple:
         """Load checkpoint to resume training. Returns (start_epoch, best_val_loss)."""
         self.logs.info(f"Loading checkpoint: {checkpoint_path}")
-        ckpt = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
+        
+        # Resolve checkpoint path (download from Hub if necessary)
+        try:
+            resolved_path = resolve_checkpoint_path(checkpoint_path)
+            if resolved_path != checkpoint_path:
+                self.logs.info(f"Downloaded checkpoint from Hub to: {resolved_path}")
+        except FileNotFoundError as e:
+            self.logs.error(f"Checkpoint not found: {e}")
+            raise
+        
+        ckpt = torch.load(resolved_path, map_location=self.device, weights_only=False)
         
         # Use strict=False to allow loading older checkpoints missing new buffers (e.g. stft_window)
         missing, unexpected = self.model.load_state_dict(ckpt['model_state_dict'], strict=False)
@@ -413,10 +472,39 @@ class Trainer:
             path = os.path.join(self.save_path, "best_model.pth")
             torch.save(ckpt, path)
             self.logs.info(f"Best model saved: {path}")
+            filename = "best_model.pth"
+            should_upload = self.hf_enabled and self.hf_push_best
         else:
             path = os.path.join(self.save_path, f"checkpoint_{epoch+1}.pth")
             torch.save(ckpt, path)
             self.logs.info(f"Checkpoint saved: {path}")
+            filename = f"checkpoint_{epoch+1}.pth"
+            should_upload = (
+                self.hf_enabled and 
+                self.hf_push_checkpoints and 
+                (epoch + 1) % self.hf_push_interval == 0
+            )
+        
+        # Upload to HuggingFace Hub if enabled
+        if should_upload:
+            try:
+                commit_message = (
+                    f"Upload {filename} (epoch {epoch+1}, val_loss={val_loss:.6f})"
+                )
+                success = upload_checkpoint_to_hub(
+                    checkpoint_path=path,
+                    repo_id=self.hf_repo_id,
+                    filename=filename,
+                    commit_message=commit_message,
+                    private=self.hf_private,
+                )
+                if success:
+                    self.logs.info(f"Uploaded {filename} to HuggingFace Hub: {self.hf_repo_id}")
+                else:
+                    self.logs.warning(f"Failed to upload {filename} to HuggingFace Hub")
+            except Exception as e:
+                # Don't fail training if upload fails
+                self.logs.warning(f"Error uploading checkpoint to Hub: {e}")
 
     def fit(self, start_epoch: int = 0, best_val_loss: float = float('inf')):
         """Main training loop."""
