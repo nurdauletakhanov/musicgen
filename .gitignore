@@ -47,6 +47,7 @@ maestro-chunks-*/
 
 # Project-specific: Model checkpoints and outputs
 checkpoints/
+!checkpoints/experiments.yaml
 evaluation/reconstructions/
 
 # Wandb

@@ -1,0 +1,18 @@
+# Cursor Rules for STFT Autoencoder Project
+
+## General Code Style
+- Follow PEP 8 style guidelines
+- Use type hints where appropriate
+- Use docstrings for functions and classes
+- Prefer f-strings for string formatting
+- NEVER use emojis in code, comments, docstrings, or messages unless explicitly requested by the user
+
+## Coding Standardes
+- Plan before coding, explain reasoning for complex suggestions
+- Keep imports alphabetically sorted
+- Keep code SOLID but simple - separation of concerns without over-engineering  
+- Aim to keep files under 300 lines - split when it improves clarity
+
+
+## Comand Rules
+- This project runs in musicgen env. So if need something run from project use this env.

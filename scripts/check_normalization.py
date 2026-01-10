@@ -3,11 +3,16 @@ Check normalization statistics on MAESTRO chunk STFT data.
 
 This script loads chunks from the dataset and prints statistics to verify:
 1. STFT data distribution (x_stft)
-2. Waveform RMS normalization (x_wave should have RMS ≈ 1.0)
+2. Waveform RMS normalization (x_wave should have RMS ~ 1.0)
+
+Usage:
+    python scripts/check_normalization.py
+    python scripts/check_normalization.py --config configs/base.yaml
 """
 
 import os
 import sys
+import argparse
 import yaml
 import torch
 import numpy as np
@@ -85,13 +90,28 @@ def print_statistics(stats_list, title="Statistics"):
         if "mean_per_sample" in stats:
             mp = stats["mean_per_sample"]
             print(f"  Per-sample mean stats:")
-            print(f"    Mean: {mp['mean']:>12.6f} ± {mp['std']:>12.6f}")
+            print(f"    Mean: {mp['mean']:>12.6f} +/- {mp['std']:>12.6f}")
             print(f"    Range: [{mp['min']:>12.6f}, {mp['max']:>12.6f}]")
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Check normalization statistics on STFT data")
+    parser.add_argument(
+        "--config", 
+        type=str, 
+        default="configs/base.yaml",
+        help="Path to config file (default: configs/base.yaml)"
+    )
+    parser.add_argument(
+        "--num-samples",
+        type=int,
+        default=1000,
+        help="Number of samples to analyze (default: 1000)"
+    )
+    args = parser.parse_args()
+
     # Load config
-    config_path = "config.yaml"
+    config_path = args.config
     if not os.path.exists(config_path):
         print(f"Error: {config_path} not found!")
         sys.exit(1)
@@ -104,7 +124,7 @@ def main():
     
     if not os.path.exists(index_path):
         print(f"Error: index.json not found at {index_path}")
-        print("Please run preprocessing first: python -m data.preprocess --config config.yaml")
+        print("Please run preprocessing first: python -m data.preprocess --config <config>")
         sys.exit(1)
     
     # Load dataset for train split
@@ -119,7 +139,7 @@ def main():
     print(f"Dataset loaded: {len(dataset):,} chunks")
     
     # Sample chunks for statistics (sample a reasonable number)
-    num_samples = min(1000, len(dataset))  # Sample up to 1000 chunks
+    num_samples = min(args.num_samples, len(dataset))
     sample_indices = torch.randperm(len(dataset))[:num_samples].tolist()
     
     print(f"\nSampling {num_samples} chunks for statistics...")
@@ -179,13 +199,13 @@ def main():
     # Check if RMS is close to 1.0 (which would indicate proper normalization)
     rms_mean = rms_array.mean()
     rms_std = rms_array.std()
-    print(f"\nExpected RMS ≈ 1.0 for normalized waveforms")
+    print(f"\nExpected RMS ~ 1.0 for normalized waveforms")
     print(f"Actual RMS Mean: {rms_mean:.6f} (difference from 1.0: {abs(rms_mean - 1.0):.6f})")
     
     if abs(rms_mean - 1.0) < 0.1 and rms_std < 0.5:
-        print("✓ RMS normalization appears correct (mean close to 1.0, low variance)")
+        print("[OK] RMS normalization appears correct (mean close to 1.0, low variance)")
     else:
-        print("⚠ Warning: RMS normalization may not be correct")
+        print("[WARNING] RMS normalization may not be correct")
     
     # Additional check: compute magnitude from STFT
     print(f"\n{'='*70}")

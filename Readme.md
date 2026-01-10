@@ -157,28 +157,40 @@ This could open new avenues for:
 ```
 musicgen/
 │
+├── configs/                      # Configuration files
+│   ├── base.yaml                 # Shared defaults (model arch, STFT params)
+│   └── experiments/              # Experiment-specific overrides
+│       └── current.yaml          # Active experiment config
+│
 ├── models/
-│   ├── autoencoder.py    # Main autoencoder with loss computation
-│   ├── encoder.py        # Conv2D segment encoder + Transformer
-│   └── decoder.py        # Conv1D upsampling decoder
+│   ├── autoencoder.py            # Main autoencoder with loss computation
+│   ├── encoder.py                # Conv2D segment encoder + Transformer
+│   └── decoder.py                # Conv1D upsampling decoder
 │
 ├── data/
-│   ├── dataloader.py     # STFTChunkDataset + ShardedSampler
-│   └── preprocess.py     # STFT preprocessing for MAESTRO
+│   ├── dataloader.py             # STFTChunkDataset + ShardedSampler
+│   └── preprocess.py             # STFT preprocessing for MAESTRO
 │
 ├── training/
-│   ├── train.py          # Training loop and Trainer class
-│   ├── utils.py          # Logging, checkpointing utilities
-│   └── hub_utils.py      # HuggingFace Hub integration
+│   ├── train.py                  # Training loop and Trainer class
+│   ├── utils.py                  # Logging, checkpointing utilities
+│   └── hub_utils.py              # HuggingFace Hub integration
 │
 ├── evaluation/
-│   └── reconstruct.py    # Reconstruction evaluation scripts
+│   └── reconstruct.py            # Audio reconstruction evaluation
 │
 ├── scripts/
-│   └── upload_to_hub.py  # Upload checkpoints to HuggingFace
+│   ├── upload_to_hub.py          # Upload checkpoints to HuggingFace
+│   └── check_normalization.py    # Check data normalization statistics
 │
-├── checkpoints/          # Saved model checkpoints
-├── config.yaml           # Training configuration
+├── checkpoints/                  # Saved model checkpoints (git-ignored)
+│   ├── experiments.yaml          # Registry of all experiments (tracked)
+│   └── <experiment-name>/        # Per-experiment checkpoints
+│       ├── config.yaml           # Config used for this run
+│       ├── best_model.pth
+│       └── checkpoint_*.pth
+│
+├── .gitignore
 ├── requirements.txt
 └── README.md
 ```
@@ -285,7 +297,7 @@ Get your token from: https://huggingface.co/settings/tokens
 
 ### **Configuration**
 
-Enable HuggingFace Hub integration in your `config.yaml`:
+Enable HuggingFace Hub integration in your experiment config (`configs/experiments/current.yaml`):
 
 ```yaml
 huggingface:
@@ -315,19 +327,18 @@ You can load checkpoints directly from HuggingFace Hub using repository IDs:
 ```python
 from training.train import Trainer
 
-# Load checkpoint from Hub
-trainer = Trainer("config.yaml")
+# Load checkpoint from Hub (uses configs/experiments/current.yaml by default)
+trainer = Trainer("configs/experiments/current.yaml")
 trainer.build_model()
 start_epoch, best_val_loss = trainer.load_checkpoint("username/model-name")
 ```
 
 Or in evaluation scripts:
 
-```python
+```bash
 # In evaluation/reconstruct.py
-# Use Hub ID instead of local path
-python evaluation/reconstruct.py --config evaluation/config.yaml
-# In config.yaml, set checkpoint: "username/model-name"
+# Use Hub ID directly as checkpoint path
+python evaluation/reconstruct.py --checkpoint username/model-name
 # The script will automatically download from Hub if not found locally
 ```
 
@@ -357,7 +368,7 @@ python scripts/upload_to_hub.py \
 python scripts/upload_to_hub.py \
     --checkpoint checkpoints/stft-vocoder/best_model.pth \
     --repo-id username/model-name \
-    --config config.yaml
+    --config configs/experiments/current.yaml
 ```
 
 ### **Repository Structure on Hub**

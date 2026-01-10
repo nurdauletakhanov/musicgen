@@ -1,0 +1,51 @@
+# Base configuration - Shared defaults for all experiments
+# Override these values in experiment-specific configs
+
+model:
+  # Encoder/Decoder architecture
+  num_segments: 25     # Number of time segments (= number of latent tokens)
+  d_model: 256         # Latent dimension
+  n_heads: 8           # Transformer attention heads
+  n_layers: 6          # Transformer layers
+  channels: [512, 512, 256, 128, 64]   # Decoder channel counts for upsampling blocks
+  upsampling_factors: [6, 6, 7, 7]     # Upsampling factors for decoder (must match len(channels)-1)
+  dropout: 0.0         # Regularization to prevent overfitting
+
+stft:
+  n_fft: 1024          # FFT size -> 513 frequency bins
+  hop_length: 256      # Hop between frames
+  win_length: 1024     # Window length (same as n_fft)
+
+data:
+  data_dir: ./maestro-v3.0.0
+  chunks_dir: ./maestro-chunks-stft
+  chunk_seconds: 1.0
+  sample_rate: 44100
+  overlap: 0.0
+  split: train
+  val_split: validation
+
+train:
+  batch_size: 32
+  num_epochs: 40
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  patience: 3
+  factor: 0.5
+  save_interval: 2
+  save_path: ./checkpoints
+  num_workers: 4
+  prefetch_factor: 2
+  pin_memory: true
+  persistent_workers: true
+  reset_scheduler_on_resume: true
+  scheduler_warmup_epochs: 2
+
+huggingface:
+  enabled: false
+  repo_id: null
+  push_best: true
+  push_checkpoints: false
+  push_interval: 5
+  private: false
+

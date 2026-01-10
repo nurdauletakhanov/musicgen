@@ -1,120 +1,40 @@
 """
 Reconstruct audio from MAESTRO test split using trained autoencoder.
 
+Usage:
+    # Basic usage with checkpoint path
+    python evaluation/reconstruct.py --checkpoint checkpoints/my-experiment/best_model.pth
+
+    # With custom options
+    python evaluation/reconstruct.py --checkpoint checkpoints/my-experiment/best_model.pth \
+        --num-samples 20 --output-dir ./my-reconstructions --peak-norm
+
+    # Using HuggingFace Hub checkpoint
+    python evaluation/reconstruct.py --checkpoint username/model-name
+
 Key points:
 - Feed stored x_stft directly; Encoder will crop frames to multiple of num_segments internally.
 - Use stored x_wave as reference waveform (RMS-normalized), then optionally denormalize with rms.
+- STFT and data parameters are read from the checkpoint's model_config when possible.
 """
 
-import os
 import argparse
-import random
 import json
+import os
+import random
 
+import soundfile as sf
 import torch
 import torch.nn.functional as F
 import yaml
-import soundfile as sf
 
 from models.autoencoder import Autoencoder
 from training.hub_utils import resolve_checkpoint_path
+from utils.audio import safe_peak_norm
 
 
-# -------------------------
-# STFT helpers (correct shapes)
-# -------------------------
-def stft_ri(
-    waveform: torch.Tensor,  # [L] or [B, L]
-    n_fft: int,
-    hop_length: int,
-    win_length: int,
-    center: bool = False,
-) -> torch.Tensor:
-    """
-    Return real/imag tensor.
-    - input:  [L]      -> output [2, F, T]
-    - input:  [B, L]   -> output [B, 2, F, T]
-    """
-    if waveform.dim() == 1:
-        x = waveform[None, :]  # [1, L]
-        squeeze_batch = True
-    elif waveform.dim() == 2:
-        x = waveform
-        squeeze_batch = False
-    else:
-        raise ValueError(f"waveform must be [L] or [B,L], got {waveform.shape}")
-
-    x = x.float()
-    window = torch.hann_window(win_length, device=x.device, dtype=x.dtype)
-    X = torch.stft(
-        x,
-        n_fft=n_fft,
-        hop_length=hop_length,
-        win_length=win_length,
-        window=window,
-        center=center,
-        return_complex=True,
-    )  # [B, F, T] complex
-
-    out = torch.stack([X.real, X.imag], dim=1)  # [B, 2, F, T]
-    return out[0] if squeeze_batch else out
-
-
-def istft_ri(
-    stft_ri_tensor: torch.Tensor,  # [2, F, T] or [B, 2, F, T]
-    hop_length: int,
-    win_length: int,
-    length: int,
-    center: bool = False,
-    normalized: bool = False,
-) -> torch.Tensor:
-    """
-    - input:  [2, F, T]      -> output [L]
-    - input:  [B, 2, F, T]   -> output [B, L]
-    """
-    if stft_ri_tensor.dim() == 3:
-        x = stft_ri_tensor[None, ...]  # [1,2,F,T]
-        squeeze_batch = True
-    elif stft_ri_tensor.dim() == 4:
-        x = stft_ri_tensor
-        squeeze_batch = False
-    else:
-        raise ValueError(f"stft_ri must be [2,F,T] or [B,2,F,T], got {stft_ri_tensor.shape}")
-
-    x = x.float()
-    real = x[:, 0]
-    imag = x[:, 1]
-    X = torch.complex(real, imag)  # [B,F,T]
-
-    n_fft = (X.shape[1] - 1) * 2
-    window = torch.hann_window(win_length, device=x.device, dtype=x.dtype)
-
-    wav = torch.istft(
-        X,
-        n_fft=n_fft,
-        hop_length=hop_length,
-        win_length=win_length,
-        window=window,
-        center=center,
-        normalized=normalized,
-        length=length,
-        return_complex=False,
-    )  # [B,L]
-    wav = torch.nan_to_num(wav, nan=0.0, posinf=0.0, neginf=0.0)
-    return wav[0] if squeeze_batch else wav
-
-
-def safe_peak_norm(x: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
-    x = torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
-    m = x.abs().max().clamp_min(eps)
-    return x / m
-
-
-# -------------------------
-# Loading
-# -------------------------
 def load_model(checkpoint_path: str, device: torch.device) -> Autoencoder:
-    # Resolve checkpoint path (download from Hub if necessary)
+    """Load model from checkpoint."""
     resolved_path = resolve_checkpoint_path(checkpoint_path)
     if resolved_path != checkpoint_path:
         print(f"Downloaded checkpoint from Hub to: {resolved_path}")
@@ -129,8 +49,9 @@ def load_model(checkpoint_path: str, device: torch.device) -> Autoencoder:
 def load_random_chunks(chunks_dir: str, split: str, num_samples: int):
     """
     Loads random chunks from saved .pt files.
+    
     Expects new format:
-      dict with keys x_stft: [N,2,F,T], x_wave: [N,L], rms: [N]
+        dict with keys x_stft: [N,2,F,T], x_wave: [N,L], rms: [N]
     """
     split_dir = os.path.join(chunks_dir, split)
     index_path = os.path.join(chunks_dir, "index.json")
@@ -158,7 +79,7 @@ def load_random_chunks(chunks_dir: str, split: str, num_samples: int):
     samples = []
     for fp, j, fname in chosen:
         if fp not in cache:
-            d = torch.load(fp, map_location="cpu")  # store is safe enough for your own files
+            d = torch.load(fp, map_location="cpu")
             if not (isinstance(d, dict) and "x_stft" in d and "x_wave" in d):
                 raise RuntimeError(f"Unexpected format in {fp}. Need dict with x_stft and x_wave.")
             cache[fp] = d
@@ -166,8 +87,8 @@ def load_random_chunks(chunks_dir: str, split: str, num_samples: int):
         d = cache[fp]
         samples.append(
             {
-                "x_stft": d["x_stft"][j],   # [2,F,T]
-                "x_wave": d["x_wave"][j],   # [L] RMS-normalized
+                "x_stft": d["x_stft"][j],
+                "x_wave": d["x_wave"][j],
                 "rms": (d["rms"][j].item() if "rms" in d and d["rms"] is not None else None),
                 "source": fname,
                 "chunk_idx": j,
@@ -176,26 +97,98 @@ def load_random_chunks(chunks_dir: str, split: str, num_samples: int):
     return samples
 
 
-# -------------------------
-# Main
-# -------------------------
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, required=True)
-    parser.add_argument("--peak_norm", action="store_true")
-    args = parser.parse_args()
+def try_load_checkpoint_config(checkpoint_path: str) -> dict:
+    """
+    Try to load config.yaml from the same directory as the checkpoint.
+    Returns empty dict if not found.
+    """
+    resolved_path = resolve_checkpoint_path(checkpoint_path)
+    checkpoint_dir = os.path.dirname(resolved_path)
+    config_path = os.path.join(checkpoint_dir, "config.yaml")
+    
+    if os.path.exists(config_path):
+        with open(config_path, "r") as f:
+            return yaml.safe_load(f)
+    return {}
 
-    with open(args.config, "r") as f:
-        cfg = yaml.safe_load(f)
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Reconstruct audio samples using trained autoencoder",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--checkpoint", 
+        type=str, 
+        required=True,
+        help="Path to checkpoint file or HuggingFace Hub ID"
+    )
+    parser.add_argument(
+        "--chunks-dir",
+        type=str,
+        default="./maestro-chunks-stft",
+        help="Directory containing preprocessed STFT chunks"
+    )
+    parser.add_argument(
+        "--split",
+        type=str,
+        default="test",
+        help="Data split to use (train/validation/test)"
+    )
+    parser.add_argument(
+        "--num-samples",
+        type=int,
+        default=10,
+        help="Number of samples to reconstruct"
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="./evaluation/reconstructions",
+        help="Output directory for reconstructed audio"
+    )
+    parser.add_argument(
+        "--sample-rate",
+        type=int,
+        default=44100,
+        help="Audio sample rate"
+    )
+    parser.add_argument(
+        "--chunk-seconds",
+        type=float,
+        default=1.0,
+        help="Duration of each chunk in seconds"
+    )
+    parser.add_argument(
+        "--peak-norm",
+        action="store_true",
+        help="Apply peak normalization to output audio"
+    )
+    args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
     # Resolve checkpoint path (download from Hub if necessary)
-    checkpoint_path = cfg["checkpoint"]
-    resolved_checkpoint = resolve_checkpoint_path(checkpoint_path)
-    if resolved_checkpoint != checkpoint_path:
+    resolved_checkpoint = resolve_checkpoint_path(args.checkpoint)
+    if resolved_checkpoint != args.checkpoint:
         print(f"Downloaded checkpoint from Hub to: {resolved_checkpoint}")
+    
+    # Try to load config from checkpoint directory
+    checkpoint_config = try_load_checkpoint_config(args.checkpoint)
+    
+    # Use config values as defaults if available, CLI args take precedence
+    chunks_dir = args.chunks_dir
+    if chunks_dir == "./maestro-chunks-stft" and checkpoint_config.get("data", {}).get("chunks_dir"):
+        chunks_dir = checkpoint_config["data"]["chunks_dir"]
+    
+    sample_rate = args.sample_rate
+    if args.sample_rate == 44100 and checkpoint_config.get("data", {}).get("sample_rate"):
+        sample_rate = checkpoint_config["data"]["sample_rate"]
+    
+    chunk_seconds = args.chunk_seconds
+    if args.chunk_seconds == 1.0 and checkpoint_config.get("data", {}).get("chunk_seconds"):
+        chunk_seconds = checkpoint_config["data"]["chunk_seconds"]
     
     # Load model + read important params from checkpoint config
     ckpt = torch.load(resolved_checkpoint, map_location="cpu", weights_only=False)
@@ -205,47 +198,38 @@ def main():
 
     model = load_model(resolved_checkpoint, device)
 
-    # STFT params for analysis / cheat-phase audio
-    stft_cfg = cfg["stft"]
-    n_fft = int(stft_cfg.get("n_fft", 1024))
-    hop_length = int(stft_cfg["hop_length"])
-    win_length = int(stft_cfg["win_length"])
-    stft_center = bool(model_cfg.get("stft_center", False))  # should match training MRSTFT choice
-
-    sample_rate = int(cfg["data"]["sample_rate"])
-    chunk_seconds = float(cfg["data"]["chunk_seconds"])
     chunk_samples = int(sample_rate * chunk_seconds)
 
-    output_dir = cfg["output_dir"]
+    output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
     # Load samples
     samples = load_random_chunks(
-        chunks_dir=cfg["data"]["chunks_dir"],
-        split=cfg["data"]["split"],
-        num_samples=int(cfg["num_samples"]),
+        chunks_dir=chunks_dir,
+        split=args.split,
+        num_samples=args.num_samples,
     )
 
-    print(f"Loaded {len(samples)} samples from split={cfg['data']['split']}.")
+    print(f"Loaded {len(samples)} samples from split={args.split}.")
     print(f"Model num_segments={num_segments}, target_length={target_length}, chunk_samples={chunk_samples}")
     if target_length != chunk_samples:
-        print("Warning: target_length != chunk_samples. Reconstruction will be trimmed/padded to chunk_samples for saving.")
+        print("Warning: target_length != chunk_samples. Reconstruction will be trimmed/padded.")
 
     for i, s in enumerate(samples):
-        x_stft = s["x_stft"].float()              # [2,F,T_full]
-        x_wave = s["x_wave"].float()              # [L] RMS-normalized
+        x_stft = s["x_stft"].float()
+        x_wave = s["x_wave"].float()
         rms = s.get("rms", None)
 
-        # Ensure waveform length matches chunk_samples (for saving / comparison)
+        # Ensure waveform length matches chunk_samples
         if x_wave.numel() > chunk_samples:
             x_wave = x_wave[:chunk_samples]
         elif x_wave.numel() < chunk_samples:
             x_wave = F.pad(x_wave, (0, chunk_samples - x_wave.numel()), value=0.0)
 
-        # Model inference: feed STFT as trained (encoder will crop internally to multiple of num_segments)
+        # Model inference
         with torch.no_grad():
-            z = model.encoder(x_stft[None, ...].to(device))       # [1,S,D]
-            y_hat = model.decoder(z)[0, 0].detach().cpu().float() # [target_length]
+            z = model.encoder(x_stft[None, ...].to(device))
+            y_hat = model.decoder(z)[0, 0].detach().cpu().float()
 
         # Trim/pad recon to chunk_samples for saving
         if y_hat.numel() > chunk_samples:
@@ -253,7 +237,7 @@ def main():
         elif y_hat.numel() < chunk_samples:
             y_hat = F.pad(y_hat, (0, chunk_samples - y_hat.numel()), value=0.0)
 
-        # Denormalize RMS for listening (optional but typically what you want)
+        # Denormalize RMS for listening
         audio_orig = x_wave
         audio_recon = y_hat
         if rms is not None:
