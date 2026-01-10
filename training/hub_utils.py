@@ -429,3 +429,61 @@ def resolve_checkpoint_path(checkpoint_path: str, local_dir: Optional[str] = Non
     # If it doesn't exist and isn't a Hub path, raise error
     raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
 
+
+def setup_hub_integration(hf_cfg: Dict, config_name: str, config_path: str, logger=None) -> Dict:
+    """
+    Setup HuggingFace Hub integration from config.
+    
+    Args:
+        hf_cfg: HuggingFace config section from training config
+        config_name: Experiment name for auto-generating repo_id
+        config_path: Path to config file for initial upload
+        logger: Optional logger for messages
+        
+    Returns:
+        Dict with hub settings: enabled, repo_id, push_best, push_checkpoints,
+        push_interval, private
+    """
+    result = {
+        'enabled': False,
+        'repo_id': hf_cfg.get('repo_id', None),
+        'push_best': hf_cfg.get('push_best', True),
+        'push_checkpoints': hf_cfg.get('push_checkpoints', False),
+        'push_interval': hf_cfg.get('push_interval', 5),
+        'private': hf_cfg.get('private', False),
+    }
+    
+    if not hf_cfg.get('enabled', False):
+        return result
+    
+    is_auth, username = check_authentication()
+    if not is_auth:
+        if logger:
+            logger.warning(
+                "HuggingFace Hub integration enabled but not authenticated. "
+                "Run: huggingface-cli login"
+            )
+        return result
+    
+    # Auto-generate repo_id if not provided
+    if result['repo_id'] is None:
+        try:
+            result['repo_id'] = get_repo_id_from_config(config_name, username)
+        except Exception as e:
+            if logger:
+                logger.warning(f"Could not auto-generate repo_id: {e}. Disabling Hub integration.")
+            return result
+    
+    result['enabled'] = True
+    
+    if logger:
+        logger.info(f"HuggingFace Hub integration enabled. Repo ID: {result['repo_id']}")
+    
+    # Upload initial config
+    try:
+        upload_config_to_hub(config_path, result['repo_id'], commit_message="Initial config upload")
+    except Exception as e:
+        if logger:
+            logger.warning(f"Could not upload config to Hub: {e}")
+    
+    return result

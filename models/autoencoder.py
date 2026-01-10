@@ -182,13 +182,15 @@ class Autoencoder(nn.Module):
         Compare latent interpolation vs real autoencoder on mixed input.
         
         Both losses computed against same target (mixed waveform) for fair comparison:
-        - loss_real: D(E(mixed_stft)) vs x_mix_wave
-        - loss_interp: D(alpha*z1 + beta*z2) vs x_mix_wave
-        - rate: loss_interp / loss_real (ideal = 1.0)
+        - MixReconReal: D(E(mixed_stft)) vs x_mix_wave
+        - MixReconInterp: D(alpha*z1 + beta*z2) vs x_mix_wave
+        - MixRate: MixReconInterp / MixReconReal (ideal = 1.0)
+        - MixGap: MixReconInterp - MixReconReal
+        - LatentMixError: || E(x_mix) - (alpha*z1 + beta*z2) ||^2 (no grad)
         
         z*: [B, S, D]
         x*_wave: [B, 1, L]
-        Returns dict with loss components and rate
+        Returns dict with loss components and metrics
         """
         B = z1.size(0)
         alpha = torch.rand(B, 1, 1, device=z1.device)     # for z/wave mixing
@@ -207,27 +209,39 @@ class Autoencoder(nn.Module):
         z_interp = alpha * z1 + beta * z2
         x_interp = self.decoder(z_interp)
         
-        # Loss for real autoencoder on mixed input
+        # MixReconReal: Loss for real autoencoder on mixed input
         l1_real = F.l1_loss(x_real_recon, x_mix_wave)
         mr_real = self.mrstft_loss(x_real_recon, x_mix_wave)
         loss_real = self.mix_l1_weight * l1_real + self.mix_mrstft_weight * mr_real
         
-        # Loss for latent interpolation
+        # MixReconInterp: Loss for latent interpolation
         l1_interp = F.l1_loss(x_interp, x_mix_wave)
         mr_interp = self.mrstft_loss(x_interp, x_mix_wave)
         loss_interp = self.mix_l1_weight * l1_interp + self.mix_mrstft_weight * mr_interp
         
-        # Rate shows how close interpolation is to real encoding (ideal = 1.0)
-        rate = (loss_interp / (loss_real + self.eps)).detach().item()
+        # MixRate and MixGap (key metrics)
+        loss_real_val = loss_real.detach().item()
+        loss_interp_val = loss_interp.detach().item()
+        rate = loss_interp_val / (loss_real_val + self.eps)
+        gap = loss_interp_val - loss_real_val
+        
+        # LatentMixError: || E(x_mix) - (alpha*z1 + beta*z2) ||^2 (no gradient)
+        with torch.no_grad():
+            latent_mix_error = F.mse_loss(z_real, z_interp).item()
         
         return {
             'total': loss_interp,  # Use interp loss for training
+            # MixReconInterp breakdown
             'l1': l1_interp,
             'mrstft': mr_interp,
+            # MixReconReal breakdown
             'loss_real': loss_real,
-            'l1_real': l1_real,
-            'mr_real': mr_real,
+            'l1_real': l1_real.detach().item(),
+            'mr_real': mr_real.detach().item(),
+            # Key metrics
             'rate': rate,
+            'gap': gap,
+            'latent_mix_error': latent_mix_error,
         }
 
     # -------------------------
@@ -258,6 +272,8 @@ class Autoencoder(nn.Module):
         decode_mix_mrstft = torch.tensor(0.0, device=x_stft.device)
         decode_mix_real = torch.tensor(0.0, device=x_stft.device)
         decode_mix_rate = 0.0
+        decode_mix_gap = 0.0
+        decode_mix_dict = {}
 
         if (self.latent_mix_weight > 0.0) or (self.decode_mix_weight > 0.0):
             assert B % 2 == 0, "Batch must be even when mixing is enabled"
@@ -275,24 +291,46 @@ class Autoencoder(nn.Module):
                 decode_mix_mrstft = decode_mix_dict['mrstft']
                 decode_mix_real = decode_mix_dict['loss_real']
                 decode_mix_rate = decode_mix_dict['rate']
+                decode_mix_gap = decode_mix_dict['gap']
 
         total = recon + self.latent_mix_weight * latent_mix + self.decode_mix_weight * decode_mix_total
+        
+        # Initialize metric values
         rate = 0.0
+        gap = 0.0
         decode_mix_real_val = 0.0
+        decode_mix_real_l1 = 0.0
+        decode_mix_real_mrstft = 0.0
+        latent_mix_error = 0.0
+        
         if self.decode_mix_weight > 0.0:
             rate = decode_mix_rate
+            gap = decode_mix_gap
             decode_mix_real_val = decode_mix_real.detach().item()
+            decode_mix_real_l1 = decode_mix_dict.get('l1_real', 0.0)
+            decode_mix_real_mrstft = decode_mix_dict.get('mr_real', 0.0)
+            latent_mix_error = decode_mix_dict.get('latent_mix_error', 0.0)
 
         components = {
+            # Total loss
             "total": total.detach().item(),
-            "recon": recon.detach().item(),
-            "wav_l1": wav_l1.detach().item(),
-            "mrstft": mr.detach().item(),
+            # ReconSingle
+            "ReconSingle/Total": recon.detach().item(),
+            "ReconSingle/WavL1": wav_l1.detach().item(),
+            "ReconSingle/MRSTFT": mr.detach().item(),
+            # MixReconInterp
+            "MixReconInterp/Total": decode_mix_total.detach().item(),
+            "MixReconInterp/WavL1": decode_mix_l1.detach().item(),
+            "MixReconInterp/MRSTFT": decode_mix_mrstft.detach().item(),
+            # MixReconReal
+            "MixReconReal/Total": decode_mix_real_val,
+            "MixReconReal/WavL1": decode_mix_real_l1,
+            "MixReconReal/MRSTFT": decode_mix_real_mrstft,
+            # Key metrics
+            "MixRate": rate,
+            "MixGap": gap,
+            "LatentMixError": latent_mix_error,
+            # Legacy names (for backward compatibility with existing logs)
             "latent_mix": latent_mix.detach().item(),
-            "decode_mix": decode_mix_total.detach().item(),
-            "decode_mix_l1": decode_mix_l1.detach().item(),
-            "decode_mix_mrstft": decode_mix_mrstft.detach().item(),
-            "decode_mix_real": decode_mix_real_val,
-            "rate": rate,
         }
         return total, components

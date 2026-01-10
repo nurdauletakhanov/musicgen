@@ -12,11 +12,8 @@ from evaluation.samples import save_test_samples
 from models.autoencoder import Autoencoder
 from training.checkpoint import save_checkpoint, load_checkpoint
 from training.config import get_device, load_config, build_model_config
-from training.hub_utils import (
-    check_authentication,
-    get_repo_id_from_config,
-    upload_config_to_hub,
-)
+from training.hub_utils import setup_hub_integration
+from training.tb_logger import TBLogger, get_alpha_sweep_epochs
 from training.utils import print_logger
 
 
@@ -106,46 +103,26 @@ class Trainer:
         self.logs.info(f"Mixed precision (AMP): {'enabled' if self.use_amp else 'disabled'}")
         
         # HuggingFace Hub setup
-        self._setup_hub(hf_cfg)
-
-    def _setup_hub(self, hf_cfg: dict):
-        """Initialize HuggingFace Hub integration."""
-        self.hf_enabled = hf_cfg.get('enabled', False)
-        self.hf_repo_id = hf_cfg.get('repo_id', None)
-        self.hf_push_best = hf_cfg.get('push_best', True)
-        self.hf_push_checkpoints = hf_cfg.get('push_checkpoints', False)
-        self.hf_push_interval = hf_cfg.get('push_interval', 5)
-        self.hf_private = hf_cfg.get('private', False)
+        hub = setup_hub_integration(
+            hf_cfg, cfg.get('name', 'default'), config_path, logger=self.logs
+        )
+        self.hf_enabled = hub['enabled']
+        self.hf_repo_id = hub['repo_id']
+        self.hf_push_best = hub['push_best']
+        self.hf_push_checkpoints = hub['push_checkpoints']
+        self.hf_push_interval = hub['push_interval']
+        self.hf_private = hub['private']
         
-        if self.hf_enabled:
-            is_auth, username = check_authentication()
-            if not is_auth:
-                self.logs.warning(
-                    "HuggingFace Hub integration enabled but not authenticated. "
-                    "Run: huggingface-cli login"
-                )
-                self.hf_enabled = False
-            else:
-                if self.hf_repo_id is None:
-                    try:
-                        config_name = self.cfg.get('name', 'default')
-                        self.hf_repo_id = get_repo_id_from_config(config_name, username)
-                    except Exception as e:
-                        self.logs.warning(
-                            f"Could not auto-generate repo_id: {e}. Disabling Hub integration."
-                        )
-                        self.hf_enabled = False
-                
-                if self.hf_enabled:
-                    self.logs.info(f"HuggingFace Hub integration enabled. Repo ID: {self.hf_repo_id}")
-                    try:
-                        upload_config_to_hub(
-                            self.config_path,
-                            self.hf_repo_id,
-                            commit_message="Initial config upload"
-                        )
-                    except Exception as e:
-                        self.logs.warning(f"Could not upload config to Hub: {e}")
+        # TensorBoard setup
+        tb_cfg = cfg.get('tensorboard', {})
+        self.tb_enabled = tb_cfg.get('enabled', True)
+        self.tb_log_audio = tb_cfg.get('log_audio', True)
+        self.tb_alpha_sweep_alphas = tb_cfg.get('alpha_sweep_alphas', [0.1, 0.3, 0.5, 0.7, 0.9])
+        self.tb_alpha_sweep_samples = tb_cfg.get('alpha_sweep_samples', 100)
+        self.tb_logger = TBLogger(self.save_path, enabled=self.tb_enabled)
+        
+        if self.tb_enabled:
+            self.logs.info("TensorBoard logging enabled")
 
     def build_model(self):
         """Build model, optimizer, and scheduler."""
@@ -206,16 +183,35 @@ class Trainer:
         return start_epoch, best_val_loss
 
     def _run_epoch(self, loader, training: bool = True) -> dict:
-        """Run one epoch of training or validation."""
+        """
+        Run one epoch of training or validation.
+        
+        Returns dict with:
+        - Mean values for all metrics
+        - Raw MixRate values for distribution stats (validation only)
+        """
         if training:
             self.model.train()
         else:
             self.model.eval()
         
+        # Metric collectors
         metrics = {k: [] for k in [
-            'loss', 'recon', 'wav_l1', 'mrstft', 'latent_mix',
-            'decode_mix', 'decode_mix_l1', 'decode_mix_mrstft', 'decode_mix_rate'
+            'loss',
+            # ReconSingle
+            'ReconSingle/Total', 'ReconSingle/WavL1', 'ReconSingle/MRSTFT',
+            # MixReconInterp
+            'MixReconInterp/Total', 'MixReconInterp/WavL1', 'MixReconInterp/MRSTFT',
+            # MixReconReal
+            'MixReconReal/Total', 'MixReconReal/WavL1', 'MixReconReal/MRSTFT',
+            # Key metrics
+            'MixRate', 'MixGap', 'LatentMixError',
+            # Legacy
+            'latent_mix',
         ]}
+        
+        # Collect raw MixRate values for distribution stats
+        mix_rate_values = []
         
         desc = "Train" if training else "Val"
         context = torch.enable_grad() if training else torch.no_grad()
@@ -239,17 +235,20 @@ class Trainer:
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
 
+                # Collect metrics
                 metrics['loss'].append(total.item())
-                metrics['recon'].append(components.get('recon', 0.0))
-                metrics['wav_l1'].append(components.get('wav_l1', 0.0))
-                metrics['mrstft'].append(components.get('mrstft', 0.0))
-                metrics['latent_mix'].append(components.get('latent_mix', 0.0))
-                metrics['decode_mix'].append(components.get('decode_mix', 0.0))
-                metrics['decode_mix_l1'].append(components.get('decode_mix_l1', 0.0))
-                metrics['decode_mix_mrstft'].append(components.get('decode_mix_mrstft', 0.0))
-                metrics['decode_mix_rate'].append(components.get('rate', 0.0))
+                for key in metrics.keys():
+                    if key != 'loss' and key in components:
+                        metrics[key].append(components[key])
+                
+                # Collect raw MixRate for distribution stats
+                mix_rate = components.get('MixRate', 0.0)
+                if mix_rate > 0:  # Only collect non-zero rates (mixing enabled)
+                    mix_rate_values.append(mix_rate)
 
-        return {k: np.mean(v) for k, v in metrics.items()}
+        result = {k: np.mean(v) if v else 0.0 for k, v in metrics.items()}
+        result['_mix_rate_values'] = mix_rate_values  # Raw values for distribution
+        return result
 
     def _save_checkpoint(self, epoch: int, val_loss: float, best_val_loss: float, is_best: bool = False):
         """Save checkpoint wrapper."""
@@ -274,22 +273,33 @@ class Trainer:
         )
 
     def _log_metrics(self, prefix: str, metrics: dict):
-        """Log training/validation metrics."""
+        """Log training/validation metrics to console."""
+        recon_total = metrics.get('ReconSingle/Total', 0.0)
+        recon_l1 = metrics.get('ReconSingle/WavL1', 0.0)
+        recon_mrstft = metrics.get('ReconSingle/MRSTFT', 0.0)
+        mix_interp = metrics.get('MixReconInterp/Total', 0.0)
+        mix_real = metrics.get('MixReconReal/Total', 0.0)
+        mix_rate = metrics.get('MixRate', 0.0)
+        mix_gap = metrics.get('MixGap', 0.0)
+        latent_err = metrics.get('LatentMixError', 0.0)
+        
         self.logs.info(
-            f"{prefix} - Loss: {metrics['loss']:.6f}, "
-            f"Recon: {metrics['recon']:.6f}, "
-            f"WavL1: {metrics['wav_l1']:.6f}, "
-            f"MRSTFT: {metrics['mrstft']:.6f}, "
-            f"LatMix: {metrics['latent_mix']:.6f}, "
-            f"DecMix: {metrics['decode_mix']:.6f}, "
-            f"DecMixL1: {metrics['decode_mix_l1']:.6f}, "
-            f"DecMixMRSTFT: {metrics['decode_mix_mrstft']:.6f}, "
-            f"DecMixRate: {metrics['decode_mix_rate']:.4f}"
+            f"{prefix} - Loss: {metrics['loss']:.6f} | "
+            f"Recon: {recon_total:.4f} (L1: {recon_l1:.4f}, MR: {recon_mrstft:.4f}) | "
+            f"MixInterp: {mix_interp:.4f}, MixReal: {mix_real:.4f} | "
+            f"Rate: {mix_rate:.4f}, Gap: {mix_gap:.4f} | "
+            f"LatErr: {latent_err:.6f}"
         )
 
     def fit(self, start_epoch: int = 0, best_val_loss: float = float('inf')):
         """Main training loop."""
         scheduler_warmup_end = start_epoch + self.scheduler_warmup_epochs if start_epoch > 0 else 0
+        
+        # Log hyperparameters once at start
+        self.tb_logger.log_training_config(self.cfg, self.model_config)
+        
+        # Calculate alpha sweep epochs (1/3, 2/3, final)
+        alpha_sweep_epochs = get_alpha_sweep_epochs(self.num_epochs)
         
         for epoch in range(start_epoch, self.num_epochs):
             self.logs.info(f"=== Epoch {epoch+1}/{self.num_epochs} ===")
@@ -309,10 +319,16 @@ class Trainer:
             
             self._log_metrics("Train", train_metrics)
             self._log_metrics("Val  ", val_metrics)
-            self.logs.info(f"LR: {self.optimizer.param_groups[0]['lr']:.2e}")
+            
+            lr = self.optimizer.param_groups[0]['lr']
+            self.logs.info(f"LR: {lr:.2e}")
+            
+            # TensorBoard logging
+            self.tb_logger.log_epoch(epoch, train_metrics, val_metrics, lr)
             
             # Save best model
-            if val_metrics['loss'] < best_val_loss:
+            is_best = val_metrics['loss'] < best_val_loss
+            if is_best:
                 best_val_loss = val_metrics['loss']
                 self._save_checkpoint(epoch, val_metrics['loss'], best_val_loss, is_best=True)
                 save_test_samples(
@@ -326,10 +342,25 @@ class Trainer:
                     device=self.device,
                     use_amp=self.use_amp,
                     logger=self.logs,
+                    tb_logger=self.tb_logger if self.tb_log_audio else None,
                 )
             
             # Periodic checkpoint
             if (epoch + 1) % self.save_interval == 0:
                 self._save_checkpoint(epoch, val_metrics['loss'], best_val_loss)
+            
+            # Alpha sweep at designated epochs
+            if epoch in alpha_sweep_epochs:
+                self.tb_logger.run_and_log_alpha_sweep(
+                    model=self.model,
+                    dataset=self.val_dataset,
+                    alphas=self.tb_alpha_sweep_alphas,
+                    num_samples=self.tb_alpha_sweep_samples,
+                    epoch=epoch,
+                    device=self.device,
+                    use_amp=self.use_amp,
+                    logger=self.logs,
+                )
 
         self.logs.info(f"Training complete. Best val loss: {best_val_loss:.6f}")
+        self.tb_logger.close()

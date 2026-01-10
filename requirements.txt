@@ -4,6 +4,6 @@ numpy
 pyyaml
 tqdm
 soundfile
-wandb
+tensorboard
 huggingface_hub
 

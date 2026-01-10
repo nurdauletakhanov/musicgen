@@ -49,3 +49,9 @@ huggingface:
   push_interval: 5
   private: false
 
+tensorboard:
+  enabled: true
+  log_audio: true
+  alpha_sweep_alphas: [0.1, 0.3, 0.5, 0.7, 0.9]
+  alpha_sweep_samples: 100
+
