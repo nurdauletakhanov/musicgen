@@ -1,89 +1,89 @@
-# Mixing-Equivariant Waveform Tokenizer
+# Mixing-Equivariant STFT Autoencoder
 
-A research prototype for learning 1-second audio tokens whose latent space preserves **linear mixing** relationships.
+A research prototype for learning 1-second audio representations whose latent space preserves **linear mixing** relationships.
 
-This project aims to develop a **waveform-based audio tokenizer** that compresses a 1-second waveform into a small latent representation (continuous or quantized), while enforcing the property:
+This project implements an **STFT-based autoencoder** that compresses a 1-second audio chunk into a compact latent representation, while enforcing the property:
 
-[
-\text{emb}(\lambda x_1 + (1-\lambda),x_2);\approx;
-\lambda,\text{emb}(x_1) + (1-\lambda),\text{emb}(x_2)
-]
+\[
+\text{enc}(\lambda x_1 + (1-\lambda) x_2) \approx \lambda \cdot \text{enc}(x_1) + (1-\lambda) \cdot \text{enc}(x_2)
+\]
 
-This *mixing-equivariance constraint* is hypothesized to improve controllability, interpolation, and downstream generative modeling by aligning the latent space with the linear structure of the waveform domain (which is physically linear for sound pressure).
+This *mixing-equivariance constraint* improves controllability, interpolation, and downstream generative modeling by aligning the latent space with the linear structure of the audio domain (which is physically linear for sound pressure).
 
 ---
 
 ## **Project Goals**
 
-### 1. Build a tokenizer for 1-second audio chunks
+### 1. Build an autoencoder for 1-second audio chunks
 
-* Pure waveform input (22k–24k Hz)
-* CNN segment encoder → Transformer → global token
+* STFT input (44.1 kHz sample rate, 1024-point FFT)
+* Conv2D segment encoder → Transformer → latent tokens → Conv1D decoder → waveform
 
 ### 2. Enforce **mixing linearity**
 
-Given audio chunks `x1`, `x2`, and mixture `xλ = λ x1 + (1−λ)x2`, the tokenizer should satisfy:
+Given audio chunks `x1`, `x2`, and mixture `xλ = λ x1 + (1−λ)x2`, the autoencoder should satisfy:
 
 * **Latent linearity**
-  [
+  \[
   f(x_\lambda) \approx \lambda f(x_1) + (1 - \lambda) f(x_2)
-  ]
+  \]
 
-* **Reconstruction linearity** (optional)
-  [
-  g(f(x_\lambda)) \approx \lambda g(f(x_1)) + (1-\lambda)g(f(x_2))
-  ]
+* **Decode mixing** (recommended)
+  \[
+  D(\lambda z_1 + (1-\lambda) z_2) \approx \lambda x_1 + (1-\lambda) x_2
+  \]
 
-### 3. Provide a clean benchmark for comparing tokenizers
+### 3. Provide a clean benchmark for comparing audio autoencoders
 
 * Reconstruction metrics: MR-STFT, log-magnitude loss, L1 waveform
-* Latent space metrics: linearity error, PCA analysis, λ-prediction error
-* Ablations: segment lengths, d_model sizes, RVQ depth
+* Latent space metrics: linearity error, decode mixing rate
+* Ablations: segment lengths, d_model sizes, loss weight combinations
 
 ---
 
 ## **Architecture Overview**
 
-### **1. Segmentation**
+### **1. STFT Preprocessing**
 
-Each 1-second waveform chunk `x ∈ ℝ^{1×L}` is divided into **T segments**:
-
-```
-L = sample_rate * 1.0  
-T = num_tokens   # e.g., 40  
-segment_len = L // T
-```
-
-### **2. Local encoder (CNN over segments)**
-
-Each segment (≈551 samples at 22kHz with T=40) is encoded into a `d_model`-dimensional token:
+Each 1-second waveform is converted to a complex STFT:
 
 ```
-[B, T, 1, segment_len] → [B, T, d_model]
+waveform [B, 1, L] → STFT [B, 2, F, T]
+- F = n_fft // 2 + 1 = 513 frequency bins
+- T = L // hop_length = 172 frames (at 44.1kHz, hop=256)
+- 2 channels: real and imaginary parts
 ```
 
-This uses a lightweight Conv1d stack followed by AdaptiveAvgPool.
+### **2. Segment Encoder (Conv2D)**
 
-### **3. Global encoder (Transformer)**
-
-A Transformer with a learnable `[CLS]` token models the sequence of segment embeddings:
+The STFT is divided into `num_segments` temporal segments. Each segment is encoded using Conv2D layers that treat frequency and time as spatial dimensions:
 
 ```
-input:  [CLS, token1, token2, ... token_T]
-output: CLS embedding z ∈ ℝ^{d_model}
+[B, num_segments, 2, F, T_seg] → Conv2D stack → [B, num_segments, d_model]
 ```
 
-This is the **1-second latent token**.
+This architecture respects frequency locality (harmonics are adjacent bins) and uses GroupNorm for training stability.
 
-### **4. Decoder**
+### **3. Global Encoder (Transformer)**
 
-Maps the latent token back into a waveform:
+A Transformer with positional embeddings models the sequence of segment embeddings:
 
 ```
-z → ConvTranspose stack → waveform of length L
+input:  [token_1, token_2, ... token_S]  (S = num_segments)
+output: z ∈ ℝ^{S × d_model}
 ```
 
-A future version may use a diffusion decoder.
+This produces **S latent tokens** representing the 1-second chunk.
+
+### **4. Decoder (Conv1D Upsampling)**
+
+Maps the latent tokens back into a waveform using progressive upsampling:
+
+```
+z [B, S, d_model] → project → [B, C, S] → UpsampleBlocks → [B, 1, L]
+```
+
+Each UpsampleBlock uses interpolation + Conv1D + dilated ResBlocks for high-quality waveform synthesis.
 
 ## **Loss Functions**
 
@@ -91,52 +91,56 @@ A future version may use a diffusion decoder.
 
 Combination of MR-STFT + L1 waveform:
 
-[
-\mathcal{L}_\text{recon}(x,\hat{x}) = \alpha;\text{MRSTFT}(x,\hat{x}) + \beta;|x - \hat{x}|_1
-]
+\[
+\mathcal{L}_\text{recon}(x, \hat{x}) = \alpha \cdot \text{MRSTFT}(x, \hat{x}) + \beta \cdot |x - \hat{x}|_1
+\]
 
-### **2. Latent Mixing Loss**
+MR-STFT uses multiple FFT sizes (512, 1024, 2048) for spectral convergence and log-magnitude losses.
 
-For randomly sampled `(x1, x2)` and λ∼Uniform(0,1):
+### **2. Latent Mixing Loss** (optional)
 
-[
-x_\lambda = \lambda x_1 + (1-\lambda)x_2
-]
+For randomly sampled `(x1, x2)` and λ ∼ Uniform(0,1):
 
-[
-\mathcal{L}*\text{mix-latent} = \big|f(x*\lambda) - [\lambda f(x_1) + (1-\lambda)f(x_2)]\big|_2^2
-]
+\[
+\mathcal{L}_\text{latent-mix} = \big\| E(x_\lambda) - [\lambda E(x_1) + (1-\lambda) E(x_2)] \big\|_2^2
+\]
 
-### **3. Reconstruction Mixing Loss (optional)**
+where \(x_\lambda = \lambda x_1 + (1-\lambda) x_2\).
 
-[
-\mathcal{L}*\text{mix-wave} = \text{MRSTFT}\big(x*\lambda,;\lambda\hat{x}_1+(1-\lambda)\hat{x}_2\big)
-]
+### **3. Decode Mixing Loss** (recommended)
+
+Compares latent interpolation vs. real autoencoder on mixed input:
+
+\[
+\mathcal{L}_\text{decode-mix} = \text{MRSTFT}(D(\lambda z_1 + (1-\lambda) z_2), x_\lambda) + |D(\lambda z_1 + (1-\lambda) z_2) - x_\lambda|_1
+\]
+
+A "rate" metric tracks how close interpolation is to real encoding (ideal = 1.0).
 
 ### **Total Loss**
 
-[
-\mathcal{L} = \mathcal{L}*\text{recon} + \gamma\mathcal{L}*\text{mix-latent} + \delta\mathcal{L}_\text{mix-wave}
-]
+\[
+\mathcal{L} = \mathcal{L}_\text{recon} + \gamma \mathcal{L}_\text{latent-mix} + \delta \mathcal{L}_\text{decode-mix}
+\]
 
 ---
 
 ## **Why This Project is Interesting**
 
-### **Most existing tokenizers:**
+### **Most existing audio autoencoders:**
 
 * Work with 10–40 ms windows (Encodec, DAC, SoundStream).
 * Produce long sequences of tokens.
-* Are not designed to preserve the linear structure of the waveform.
+* Are not designed to preserve the linear structure of audio.
 * Are optimized mainly for perceptual quality and compression.
 
 ### **This project attempts something new:**
 
-1. **A 1-second representation** (much more compressed).
-2. **Mixing-equivariance as a core constraint**.
-3. **Direct waveform modeling**, not STFT or mel-spectrogram.
+1. **A 1-second representation** (much more compressed than typical neural codecs).
+2. **Mixing-equivariance as a core constraint** (latent space respects physical mixing).
+3. **STFT-based encoding with waveform output** (efficient frequency representation, direct audio synthesis).
 4. **Compatibility with simple latent generative models** (AR, diffusion).
-5. **New metrics** for evaluating linearity in audio embeddings.
+5. **New metrics** for evaluating linearity in audio embeddings (decode mixing rate).
 
 This could open new avenues for:
 
@@ -144,38 +148,39 @@ This could open new avenues for:
 * Style transfer
 * Layered music creation (blending stems)
 * Generative models that obey physical mixing rules
-* Tokenizers for downstream music models (MusicGen-style)
+* Compact representations for downstream music models
 
 ---
 
 ## **Repository Structure**
 
-Expected layout:
-
 ```
-project/
+musicgen/
 │
-├── encoder/
-│   ├── segment_cnn.py
-│   ├── global_transformer.py
-│   └── encoder.py
+├── models/
+│   ├── autoencoder.py    # Main autoencoder with loss computation
+│   ├── encoder.py        # Conv2D segment encoder + Transformer
+│   └── decoder.py        # Conv1D upsampling decoder
 │
-├── decoder/
-│   └── decoder.py
+├── data/
+│   ├── dataloader.py     # STFTChunkDataset + ShardedSampler
+│   └── preprocess.py     # STFT preprocessing for MAESTRO
 │
 ├── training/
-│   ├── dataset.py
-│   ├── mixing_loss.py
-│   ├── train.py
-│   └── utils.py
+│   ├── train.py          # Training loop and Trainer class
+│   ├── utils.py          # Logging, checkpointing utilities
+│   └── hub_utils.py      # HuggingFace Hub integration
 │
-├── experiments/
-│   ├── baseline_recon.ipynb
-│   ├── mixing_equivariance.ipynb
-│   └── rvq_ablation.ipynb
+├── evaluation/
+│   └── reconstruct.py    # Reconstruction evaluation scripts
 │
-├── README.md
-└── requirements.txt
+├── scripts/
+│   └── upload_to_hub.py  # Upload checkpoints to HuggingFace
+│
+├── checkpoints/          # Saved model checkpoints
+├── config.yaml           # Training configuration
+├── requirements.txt
+└── README.md
 ```
 
 ---
@@ -185,43 +190,65 @@ project/
 ### **Forward pass**
 
 ```python
-encoder = Encoder(d_model=256, num_tokens=40)
-decoder = WaveformDecoder(d_model=256, target_length=22050)
+from models.autoencoder import Autoencoder
 
-x = torch.randn(8, 1, 22050)  # batch of 1-second clips
+model = Autoencoder(
+    d_model=256,
+    n_heads=8,
+    n_layers=6,
+    num_segments=25,
+    n_freq_bins=513,           # n_fft // 2 + 1
+    channels=[512, 512, 256, 128, 64],
+    upsampling_factors=[6, 6, 7, 7],
+    target_length=44100,       # 1 second at 44.1kHz
+)
 
-z = encoder(x)
-x_hat = decoder(z)
+# Input: STFT [B, 2, F, T] and waveform [B, 1, L]
+x_stft = torch.randn(8, 2, 513, 172)
+x_wave = torch.randn(8, 1, 44100)
+
+loss, components = model(x_stft, x_wave)
+print(components)  # {'total': ..., 'recon': ..., 'wav_l1': ..., 'mrstft': ..., ...}
 ```
 
 ### **Latent mixing**
 
 ```python
-z_mix = λ * z1 + (1 - λ) * z2
-x_mix = decoder(z_mix)
+# Encode two different audio chunks
+z1 = model.encoder(x_stft_1)  # [B, num_segments, d_model]
+z2 = model.encoder(x_stft_2)
+
+# Interpolate in latent space
+lam = 0.5
+z_mix = lam * z1 + (1 - lam) * z2
+
+# Decode the interpolated latent
+x_mix = model.decoder(z_mix)  # [B, 1, target_length]
 ```
 
 ---
 
-## **Planned Research Experiments**
+## **Research Experiments**
 
-### **Phase A: Baseline**
+### **Phase A: Baseline** ✓
 
-* Train the AE without mixing loss.
-* Evaluate reconstruction and latent PCA.
+* Train the autoencoder without mixing loss.
+* Evaluate reconstruction quality (MR-STFT, L1).
 
-### **Phase B: Add mixing-equivariant loss**
+### **Phase B: Add mixing-equivariant loss** ✓
 
+* Add decode mixing loss for latent space linearity.
 * Measure linearity error across λ ∈ [0,1].
-* Test generalization to unseen mixtures.
+* Track decode mixing rate (ideal = 1.0).
 
-### **Phase C: Add RVQ**
+### **Phase C: Architecture tuning**
 
-* Measure the tradeoff: reconstruction vs. linearity vs. bitrate.
+* Ablate num_segments, d_model, loss weights.
+* Optimize for reconstruction + linearity tradeoff.
 
 ### **Phase D: Generation**
 
-* Train a small AR or diffusion model over 1-second tokens.
+* Train a small AR or diffusion model over latent tokens.
 * Evaluate interpolation and style blending.
 
 ---
@@ -297,7 +324,7 @@ start_epoch, best_val_loss = trainer.load_checkpoint("username/model-name")
 Or in evaluation scripts:
 
 ```python
-# In evaluation/reconstruct.py or evaluation/sample_diffusion.py
+# In evaluation/reconstruct.py
 # Use Hub ID instead of local path
 python evaluation/reconstruct.py --config evaluation/config.yaml
 # In config.yaml, set checkpoint: "username/model-name"
@@ -381,6 +408,6 @@ print(checkpoints)
 ## **Status: Research Prototype**
 
 This repository is not yet optimized for production.
-Training stability, decoder design, and quantization are active research topics.
+Training stability, decoder design, and mixing-equivariance are active research topics.
 
 Contributions and discussions are welcome.
