@@ -1,0 +1,54 @@
+# Training configuration for Music Autoencoder
+name: stft-vocoder-2stage-DecodeMix-0.01-L1-1.0-MRSTFT-1.0
+
+train:
+  batch_size: 32   
+  num_epochs: 40
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  patience: 3          
+  factor: 0.5          
+  save_interval: 2    
+  save_path: ./checkpoints
+  num_workers: 4       # Parallel data loading workers (increase for better GPU utilization)
+  prefetch_factor: 2   # Prefetch batches per worker (helps keep GPU busy)
+  pin_memory: true     # Faster CPU->GPU transfer
+  persistent_workers: true  # Keep workers alive between epochs
+  # LR scheduler options for resuming training after loss landscape changes
+  reset_scheduler_on_resume: true  # Reset scheduler state when resuming (recommended if loss weights changed)
+  scheduler_warmup_epochs: 2        # Disable LR reduction for N epochs after resume (set to 0 for normal continuation)
+
+model:
+  # Encoder/Decoder settings
+  num_segments: 25     # Number of time segments (= number of latent tokens) 
+  d_model: 256         # Latent dimension
+  n_heads: 8           # Transformer attention heads
+  n_layers: 6          # Transformer layers
+  channels: [512, 512, 256, 128, 64]   # Decoder channel counts for upsampling blocks
+  upsampling_factors: [6, 6, 7, 7]    # Required: upsampling factors for decoder (must match len(channels)-1)
+  dropout: 0.0       # Regularization to prevent overfitting
+
+  # Loss weights
+  mrstft_weight: 1.0  # Multi-resolution STFT loss weight
+  l1_weight: 1.0        # L1 waveform loss weight
+  mix_l1_weight: 1.0
+  mix_mrstft_weight: 1.0
+  latent_mix_weight: 0.0 # Latent space mixing loss weight (requires even batch size)
+  decode_mix_weight: 0.01 # Decoder mixing loss weight (recommended, requires even batch size)
+
+data:
+  data_dir: ./maestro-v3.0.0
+  chunks_dir: ./maestro-chunks-stft
+  chunk_seconds: 1.0
+  sample_rate: 44100
+  overlap: 0.0           
+  split: train
+  val_split: validation
+
+
+# STFT parameters
+stft:
+  n_fft: 1024          # FFT size → 513 frequency bins
+  hop_length: 256      # Hop between frames
+  win_length: 1024     # Window length (same as n_fft)
+

@@ -1,0 +1,8 @@
+torch
+torchaudio
+numpy
+pyyaml
+tqdm
+soundfile
+wandb
+
