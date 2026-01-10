@@ -4,9 +4,9 @@ A research prototype for learning 1-second audio representations whose latent sp
 
 This project implements an **STFT-based autoencoder** that compresses a 1-second audio chunk into a compact latent representation, while enforcing the property:
 
-\[
+$$
 \text{enc}(\lambda x_1 + (1-\lambda) x_2) \approx \lambda \cdot \text{enc}(x_1) + (1-\lambda) \cdot \text{enc}(x_2)
-\]
+$$
 
 This *mixing-equivariance constraint* improves controllability, interpolation, and downstream generative modeling by aligning the latent space with the linear structure of the audio domain (which is physically linear for sound pressure).
 
@@ -21,17 +21,17 @@ This *mixing-equivariance constraint* improves controllability, interpolation, a
 
 ### 2. Enforce **mixing linearity**
 
-Given audio chunks `x1`, `x2`, and mixture `xλ = λ x1 + (1−λ)x2`, the autoencoder should satisfy:
+Given audio chunks `x1`, `x2`, and mixture $x_\lambda = \lambda x_1 + (1-\lambda)x_2$, the autoencoder should satisfy:
 
 * **Latent linearity**
-  \[
+  $$
   f(x_\lambda) \approx \lambda f(x_1) + (1 - \lambda) f(x_2)
-  \]
+  $$
 
 * **Decode mixing** (recommended)
-  \[
+  $$
   D(\lambda z_1 + (1-\lambda) z_2) \approx \lambda x_1 + (1-\lambda) x_2
-  \]
+  $$
 
 ### 3. Provide a clean benchmark for comparing audio autoencoders
 
@@ -70,7 +70,7 @@ A Transformer with positional embeddings models the sequence of segment embeddin
 
 ```
 input:  [token_1, token_2, ... token_S]  (S = num_segments)
-output: z ∈ ℝ^{S × d_model}
+output: z in R^(S × d_model)
 ```
 
 This produces **S latent tokens** representing the 1-second chunk.
@@ -91,37 +91,37 @@ Each UpsampleBlock uses interpolation + Conv1D + dilated ResBlocks for high-qual
 
 Combination of MR-STFT + L1 waveform:
 
-\[
+$$
 \mathcal{L}_\text{recon}(x, \hat{x}) = \alpha \cdot \text{MRSTFT}(x, \hat{x}) + \beta \cdot |x - \hat{x}|_1
-\]
+$$
 
 MR-STFT uses multiple FFT sizes (512, 1024, 2048) for spectral convergence and log-magnitude losses.
 
 ### **2. Latent Mixing Loss** (optional)
 
-For randomly sampled `(x1, x2)` and λ ∼ Uniform(0,1):
+For randomly sampled `(x1, x2)` and $\lambda \sim \text{Uniform}(0,1)$:
 
-\[
+$$
 \mathcal{L}_\text{latent-mix} = \big\| E(x_\lambda) - [\lambda E(x_1) + (1-\lambda) E(x_2)] \big\|_2^2
-\]
+$$
 
-where \(x_\lambda = \lambda x_1 + (1-\lambda) x_2\).
+where $x_\lambda = \lambda x_1 + (1-\lambda) x_2$.
 
 ### **3. Decode Mixing Loss** (recommended)
 
 Compares latent interpolation vs. real autoencoder on mixed input:
 
-\[
+$$
 \mathcal{L}_\text{decode-mix} = \text{MRSTFT}(D(\lambda z_1 + (1-\lambda) z_2), x_\lambda) + |D(\lambda z_1 + (1-\lambda) z_2) - x_\lambda|_1
-\]
+$$
 
 A "rate" metric tracks how close interpolation is to real encoding (ideal = 1.0).
 
 ### **Total Loss**
 
-\[
+$$
 \mathcal{L} = \mathcal{L}_\text{recon} + \gamma \mathcal{L}_\text{latent-mix} + \delta \mathcal{L}_\text{decode-mix}
-\]
+$$
 
 ---
 
@@ -250,7 +250,7 @@ x_mix = model.decoder(z_mix)  # [B, 1, target_length]
 ### **Phase B: Add mixing-equivariant loss** ✓
 
 * Add decode mixing loss for latent space linearity.
-* Measure linearity error across λ ∈ [0,1].
+* Measure linearity error across $\lambda \in [0,1]$.
 * Track decode mixing rate (ideal = 1.0).
 
 ### **Phase C: Architecture tuning**
@@ -413,6 +413,133 @@ print(checkpoints)
 - Verify the repository ID and filename are correct
 - Check if the repository is private and you have access
 - Ensure you have sufficient disk space
+
+---
+
+## **TensorBoard Integration**
+
+This project includes comprehensive TensorBoard logging for monitoring training progress, visualizing metrics, and analyzing model performance. TensorBoard logs are automatically generated during training and provide detailed insights into model behavior.
+
+### **Configuration**
+
+TensorBoard logging is configured in your experiment config file (`configs/base.yaml` or `configs/experiments/current.yaml`):
+
+```yaml
+tensorboard:
+  enabled: true                    # Enable/disable TensorBoard logging
+  log_audio: true                  # Log audio samples to TensorBoard
+  alpha_sweep_alphas: [0.1, 0.3, 0.5, 0.7, 0.9]  # Alpha values for linearity evaluation
+  alpha_sweep_samples: 100         # Number of sample pairs for alpha sweep
+```
+
+### **Log Location**
+
+TensorBoard logs are saved to:
+```
+<checkpoint_dir>/tensorboard/
+```
+
+For example, if your experiment name is `stft-vocoder`, logs will be in:
+```
+checkpoints/stft-vocoder/tensorboard/
+```
+
+### **Viewing Logs**
+
+Start TensorBoard server:
+
+```bash
+# Navigate to your checkpoint directory or specify the log directory
+tensorboard --logdir checkpoints/stft-vocoder/tensorboard
+
+# Or from the project root
+tensorboard --logdir checkpoints
+```
+
+Then open your browser to `http://localhost:6006` (or the URL shown in terminal).
+
+### **Logged Metrics**
+
+#### **Training and Validation Metrics**
+
+All metrics are logged separately for training (`train/`) and validation (`val/`) phases:
+
+- **Loss Components:**
+  - `loss` - Total training/validation loss
+  - `ReconSingle/Total`, `ReconSingle/WavL1`, `ReconSingle/MRSTFT` - Single-sample reconstruction metrics
+  - `MixReconInterp/Total`, `MixReconInterp/WavL1`, `MixReconInterp/MRSTFT` - Interpolated latent reconstruction
+  - `MixReconReal/Total`, `MixReconReal/WavL1`, `MixReconReal/MRSTFT` - Real mixed input reconstruction
+
+- **Mixing Linearity Metrics:**
+  - `MixRate` - Decode mixing rate (ideal = 1.0, measures how well interpolation matches real encoding)
+  - `MixGap` - Difference between interpolated and real reconstructions
+  - `LatentMixError` - Latent space linearity error (L2 distance)
+
+- **Learning Rate:**
+  - `lr` - Current learning rate (logged every epoch)
+
+#### **Distribution Statistics**
+
+For metrics like `MixRate`, distribution statistics are logged to track variability:
+- `MixRate/mean` - Mean value across validation samples
+- `MixRate/median` - Median value
+- `MixRate/p90` - 90th percentile
+- `MixRate/max` - Maximum value
+
+#### **Audio Samples**
+
+When `log_audio: true` is enabled, audio samples are logged when a new best model is saved:
+
+- Original audio samples from validation set
+- Reconstructed audio from the autoencoder
+- These can be played directly in TensorBoard's audio tab
+
+#### **Hyperparameters**
+
+At training start, all hyperparameters are logged to the "HPARAMS" tab, including:
+- Model architecture parameters (d_model, n_heads, n_layers, etc.)
+- Training hyperparameters (batch_size, learning_rate, num_epochs, etc.)
+- Loss weights (mrstft_weight, l1_weight, decode_mix_weight, etc.)
+- Dataset configuration (sample_rate, chunk_seconds, etc.)
+
+This enables easy comparison of different experiments using TensorBoard's hyperparameter comparison view.
+
+### **Alpha Sweep Evaluation**
+
+The system automatically runs alpha sweep evaluations at key epochs (1/3, 2/3, and final epoch) to measure linearity across different mixing coefficients. Results are logged under `AlphaSweep/` with metrics for each alpha value:
+
+- `AlphaSweep/alpha_0.1/MixReconInterp` - Interpolated reconstruction quality at α=0.1
+- `AlphaSweep/alpha_0.1/MixRate` - Decode mixing rate at α=0.1
+- ... (similar for all configured alpha values)
+
+This helps track how well the model preserves linear mixing relationships across the full range of mixing coefficients.
+
+### **Usage Tips**
+
+1. **Compare Experiments:** TensorBoard can load multiple log directories simultaneously:
+   ```bash
+   tensorboard --logdir checkpoints --port 6006
+   ```
+   This allows comparing different experiment runs side-by-side.
+
+2. **Filter Metrics:** Use the regex filter in TensorBoard's scalar dashboard to focus on specific metrics (e.g., `MixRate` to see only mixing-related metrics).
+
+3. **Monitor Training:** Watch the `val/loss` curve to identify overfitting or convergence. The `val/MixRate/mean` metric should approach 1.0 for good mixing-equivariance.
+
+4. **Debug Audio Quality:** Check the audio tab periodically to ensure reconstructions sound reasonable. Poor audio quality in TensorBoard often correlates with high reconstruction losses.
+
+5. **Hyperparameter Search:** Use the HPARAMS tab to compare different hyperparameter configurations and identify optimal settings.
+
+### **Disabling TensorBoard**
+
+To disable TensorBoard logging (e.g., to reduce I/O overhead or disk usage):
+
+```yaml
+tensorboard:
+  enabled: false
+```
+
+This will skip all TensorBoard operations during training, but training will continue normally.
 
 ---
 
