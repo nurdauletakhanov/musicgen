@@ -23,15 +23,17 @@ This *mixing-equivariance constraint* improves controllability, interpolation, a
 
 Given audio chunks `x1`, `x2`, and mixture $x_{\lambda} = \lambda x_{1} + (1-\lambda)x_{2}$, the autoencoder should satisfy:
 
-* **Latent linearity**
-  $$
-  f(x_{\lambda}) \approx \lambda f(x_{1}) + (1 - \lambda) f(x_{2})
-  $$
+**Latent linearity:**
 
-* **Decode mixing** (recommended)
-  $$
-  D(\lambda z_{1} + (1-\lambda) z_{2}) \approx \lambda x_{1} + (1-\lambda) x_{2}
-  $$
+$$
+f(x_{\lambda}) \approx \lambda f(x_{1}) + (1 - \lambda) f(x_{2})
+$$
+
+**Decode mixing** (recommended):
+
+$$
+D(\lambda z_{1} + (1-\lambda) z_{2}) \approx \lambda x_{1} + (1-\lambda) x_{2}
+$$
 
 ### 3. Provide a clean benchmark for comparing audio autoencoders
 
