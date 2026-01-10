@@ -5,7 +5,7 @@ A research prototype for learning 1-second audio representations whose latent sp
 This project implements an **STFT-based autoencoder** that compresses a 1-second audio chunk into a compact latent representation, while enforcing the property:
 
 $$
-\text{enc}(\lambda x_1 + (1-\lambda) x_2) \approx \lambda \cdot \text{enc}(x_1) + (1-\lambda) \cdot \text{enc}(x_2)
+\text{enc}(\lambda x_{1} + (1-\lambda) x_{2}) \approx \lambda \cdot \text{enc}(x_{1}) + (1-\lambda) \cdot \text{enc}(x_{2})
 $$
 
 This *mixing-equivariance constraint* improves controllability, interpolation, and downstream generative modeling by aligning the latent space with the linear structure of the audio domain (which is physically linear for sound pressure).
@@ -21,16 +21,16 @@ This *mixing-equivariance constraint* improves controllability, interpolation, a
 
 ### 2. Enforce **mixing linearity**
 
-Given audio chunks `x1`, `x2`, and mixture $x_\lambda = \lambda x_1 + (1-\lambda)x_2$, the autoencoder should satisfy:
+Given audio chunks `x1`, `x2`, and mixture $x_{\lambda} = \lambda x_{1} + (1-\lambda)x_{2}$, the autoencoder should satisfy:
 
 * **Latent linearity**
   $$
-  f(x_\lambda) \approx \lambda f(x_1) + (1 - \lambda) f(x_2)
+  f(x_{\lambda}) \approx \lambda f(x_{1}) + (1 - \lambda) f(x_{2})
   $$
 
 * **Decode mixing** (recommended)
   $$
-  D(\lambda z_1 + (1-\lambda) z_2) \approx \lambda x_1 + (1-\lambda) x_2
+  D(\lambda z_{1} + (1-\lambda) z_{2}) \approx \lambda x_{1} + (1-\lambda) x_{2}
   $$
 
 ### 3. Provide a clean benchmark for comparing audio autoencoders
@@ -92,7 +92,7 @@ Each UpsampleBlock uses interpolation + Conv1D + dilated ResBlocks for high-qual
 Combination of MR-STFT + L1 waveform:
 
 $$
-\mathcal{L}_\text{recon}(x, \hat{x}) = \alpha \cdot \text{MRSTFT}(x, \hat{x}) + \beta \cdot |x - \hat{x}|_1
+\mathcal{L}_{\text{recon}}(x, \hat{x}) = \alpha \cdot \text{MRSTFT}(x, \hat{x}) + \beta \cdot |x - \hat{x}|_{1}
 $$
 
 MR-STFT uses multiple FFT sizes (512, 1024, 2048) for spectral convergence and log-magnitude losses.
@@ -102,17 +102,17 @@ MR-STFT uses multiple FFT sizes (512, 1024, 2048) for spectral convergence and l
 For randomly sampled `(x1, x2)` and $\lambda \sim \text{Uniform}(0,1)$:
 
 $$
-\mathcal{L}_\text{latent-mix} = \big\| E(x_\lambda) - [\lambda E(x_1) + (1-\lambda) E(x_2)] \big\|_2^2
+\mathcal{L}_{\text{latent-mix}} = \big\| E(x_{\lambda}) - [\lambda E(x_{1}) + (1-\lambda) E(x_{2})] \big\|_{2}^{2}
 $$
 
-where $x_\lambda = \lambda x_1 + (1-\lambda) x_2$.
+where $x_{\lambda} = \lambda x_{1} + (1-\lambda) x_{2}$.
 
 ### **3. Decode Mixing Loss** (recommended)
 
 Compares latent interpolation vs. real autoencoder on mixed input:
 
 $$
-\mathcal{L}_\text{decode-mix} = \text{MRSTFT}(D(\lambda z_1 + (1-\lambda) z_2), x_\lambda) + |D(\lambda z_1 + (1-\lambda) z_2) - x_\lambda|_1
+\mathcal{L}_{\text{decode-mix}} = \text{MRSTFT}(D(\lambda z_{1} + (1-\lambda) z_{2}), x_{\lambda}) + |D(\lambda z_{1} + (1-\lambda) z_{2}) - x_{\lambda}|_{1}
 $$
 
 A "rate" metric tracks how close interpolation is to real encoding (ideal = 1.0).
@@ -120,7 +120,7 @@ A "rate" metric tracks how close interpolation is to real encoding (ideal = 1.0)
 ### **Total Loss**
 
 $$
-\mathcal{L} = \mathcal{L}_\text{recon} + \gamma \mathcal{L}_\text{latent-mix} + \delta \mathcal{L}_\text{decode-mix}
+\mathcal{L} = \mathcal{L}_{\text{recon}} + \gamma \mathcal{L}_{\text{latent-mix}} + \delta \mathcal{L}_{\text{decode-mix}}
 $$
 
 ---
@@ -250,7 +250,7 @@ x_mix = model.decoder(z_mix)  # [B, 1, target_length]
 ### **Phase B: Add mixing-equivariant loss** ✓
 
 * Add decode mixing loss for latent space linearity.
-* Measure linearity error across $\lambda \in [0,1]$.
+* Measure linearity error across $\lambda \in [0, 1]$.
 * Track decode mixing rate (ideal = 1.0).
 
 ### **Phase C: Architecture tuning**
