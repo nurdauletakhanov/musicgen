@@ -57,6 +57,25 @@ wandb/
 .ipynb_checkpoints/
 *.ipynb
 
+# MUSDB18 dataset
+musdb18/
+musdb18.zip
+musdb-chunks-stft/
+
+# Slakh dataset
+slakh2100_flac_redux.tar.gz
+
+# Generated outputs
+results/
+presentation/
+generate_presentation_pdf.py
+
+# Windows artifacts
+nul
+
+# Claude Code
+.claude/
+
 # Environment variables
 .env
 .env.local

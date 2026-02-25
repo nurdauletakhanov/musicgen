@@ -1,0 +1,23 @@
+# Phase 1: Pure reconstruction on MUSDB18 individual stems
+# No mixing loss — train the autoencoder to reconstruct each stem independently.
+# Each stem (drums, bass, other, vocals) is treated as a separate training sample.
+#
+# Run:
+#   python -m training.train --config configs/experiments/musdb_phase1_recon.yaml
+
+name: musdb-phase1-recon
+
+data:
+  musdb_chunks_dir: ./musdb-chunks-stft
+  use_musdb_single: true
+  use_stem_pairs: false
+
+train:
+  batch_size: 32
+  num_epochs: 80
+
+model:
+  l1_weight: 1.0
+  mrstft_weight: 1.0
+  latent_mix_weight: 0.0
+  decode_mix_weight: 0.0

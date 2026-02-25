@@ -245,6 +245,31 @@ class Autoencoder(nn.Module):
         }
 
     # -------------------------
+    # Stem pair mixing
+    # -------------------------
+    def compute_stem_mixing_loss(self, x1_stft, x1_wave, x2_stft, x2_wave):
+        """
+        Mixing loss using real stem pairs (e.g., drums + bass from same track).
+
+        Takes explicit pairs instead of batch-splitting. Reuses decode_mixing_loss().
+
+        Args:
+            x1_stft, x2_stft: [B, 2, F, T] - STFT of two stems
+            x1_wave, x2_wave: [B, 1, L] - waveforms of two stems
+
+        Returns:
+            dict with loss components (same format as decode_mixing_loss)
+        """
+        if x1_wave.dim() == 2:
+            x1_wave = x1_wave.unsqueeze(1)
+        if x2_wave.dim() == 2:
+            x2_wave = x2_wave.unsqueeze(1)
+
+        z1 = self.encoder(x1_stft)
+        z2 = self.encoder(x2_stft)
+        return self.decode_mixing_loss(z1, z2, x1_wave, x2_wave)
+
+    # -------------------------
     # Forward
     # -------------------------
     def forward(self, x_stft, x_wave):

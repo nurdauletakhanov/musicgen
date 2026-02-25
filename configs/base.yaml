@@ -21,9 +21,13 @@ data:
   chunks_dir: ./maestro-chunks-stft
   chunk_seconds: 1.0
   sample_rate: 44100
-  overlap: 0.0
+  overlap: 0.5
   split: train
   val_split: validation
+  # MUSDB18 stem pair training (set musdb_chunks_dir to enable)
+  musdb_chunks_dir: null
+  use_stem_pairs: false
+  use_musdb_single: false
 
 train:
   batch_size: 32

@@ -1,0 +1,19 @@
+# MUSDB18 stem pair mixing experiment
+# Uses real stem pairs (drums, bass, other, vocals) for mixing equivariance loss
+
+name: stft-vocoder-musdb-DecodeMix-0.01
+
+data:
+  musdb_chunks_dir: ./musdb-chunks-stft
+  use_stem_pairs: true
+
+train:
+  batch_size: 16         # Reduced from 32 — stem pairs double memory usage
+
+model:
+  mrstft_weight: 1.0
+  l1_weight: 1.0
+  mix_l1_weight: 1.0
+  mix_mrstft_weight: 1.0
+  latent_mix_weight: 0.0
+  decode_mix_weight: 0.01

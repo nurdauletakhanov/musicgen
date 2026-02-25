@@ -43,6 +43,12 @@ def main():
     
     if args.resume:
         start_epoch, best_val_loss = trainer.load_checkpoint(args.resume)
+        if trainer.cfg.get('train', {}).get('reset_best_loss', False):
+            trainer.logs.info(
+                f"reset_best_loss=True: resetting best_val_loss from "
+                f"{best_val_loss:.6f} to inf"
+            )
+            best_val_loss = float('inf')
         trainer.fit(start_epoch=start_epoch, best_val_loss=best_val_loss)
     else:
         trainer.fit()

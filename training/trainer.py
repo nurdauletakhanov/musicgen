@@ -8,6 +8,7 @@ from torch.amp import autocast, GradScaler
 from tqdm import tqdm
 
 from data.dataloader import build_dataloaders
+from data.dataloader_musdb import build_musdb_dataloaders
 from evaluation.samples import save_test_samples
 from models.autoencoder import Autoencoder
 from training.checkpoint import save_checkpoint, load_checkpoint
@@ -69,33 +70,81 @@ class Trainer:
         self.model_config = build_model_config(cfg)
 
         # Data loaders
-        (
-            self.train_loader,
-            self.val_loader,
-            self.train_dataset,
-            self.val_dataset,
-            self.train_sampler,
-        ) = build_dataloaders(
-            chunks_dir=data_cfg['chunks_dir'],
-            train_split=data_cfg.get('split', 'train'),
-            val_split=data_cfg.get('val_split', 'validation'),
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            device=self.device,
-            latent_mix_weight=self.model_config['latent_mix_weight'],
-            decode_mix_weight=self.model_config['decode_mix_weight'],
-            logger=self.logs,
-            pin_memory=self.pin_memory,
-            persistent_workers=self.persistent_workers,
-            prefetch_factor=self.prefetch_factor,
-        )
-        
+        self.use_musdb_single = data_cfg.get('use_musdb_single', False)
+
+        if not self.use_musdb_single:
+            (
+                self.train_loader,
+                self.val_loader,
+                self.train_dataset,
+                self.val_dataset,
+                self.train_sampler,
+            ) = build_dataloaders(
+                chunks_dir=data_cfg['chunks_dir'],
+                train_split=data_cfg.get('split', 'train'),
+                val_split=data_cfg.get('val_split', 'validation'),
+                batch_size=self.batch_size,
+                num_workers=self.num_workers,
+                device=self.device,
+                latent_mix_weight=self.model_config['latent_mix_weight'],
+                decode_mix_weight=self.model_config['decode_mix_weight'],
+                logger=self.logs,
+                pin_memory=self.pin_memory,
+                persistent_workers=self.persistent_workers,
+                prefetch_factor=self.prefetch_factor,
+            )
+        else:
+            from data.dataloader_musdb import build_musdb_single_stem_dataloaders
+            (
+                self.train_loader,
+                self.val_loader,
+                self.train_dataset,
+                self.val_dataset,
+                self.train_sampler,
+            ) = build_musdb_single_stem_dataloaders(
+                chunks_dir=data_cfg['musdb_chunks_dir'],
+                batch_size=self.batch_size,
+                num_workers=self.num_workers,
+                device=self.device,
+                logger=self.logs,
+                pin_memory=self.pin_memory,
+                persistent_workers=self.persistent_workers,
+                prefetch_factor=self.prefetch_factor,
+            )
+            self.logs.info("Primary data: MUSDB18 single stems")
+
         self.logs.info(
             f"Data loading: num_workers={self.num_workers}, "
             f"prefetch_factor={self.prefetch_factor}, "
             f"pin_memory={self.pin_memory}, "
             f"persistent_workers={self.persistent_workers}"
         )
+
+        # MUSDB18 stem pair loaders (optional)
+        self.use_stem_pairs = data_cfg.get('use_stem_pairs', False)
+        musdb_chunks_dir = data_cfg.get('musdb_chunks_dir', None)
+        self.musdb_train_loader = None
+        self.musdb_val_loader = None
+        self.musdb_train_sampler = None
+
+        if self.use_stem_pairs and musdb_chunks_dir:
+            (
+                self.musdb_train_loader,
+                self.musdb_val_loader,
+                self.musdb_train_dataset,
+                self.musdb_val_dataset,
+                self.musdb_train_sampler,
+            ) = build_musdb_dataloaders(
+                chunks_dir=musdb_chunks_dir,
+                batch_size=self.batch_size,
+                num_workers=self.num_workers,
+                device=self.device,
+                logger=self.logs,
+                pin_memory=self.pin_memory,
+                persistent_workers=self.persistent_workers,
+                prefetch_factor=self.prefetch_factor,
+            )
+            self.logs.info("MUSDB18 stem pair mixing: enabled")
         
         # AMP setup
         self.use_amp = self.device.type == "cuda"
@@ -182,10 +231,15 @@ class Trainer:
             )
         return start_epoch, best_val_loss
 
-    def _run_epoch(self, loader, training: bool = True) -> dict:
+    def _run_epoch(self, loader, training: bool = True, musdb_loader=None) -> dict:
         """
         Run one epoch of training or validation.
-        
+
+        Args:
+            loader: Primary data loader (MAESTRO)
+            training: Whether this is a training epoch
+            musdb_loader: Optional MUSDB18 stem pair loader for mixing loss
+
         Returns dict with:
         - Mean values for all metrics
         - Raw MixRate values for distribution stats (validation only)
@@ -194,9 +248,9 @@ class Trainer:
             self.model.train()
         else:
             self.model.eval()
-        
+
         # Metric collectors
-        metrics = {k: [] for k in [
+        metric_keys = [
             'loss',
             # ReconSingle
             'ReconSingle/Total', 'ReconSingle/WavL1', 'ReconSingle/MRSTFT',
@@ -206,26 +260,55 @@ class Trainer:
             'MixReconReal/Total', 'MixReconReal/WavL1', 'MixReconReal/MRSTFT',
             # Key metrics
             'MixRate', 'MixGap', 'LatentMixError',
+            # Stem mixing metrics
+            'StemMix/Total', 'StemMix/Rate', 'StemMix/Gap',
             # Legacy
             'latent_mix',
-        ]}
-        
+        ]
+        metrics = {k: [] for k in metric_keys}
+
         # Collect raw MixRate values for distribution stats
         mix_rate_values = []
-        
+
         desc = "Train" if training else "Val"
         context = torch.enable_grad() if training else torch.no_grad()
-        
+
+        # Set up musdb iterator if available
+        musdb_iter = iter(musdb_loader) if musdb_loader is not None else None
+
         with context:
             for batch in tqdm(loader, desc=desc, leave=False):
                 x_stft = batch['x_stft'].to(self.device, non_blocking=True)
                 x_wave = batch['x_wave'].to(self.device, non_blocking=True)
-                
+
                 if x_wave.dim() == 2:
                     x_wave = x_wave.unsqueeze(1)
-                
+
                 with autocast("cuda", enabled=self.use_amp):
                     total, components = self.model(x_stft, x_wave)
+
+                    # Stem pair mixing loss from MUSDB18
+                    if musdb_iter is not None and self.model.decode_mix_weight > 0:
+                        try:
+                            musdb_batch = next(musdb_iter)
+                        except StopIteration:
+                            musdb_iter = iter(musdb_loader)
+                            musdb_batch = next(musdb_iter)
+
+                        m_stft1 = musdb_batch['x_stft'].to(self.device, non_blocking=True)
+                        m_wave1 = musdb_batch['x_wave'].to(self.device, non_blocking=True)
+                        m_stft2 = musdb_batch['x_stft2'].to(self.device, non_blocking=True)
+                        m_wave2 = musdb_batch['x_wave2'].to(self.device, non_blocking=True)
+
+                        stem_mix_dict = self.model.compute_stem_mixing_loss(
+                            m_stft1, m_wave1, m_stft2, m_wave2
+                        )
+                        stem_mix_loss = stem_mix_dict['total']
+                        total = total + self.model.decode_mix_weight * stem_mix_loss
+
+                        components['StemMix/Total'] = stem_mix_loss.detach().item()
+                        components['StemMix/Rate'] = stem_mix_dict.get('rate', 0.0)
+                        components['StemMix/Gap'] = stem_mix_dict.get('gap', 0.0)
 
                 if training:
                     self.optimizer.zero_grad()
@@ -240,7 +323,7 @@ class Trainer:
                 for key in metrics.keys():
                     if key != 'loss' and key in components:
                         metrics[key].append(components[key])
-                
+
                 # Collect raw MixRate for distribution stats
                 mix_rate = components.get('MixRate', 0.0)
                 if mix_rate > 0:  # Only collect non-zero rates (mixing enabled)
@@ -305,9 +388,17 @@ class Trainer:
             self.logs.info(f"=== Epoch {epoch+1}/{self.num_epochs} ===")
             
             self.train_sampler.set_epoch(epoch)
-            
-            train_metrics = self._run_epoch(self.train_loader, training=True)
-            val_metrics = self._run_epoch(self.val_loader, training=False)
+            if self.musdb_train_sampler is not None:
+                self.musdb_train_sampler.set_epoch(epoch)
+
+            train_metrics = self._run_epoch(
+                self.train_loader, training=True,
+                musdb_loader=self.musdb_train_loader,
+            )
+            val_metrics = self._run_epoch(
+                self.val_loader, training=False,
+                musdb_loader=self.musdb_val_loader,
+            )
             
             # Update scheduler
             if epoch < scheduler_warmup_end:
