@@ -38,8 +38,6 @@ class Trainer:
         self.num_epochs = train_cfg['num_epochs']
         self.learning_rate = train_cfg['learning_rate']
         self.weight_decay = train_cfg['weight_decay']
-        self.patience = train_cfg.get('patience', 5)
-        self.factor = train_cfg.get('factor', 0.5)
         self.save_interval = train_cfg.get('save_interval', 10)
         self.num_workers = train_cfg.get('num_workers', 4)  
         self.pin_memory = train_cfg.get('pin_memory', None)
@@ -47,6 +45,8 @@ class Trainer:
         self.prefetch_factor = train_cfg.get('prefetch_factor', 2)
         self.reset_scheduler_on_resume = train_cfg.get('reset_scheduler_on_resume', False)
         self.scheduler_warmup_epochs = train_cfg.get('scheduler_warmup_epochs', 0)
+        self.grad_accum_steps = train_cfg.get('gradient_accumulation_steps', 1)
+        self.warmup_epochs = train_cfg.get('warmup_epochs', 0)
         
         # Save path
         name = cfg.get('name', 'default')
@@ -146,10 +146,11 @@ class Trainer:
             )
             self.logs.info("MUSDB18 stem pair mixing: enabled")
         
-        # AMP setup
+        # AMP setup — use bf16 (wider dynamic range, no GradScaler needed)
         self.use_amp = self.device.type == "cuda"
-        self.scaler = GradScaler("cuda", enabled=self.use_amp)
-        self.logs.info(f"Mixed precision (AMP): {'enabled' if self.use_amp else 'disabled'}")
+        self.amp_dtype = torch.bfloat16
+        self.scaler = GradScaler("cuda", enabled=False)  # disabled for bf16
+        self.logs.info(f"Mixed precision (AMP): {'bf16' if self.use_amp else 'disabled'}")
         
         # HuggingFace Hub setup
         hub = setup_hub_integration(
@@ -184,16 +185,29 @@ class Trainer:
             weight_decay=self.weight_decay,
         )
 
-        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, 
-            mode='min',
-            patience=self.patience, 
-            factor=self.factor,
-            threshold=1e-3,
-            threshold_mode='rel',
-            cooldown=1,
-            min_lr=1e-6,
-        )
+        if self.warmup_epochs > 0:
+            warmup = torch.optim.lr_scheduler.LinearLR(
+                self.optimizer,
+                start_factor=1e-3,
+                end_factor=1.0,
+                total_iters=self.warmup_epochs,
+            )
+            cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer,
+                T_max=self.num_epochs - self.warmup_epochs,
+                eta_min=1e-6,
+            )
+            self.scheduler = torch.optim.lr_scheduler.SequentialLR(
+                self.optimizer,
+                schedulers=[warmup, cosine],
+                milestones=[self.warmup_epochs],
+            )
+        else:
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer,
+                T_max=self.num_epochs,
+                eta_min=1e-6,
+            )
 
         # Log parameters
         total = sum(p.numel() for p in self.model.parameters())
@@ -220,10 +234,38 @@ class Trainer:
             scaler=self.scaler,
             device=self.device,
             reset_scheduler=self.reset_scheduler_on_resume,
-            patience=self.patience,
-            factor=self.factor,
             logger=self.logs,
         )
+        # Recreate cosine scheduler with correct T_max for remaining epochs
+        if self.reset_scheduler_on_resume:
+            remaining = self.num_epochs - start_epoch
+            if self.warmup_epochs > 0:
+                warmup = torch.optim.lr_scheduler.LinearLR(
+                    self.optimizer,
+                    start_factor=1e-3,
+                    end_factor=1.0,
+                    total_iters=self.warmup_epochs,
+                )
+                cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+                    self.optimizer,
+                    T_max=remaining - self.warmup_epochs,
+                    eta_min=1e-6,
+                )
+                self.scheduler = torch.optim.lr_scheduler.SequentialLR(
+                    self.optimizer,
+                    schedulers=[warmup, cosine],
+                    milestones=[self.warmup_epochs],
+                )
+            else:
+                self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                    self.optimizer,
+                    T_max=remaining,
+                    eta_min=1e-6,
+                )
+            self.logs.info(
+                f"Cosine scheduler: T_max={remaining - self.warmup_epochs}, "
+                f"warmup={self.warmup_epochs} epochs"
+            )
         if self.scheduler_warmup_epochs > 0:
             self.logs.info(
                 f"Scheduler warmup enabled: LR reduction disabled for "
@@ -260,6 +302,10 @@ class Trainer:
             'MixReconReal/Total', 'MixReconReal/WavL1', 'MixReconReal/MRSTFT',
             # Key metrics
             'MixRate', 'MixGap', 'LatentMixError',
+            # Latent space stats
+            'Latent/mean', 'Latent/std', 'Latent/absmax',
+            # Gradient norm (train only)
+            'grad_norm',
             # Stem mixing metrics
             'StemMix/Total', 'StemMix/Rate', 'StemMix/Gap',
             # Legacy
@@ -277,14 +323,14 @@ class Trainer:
         musdb_iter = iter(musdb_loader) if musdb_loader is not None else None
 
         with context:
-            for batch in tqdm(loader, desc=desc, leave=False):
+            for batch_idx, batch in enumerate(tqdm(loader, desc=desc, leave=False)):
                 x_stft = batch['x_stft'].to(self.device, non_blocking=True)
                 x_wave = batch['x_wave'].to(self.device, non_blocking=True)
 
                 if x_wave.dim() == 2:
                     x_wave = x_wave.unsqueeze(1)
 
-                with autocast("cuda", enabled=self.use_amp):
+                with autocast("cuda", dtype=self.amp_dtype, enabled=self.use_amp):
                     total, components = self.model(x_stft, x_wave)
 
                     # Stem pair mixing loss from MUSDB18
@@ -311,12 +357,14 @@ class Trainer:
                         components['StemMix/Gap'] = stem_mix_dict.get('gap', 0.0)
 
                 if training:
-                    self.optimizer.zero_grad()
-                    self.scaler.scale(total).backward()
-                    self.scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
+                    scaled_loss = total / self.grad_accum_steps
+                    scaled_loss.backward()
+
+                    if (batch_idx + 1) % self.grad_accum_steps == 0:
+                        grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                        metrics['grad_norm'].append(grad_norm.item())
+                        self.optimizer.step()
+                        self.optimizer.zero_grad()
 
                 # Collect metrics
                 metrics['loss'].append(total.item())
@@ -328,6 +376,15 @@ class Trainer:
                 mix_rate = components.get('MixRate', 0.0)
                 if mix_rate > 0:  # Only collect non-zero rates (mixing enabled)
                     mix_rate_values.append(mix_rate)
+
+        # Flush any remaining accumulated gradients at end of epoch
+        if training and self.grad_accum_steps > 1:
+            num_batches = batch_idx + 1
+            if num_batches % self.grad_accum_steps != 0:
+                grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                metrics['grad_norm'].append(grad_norm.item())
+                self.optimizer.step()
+                self.optimizer.zero_grad()
 
         result = {k: np.mean(v) if v else 0.0 for k, v in metrics.items()}
         result['_mix_rate_values'] = mix_rate_values  # Raw values for distribution
@@ -406,8 +463,13 @@ class Trainer:
                     f"Scheduler warmup: skipping LR step (epoch {epoch+1}/{scheduler_warmup_end})"
                 )
             else:
-                self.scheduler.step(val_metrics['loss'])
+                self.scheduler.step()
             
+            # Log peak VRAM usage after first epoch
+            if epoch == start_epoch and self.device.type == "cuda":
+                peak_mb = torch.cuda.max_memory_allocated(self.device) / (1024 ** 2)
+                self.logs.info(f"Peak VRAM usage: {peak_mb:.0f} MB")
+
             self._log_metrics("Train", train_metrics)
             self._log_metrics("Val  ", val_metrics)
             

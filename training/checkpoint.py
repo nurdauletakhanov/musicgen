@@ -112,8 +112,6 @@ def load_checkpoint(
     scaler: torch.cuda.amp.GradScaler,
     device: torch.device,
     reset_scheduler: bool = False,
-    patience: int = 5,
-    factor: float = 0.5,
     logger: Optional[object] = None,
 ) -> tuple:
     """
@@ -127,8 +125,6 @@ def load_checkpoint(
         scaler: AMP scaler to load state into
         device: Device to load checkpoint to
         reset_scheduler: Whether to reset scheduler state
-        patience: Patience for new scheduler if resetting
-        factor: Factor for new scheduler if resetting
         logger: Optional logger for info messages
     
     Returns:
@@ -162,19 +158,6 @@ def load_checkpoint(
     if reset_scheduler:
         if logger:
             logger.info("Resetting scheduler state (loss landscape may have changed)")
-        # Recreate scheduler with fresh state
-        new_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, 
-            mode='min',
-            patience=patience, 
-            factor=factor,
-            threshold=1e-3,
-            threshold_mode='rel',
-            cooldown=1,
-            min_lr=1e-6,
-        )
-        # Copy new scheduler state to existing scheduler
-        scheduler.load_state_dict(new_scheduler.state_dict())
     else:
         scheduler.load_state_dict(ckpt['scheduler_state_dict'])
     

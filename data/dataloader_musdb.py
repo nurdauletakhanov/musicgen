@@ -31,9 +31,11 @@ class MusdbStemPairDataset(Dataset):
         index_path: str,
         split: str,
         dtype: torch.dtype = torch.float32,
+        augment: bool = False,
     ):
         self.chunks_dir = chunks_dir
         self.split = split
+        self.augment = augment
         self.dtype = dtype
 
         if not os.path.exists(index_path):
@@ -143,6 +145,13 @@ class MusdbStemPairDataset(Dataset):
         if x_wave2.dim() == 1:
             x_wave2 = x_wave2.unsqueeze(0)
 
+        # Random gain augmentation (independent per stem)
+        if self.augment:
+            gain1 = 10 ** (torch.empty(1).uniform_(-6, 6) / 20)
+            gain2 = 10 ** (torch.empty(1).uniform_(-6, 6) / 20)
+            x_stft, x_wave = x_stft * gain1, x_wave * gain1
+            x_stft2, x_wave2 = x_stft2 * gain2, x_wave2 * gain2
+
         return {
             "x_stft": x_stft,
             "x_wave": x_wave,
@@ -216,9 +225,11 @@ class MusdbSingleStemDataset(Dataset):
         index_path: str,
         split: str,
         dtype: torch.dtype = torch.float32,
+        augment: bool = False,
     ):
         self.chunks_dir = chunks_dir
         self.split = split
+        self.augment = augment
         self.dtype = dtype
 
         if not os.path.exists(index_path):
@@ -307,6 +318,11 @@ class MusdbSingleStemDataset(Dataset):
         if x_wave.dim() == 1:
             x_wave = x_wave.unsqueeze(0)
 
+        # Random gain augmentation
+        if self.augment:
+            gain = 10 ** (torch.empty(1).uniform_(-6, 6) / 20)
+            x_stft, x_wave = x_stft * gain, x_wave * gain
+
         return {"x_stft": x_stft, "x_wave": x_wave}
 
 
@@ -383,6 +399,7 @@ def build_musdb_single_stem_dataloaders(
         chunks_dir=chunks_dir,
         index_path=index_path,
         split="train",
+        augment=True,
     )
     val_dataset = MusdbSingleStemDataset(
         chunks_dir=chunks_dir,
@@ -455,6 +472,7 @@ def build_musdb_dataloaders(
         chunks_dir=chunks_dir,
         index_path=index_path,
         split="train",
+        augment=True,
     )
     val_dataset = MusdbStemPairDataset(
         chunks_dir=chunks_dir,

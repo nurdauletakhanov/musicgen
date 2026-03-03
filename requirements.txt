@@ -6,4 +6,5 @@ tqdm
 soundfile
 tensorboard
 huggingface_hub
-
+matplotlib
+frechet-audio-distance

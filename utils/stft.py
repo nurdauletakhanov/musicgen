@@ -39,7 +39,7 @@ def stft_ri(
     else:
         raise ValueError(f"waveform must be [L] or [B,L], got {waveform.shape}")
 
-    x = x.float()
+    x = x.float()  # cuFFT requires float32
     window = torch.hann_window(win_length, device=x.device, dtype=x.dtype)
     X = torch.stft(
         x,
@@ -88,7 +88,7 @@ def istft_ri(
     else:
         raise ValueError(f"stft_ri must be [2,F,T] or [B,2,F,T], got {stft_ri_tensor.shape}")
 
-    x = x.float()
+    x = x.float()  # cuFFT requires float32
     real = x[:, 0]
     imag = x[:, 1]
     X = torch.complex(real, imag)  # [B, F, T]

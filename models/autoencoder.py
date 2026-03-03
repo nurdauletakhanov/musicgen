@@ -88,7 +88,7 @@ class Autoencoder(nn.Module):
         """
         if x.dim() == 3:
             x = x.squeeze(1)  # [B, L]
-        x = x.float()  # STFT in fp32 for stability
+        x = x.float()  # cuFFT requires float32
 
         window = torch.hann_window(win, device=x.device, dtype=x.dtype)
         X = torch.stft(
@@ -138,8 +138,8 @@ class Autoencoder(nn.Module):
         """
         if x_wave.dim() == 3:
             x_wave = x_wave.squeeze(1)  # [B, L]
-        x_wave = x_wave.float()  # STFT in fp32 for stability
-        
+        x_wave = x_wave.float()  # cuFFT requires float32
+
         X = torch.stft(
             x_wave,
             n_fft=self.n_fft,
@@ -339,6 +339,10 @@ class Autoencoder(nn.Module):
         components = {
             # Total loss
             "total": total.detach().item(),
+            # Latent space stats
+            "Latent/mean": z.mean().item(),
+            "Latent/std": z.std().item(),
+            "Latent/absmax": z.abs().max().item(),
             # ReconSingle
             "ReconSingle/Total": recon.detach().item(),
             "ReconSingle/WavL1": wav_l1.detach().item(),

@@ -4,10 +4,10 @@
 model:
   # Encoder/Decoder architecture
   num_segments: 25     # Number of time segments (= number of latent tokens)
-  d_model: 256         # Latent dimension
+  d_model: 384         # Latent dimension
   n_heads: 8           # Transformer attention heads
   n_layers: 6          # Transformer layers
-  channels: [512, 512, 256, 128, 64]   # Decoder channel counts for upsampling blocks
+  channels: [768, 512, 384, 256, 128]   # Decoder channel counts for upsampling blocks
   upsampling_factors: [6, 6, 7, 7]     # Upsampling factors for decoder (must match len(channels)-1)
   dropout: 0.0         # Regularization to prevent overfitting
 
@@ -21,7 +21,7 @@ data:
   chunks_dir: ./maestro-chunks-stft
   chunk_seconds: 1.0
   sample_rate: 44100
-  overlap: 0.5
+  overlap: 0.5  # 50% overlap for chunk diversity (doubles training data)
   split: train
   val_split: validation
   # MUSDB18 stem pair training (set musdb_chunks_dir to enable)
@@ -34,16 +34,17 @@ train:
   num_epochs: 40
   learning_rate: 0.0001
   weight_decay: 0.0001
-  patience: 3
-  factor: 0.5
   save_interval: 2
   save_path: ./checkpoints
   num_workers: 4
   prefetch_factor: 2
   pin_memory: true
   persistent_workers: true
+  scheduler: cosine
+  warmup_epochs: 0            # linear warmup epochs
   reset_scheduler_on_resume: true
   scheduler_warmup_epochs: 2
+  gradient_accumulation_steps: 1
 
 huggingface:
   enabled: false

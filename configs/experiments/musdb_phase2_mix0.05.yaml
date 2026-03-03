@@ -1,12 +1,11 @@
-# Phase 2: Mixing equivariance on MUSDB18 stem pairs
-# Resume from Phase 1 checkpoint — adds decode mixing loss to test linearity.
-# Uses individual stems for reconstruction + stem pairs for mixing loss.
+# Phase 2 ablation: decode_mix_weight = 0.05
+# Resume from Phase 1 checkpoint — tests stronger mixing constraint.
 #
 # Run:
-#   python -m training.train --config configs/experiments/musdb_phase2_mixing.yaml \
+#   python -m training.train --config configs/experiments/musdb_phase2_mix0.05.yaml \
 #       --resume checkpoints/musdb-phase1-recon/best_model.pth
 
-name: musdb-phase2-mixing
+name: musdb-phase2-mix0.05
 
 data:
   musdb_chunks_dir: ./musdb-chunks-stft
@@ -27,4 +26,4 @@ model:
   mix_l1_weight: 1.0
   mix_mrstft_weight: 1.0
   latent_mix_weight: 0.0
-  decode_mix_weight: 0.01
+  decode_mix_weight: 0.05

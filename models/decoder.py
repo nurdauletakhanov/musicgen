@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 
 class ResBlock(nn.Module):
     """Residual block with Conv2D and GroupNorm."""
@@ -53,7 +54,10 @@ class UpsampleBlock(nn.Module):
     def forward(self, x):
         x = F.interpolate(x, scale_factor=self.factor, mode='nearest')
         x = self.activation(self.norm(self.conv(x)))
-        x = self.res(x)
+        if self.training:
+            x = checkpoint(self.res, x, use_reentrant=False)
+        else:
+            x = self.res(x)
         return x
 
 
@@ -95,7 +99,10 @@ class DecoderWaveform(nn.Module):
         for block in self.time_upsampling_blocks:
             x = block(x)
         
-        x = self.out_refine(x)
+        if self.training:
+            x = checkpoint(self.out_refine, x, use_reentrant=False)
+        else:
+            x = self.out_refine(x)
         x = self.out_conv(x)
         y = self.out_activation(x)
         
