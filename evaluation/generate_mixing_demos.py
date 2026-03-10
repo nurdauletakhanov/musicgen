@@ -130,6 +130,13 @@ def generate_demo(
             # Ground truth mix (waveform domain)
             x_mix_wave = alpha * x1_wave + beta * x2_wave
 
+            # Truncate to decoder target_length (handles padded preprocessing)
+            tgt = model.decoder.target_length
+            if x_mix_wave.size(-1) > tgt:
+                x1_wave = x1_wave[..., :tgt]
+                x2_wave = x2_wave[..., :tgt]
+                x_mix_wave = x_mix_wave[..., :tgt]
+
             # Oracle: D(E(A + B))
             x_mix_stft = model._compute_stft_from_wave(x_mix_wave)
             z_mix = model.encoder(x_mix_stft)

@@ -47,6 +47,7 @@ class Trainer:
         self.scheduler_warmup_epochs = train_cfg.get('scheduler_warmup_epochs', 0)
         self.grad_accum_steps = train_cfg.get('gradient_accumulation_steps', 1)
         self.warmup_epochs = train_cfg.get('warmup_epochs', 0)
+        self.mix_every_n = train_cfg.get('mix_every_n', 1)  # Run mixing loss every N batches
         
         # Save path
         name = cfg.get('name', 'default')
@@ -113,6 +114,10 @@ class Trainer:
             )
             self.logs.info("Primary data: MUSDB18 single stems")
 
+        effective_bs = self.batch_size * self.grad_accum_steps
+        self.logs.info(
+            f"Batch size: {self.batch_size} x {self.grad_accum_steps} accum = {effective_bs} effective"
+        )
         self.logs.info(
             f"Data loading: num_workers={self.num_workers}, "
             f"prefetch_factor={self.prefetch_factor}, "
@@ -144,7 +149,7 @@ class Trainer:
                 persistent_workers=self.persistent_workers,
                 prefetch_factor=self.prefetch_factor,
             )
-            self.logs.info("MUSDB18 stem pair mixing: enabled")
+            self.logs.info(f"MUSDB18 stem pair mixing: enabled (every {self.mix_every_n} batches)")
         
         # AMP setup — use bf16 (wider dynamic range, no GradScaler needed)
         self.use_amp = self.device.type == "cuda"
@@ -295,7 +300,7 @@ class Trainer:
         metric_keys = [
             'loss',
             # ReconSingle
-            'ReconSingle/Total', 'ReconSingle/WavL1', 'ReconSingle/MRSTFT',
+            'ReconSingle/Total', 'ReconSingle/WavL1', 'ReconSingle/MRSTFT', 'ReconSingle/STFTLoss',
             # MixReconInterp
             'MixReconInterp/Total', 'MixReconInterp/WavL1', 'MixReconInterp/MRSTFT',
             # MixReconReal
@@ -333,8 +338,8 @@ class Trainer:
                 with autocast("cuda", dtype=self.amp_dtype, enabled=self.use_amp):
                     total, components = self.model(x_stft, x_wave)
 
-                    # Stem pair mixing loss from MUSDB18
-                    if musdb_iter is not None and self.model.decode_mix_weight > 0:
+                    # Stem pair mixing loss from MUSDB18 (every N batches)
+                    if musdb_iter is not None and self.model.decode_mix_weight > 0 and batch_idx % self.mix_every_n == 0:
                         try:
                             musdb_batch = next(musdb_iter)
                         except StopIteration:
@@ -417,15 +422,16 @@ class Trainer:
         recon_total = metrics.get('ReconSingle/Total', 0.0)
         recon_l1 = metrics.get('ReconSingle/WavL1', 0.0)
         recon_mrstft = metrics.get('ReconSingle/MRSTFT', 0.0)
+        recon_stft = metrics.get('ReconSingle/STFTLoss', 0.0)
         mix_interp = metrics.get('MixReconInterp/Total', 0.0)
         mix_real = metrics.get('MixReconReal/Total', 0.0)
         mix_rate = metrics.get('MixRate', 0.0)
         mix_gap = metrics.get('MixGap', 0.0)
         latent_err = metrics.get('LatentMixError', 0.0)
-        
+
         self.logs.info(
             f"{prefix} - Loss: {metrics['loss']:.6f} | "
-            f"Recon: {recon_total:.4f} (L1: {recon_l1:.4f}, MR: {recon_mrstft:.4f}) | "
+            f"Recon: {recon_total:.4f} (L1: {recon_l1:.4f}, MR: {recon_mrstft:.4f}, STFT: {recon_stft:.4f}) | "
             f"MixInterp: {mix_interp:.4f}, MixReal: {mix_real:.4f} | "
             f"Rate: {mix_rate:.4f}, Gap: {mix_gap:.4f} | "
             f"LatErr: {latent_err:.6f}"

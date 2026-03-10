@@ -50,7 +50,7 @@ def compute_stft(
         win_length=window.size(0),
         window=window,
         return_complex=True,
-        center=False,
+        center=True,
     )
     return torch.stack([stft.real, stft.imag], dim=0)
 
@@ -124,10 +124,18 @@ def preprocess_maestro(
     
     window = torch.hann_window(win_length)
     
-    # Compute actual n_frames from a dummy chunk (center=False doesn't pad the signal)
-    dummy_chunk = torch.zeros(chunk_samples)
+    # With center=True, n_frames = L // hop + 1.
+    # Pad chunks so n_frames is cleanly divisible by common segment counts.
+    # For 44100 samples: 44100//256+1 = 173 (prime). Pad to 44288 → 174 = 29*6.
+    natural_frames = chunk_samples // hop_length + 1
+    # Round up to next multiple of lcm(2,3,6) = 6 for clean segment division
+    padded_frames = ((natural_frames + 5) // 6) * 6  # 173 → 174
+    padded_samples = (padded_frames - 1) * hop_length  # 173 * 256 = 44288
+
+    # Compute actual n_frames from padded dummy chunk
+    dummy_chunk = torch.zeros(padded_samples)
     dummy_stft = compute_stft(dummy_chunk, window, n_fft, hop_length)
-    n_frames = dummy_stft.shape[-1]  # Actual number of frames from STFT output
+    n_frames = dummy_stft.shape[-1]
     
     csv_path = os.path.join(data_dir, "maestro-v3.0.0.csv")
     
@@ -144,7 +152,7 @@ def preprocess_maestro(
     print(f"Processing {len(rows)} audio files")
     print(f"Chunk: {chunk_seconds}s ({chunk_samples} samples)")
     print(f"Overlap: {overlap * 100:.0f}%")
-    print(f"STFT: n_fft={n_fft}, hop={hop_length}, win={win_length}, center=False")
+    print(f"STFT: n_fft={n_fft}, hop={hop_length}, win={win_length}, center=True, pad={padded_samples}")
     print(f"Output shapes: x_stft=[2, {n_freq_bins}, {n_frames}], x_wave=[{chunk_samples}]")
     print(f"Using RMS normalization + float16")
     print(f"=" * 50)
@@ -219,13 +227,18 @@ def preprocess_maestro(
         while start + chunk_samples <= num_samples:
             chunk_np = data[start:start + chunk_samples]
             chunk_tensor = torch.from_numpy(chunk_np).float()
-            
+
             # RMS normalize before STFT
             chunk_norm, rms = rms_normalize(chunk_tensor)
-            stft_ri = compute_stft(chunk_norm, window, n_fft, hop_length)
-            
+            # Pad to padded_samples for clean STFT frame count (padding only for STFT)
+            if len(chunk_norm) < padded_samples:
+                chunk_padded = torch.nn.functional.pad(chunk_norm, (0, padded_samples - len(chunk_norm)))
+            else:
+                chunk_padded = chunk_norm
+            stft_ri = compute_stft(chunk_padded, window, n_fft, hop_length)
+
             stft_chunks.append(stft_ri)
-            wave_chunks.append(chunk_norm)  # Save RMS-normalized waveform
+            wave_chunks.append(chunk_norm)  # Save unpadded waveform
             rms_values.append(rms)
             
             start += hop_samples

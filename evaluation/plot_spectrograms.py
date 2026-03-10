@@ -127,6 +127,14 @@ def plot_spectrogram_comparison(
         z2 = model.encoder(x2_stft)
 
         x_mix_wave = alpha * x1_wave + (1 - alpha) * x2_wave
+
+        # Truncate to decoder target_length (handles padded preprocessing)
+        tgt = model.decoder.target_length
+        if x1_wave.size(-1) > tgt:
+            x1_wave = x1_wave[..., :tgt]
+            x2_wave = x2_wave[..., :tgt]
+            x_mix_wave = x_mix_wave[..., :tgt]
+
         x_mix_stft = model._compute_stft_from_wave(x_mix_wave)
         z_real = model.encoder(x_mix_stft)
         x_oracle = model.decoder(z_real)

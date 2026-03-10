@@ -72,17 +72,21 @@ def save_test_samples(
             
             x_wave_orig = x_wave[0, 0].cpu().float()
             y_hat_recon = y_hat[0, 0].cpu().float()
-            
+
             # Ensure lengths match chunk_samples
             x_wave_orig = _ensure_length(x_wave_orig, chunk_samples)
             y_hat_recon = _ensure_length(y_hat_recon, chunk_samples)
-            
+
+            # Peak-normalize to avoid clipping (RMS-normalized audio has peaks >> 1.0)
+            x_wave_orig = _peak_normalize(x_wave_orig)
+            y_hat_recon = _peak_normalize(y_hat_recon)
+
             orig_path = os.path.join(samples_dir, f"sample_{i:03d}_original.wav")
             recon_path = os.path.join(samples_dir, f"sample_{i:03d}_reconstructed.wav")
-            
+
             sf.write(orig_path, x_wave_orig.numpy(), sample_rate, subtype="FLOAT")
             sf.write(recon_path, y_hat_recon.numpy(), sample_rate, subtype="FLOAT")
-            
+
             # Log to TensorBoard if enabled
             if tb_logger is not None:
                 tb_logger.log_audio(
@@ -105,6 +109,14 @@ def save_test_samples(
     
     if tb_logger is not None:
         tb_logger.flush()
+
+
+def _peak_normalize(tensor: torch.Tensor, target_peak: float = 0.95) -> torch.Tensor:
+    """Normalize peak amplitude to target_peak to prevent clipping on playback."""
+    peak = tensor.abs().max()
+    if peak > target_peak:
+        tensor = tensor / peak * target_peak
+    return tensor
 
 
 def _ensure_length(tensor: torch.Tensor, target_length: int) -> torch.Tensor:

@@ -144,18 +144,19 @@ class Encoder(nn.Module):
 
     def forward(self, x):
         # x: [B, 2, n_freq_bins, n_frames] - complex STFT (real, imag)
-        B, C, F, T = x.shape
+        B, C, Freq, T = x.shape
         assert C == 2, f"Expected 2 channels (real, imag), got {C}"
-        assert F == self.n_freq_bins, f"Expected {self.n_freq_bins} frequency bins, got {F}"
-        
-        # Crop to make divisible by num_segments (avoids padding leakage)
+        assert Freq == self.n_freq_bins, f"Expected {self.n_freq_bins} frequency bins, got {Freq}"
+
+        # Pad to make divisible by num_segments (preserves all input data)
+        remainder = T % self.num_segments
+        if remainder > 0:
+            x = F.pad(x, (0, self.num_segments - remainder))
+            T = x.shape[-1]
         frames_per_segment = T // self.num_segments
-        usable_frames = frames_per_segment * self.num_segments
-        if T > usable_frames:
-            x = x[..., :usable_frames]
 
         # Reshape into (batch, num_segments, 2, n_freq_bins, frames_per_segment)
-        x = x.view(B, C, F, self.num_segments, frames_per_segment)
+        x = x.view(B, C, Freq, self.num_segments, frames_per_segment)
         x = x.permute(0, 3, 1, 2, 4)  # [B, num_segments, 2, n_freq_bins, frames_per_segment]
 
         tokens = self.segment_encoder(x)

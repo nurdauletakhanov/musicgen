@@ -134,6 +134,12 @@ def evaluate_alpha(
             x1_wave = x1_wave.unsqueeze(1)
             x2_wave = x2_wave.unsqueeze(1)
 
+        # Truncate to decoder target_length (handles padded preprocessing)
+        tgt = model.decoder.target_length
+        if x1_wave.size(-1) > tgt:
+            x1_wave = x1_wave[..., :tgt]
+            x2_wave = x2_wave[..., :tgt]
+
         with autocast("cuda", enabled=use_amp):
             z1 = model.encoder(x1_stft)
             z2 = model.encoder(x2_stft)

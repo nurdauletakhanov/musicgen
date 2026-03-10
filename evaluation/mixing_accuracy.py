@@ -95,6 +95,12 @@ def _evaluate_stem_alpha(
             x1_wave = x1_wave.unsqueeze(1)
             x2_wave = x2_wave.unsqueeze(1)
 
+        # Truncate to decoder target_length (handles padded preprocessing)
+        tgt = model.decoder.target_length
+        if x1_wave.size(-1) > tgt:
+            x1_wave = x1_wave[..., :tgt]
+            x2_wave = x2_wave[..., :tgt]
+
         with autocast("cuda", enabled=use_amp):
             z1 = model.encoder(x1_stft)
             z2 = model.encoder(x2_stft)
@@ -245,6 +251,11 @@ def run_full_stem_summation(
 
                     # Real mixture (sum of waveforms)
                     x_real_mix = sum(waves)
+
+                    # Truncate to decoder target_length
+                    tgt = model.decoder.target_length
+                    if x_real_mix.size(-1) > tgt:
+                        x_real_mix = x_real_mix[..., :tgt]
 
                     # Oracle: encode the real sum, decode
                     x_real_stft = model._compute_stft_from_wave(x_real_mix)

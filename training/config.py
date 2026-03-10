@@ -99,24 +99,15 @@ def build_model_config(cfg: dict) -> dict:
     chunk_samples = int(sample_rate * chunk_seconds)
     target_length = chunk_samples
     
-    # Validate upsampling_factors
     num_segments = model_cfg['num_segments']
-    channels = model_cfg['channels']
-    num_upsample_blocks = len(channels) - 1
-    
-    if 'upsampling_factors' not in model_cfg:
+    channels = model_cfg.get('channels', [])
+    upsampling_factors = model_cfg.get('upsampling_factors', [])
+    if len(channels) > 1 and len(upsampling_factors) != len(channels) - 1:
         raise ValueError(
-            "upsampling_factors must be specified in config. "
-            f"Expected a list of {num_upsample_blocks} factors for {len(channels)} channels."
+            f"upsampling_factors length ({len(upsampling_factors)}) "
+            f"must match len(channels)-1 ({len(channels) - 1})"
         )
-    
-    upsampling_factors = model_cfg['upsampling_factors']
-    if len(upsampling_factors) != num_upsample_blocks:
-        raise ValueError(
-            f"upsampling_factors length ({len(upsampling_factors)}) must match "
-            f"number of upsampling blocks ({num_upsample_blocks})"
-        )
-    
+
     return {
         'd_model': model_cfg['d_model'],
         'n_heads': model_cfg['n_heads'],
@@ -130,6 +121,7 @@ def build_model_config(cfg: dict) -> dict:
         'decode_mix_weight': model_cfg.get('decode_mix_weight', 0.0),
         'mrstft_weight': model_cfg.get('mrstft_weight', 1.0),
         'l1_weight': model_cfg.get('l1_weight', 1.0),
+        'stft_loss_weight': model_cfg.get('stft_loss_weight', 0.0),
         'mix_l1_weight': model_cfg.get('mix_l1_weight', 1.0),
         'mix_mrstft_weight': model_cfg.get('mix_mrstft_weight', 1.0),
         'dropout': model_cfg.get('dropout', 0.1),

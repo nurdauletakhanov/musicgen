@@ -110,8 +110,12 @@ def preprocess_musdb(
     n_freq_bins = n_fft // 2 + 1
     window = torch.hann_window(win_length)
 
-    # Compute actual n_frames
-    dummy_stft = compute_stft(torch.zeros(chunk_samples), window, n_fft, hop_length)
+    # With center=True, pad chunks for clean frame count (divisible by 6)
+    natural_frames = chunk_samples // hop_length + 1
+    padded_frames = ((natural_frames + 5) // 6) * 6
+    padded_samples = (padded_frames - 1) * hop_length
+
+    dummy_stft = compute_stft(torch.zeros(padded_samples), window, n_fft, hop_length)
     n_frames = dummy_stft.shape[-1]
 
     # Create output directories
@@ -132,7 +136,7 @@ def preprocess_musdb(
     print(f"Stems: {[STEM_NAMES[s] for s in stems]}")
     print(f"Chunk: {chunk_seconds}s ({chunk_samples} samples)")
     print(f"Overlap: {overlap * 100:.0f}%")
-    print(f"STFT: n_fft={n_fft}, hop={hop_length}, win={win_length}, center=False")
+    print(f"STFT: n_fft={n_fft}, hop={hop_length}, win={win_length}, center=True, pad={padded_samples}")
     print(f"Output shapes: x_stft=[2, {n_freq_bins}, {n_frames}], x_wave=[{chunk_samples}]")
     print(f"Min RMS threshold: {min_rms}")
     print(f"=" * 50)
@@ -235,10 +239,15 @@ def preprocess_musdb(
 
                     # RMS normalize
                     chunk_norm, rms = rms_normalize(chunk_tensor)
-                    stft_ri = compute_stft(chunk_norm, window, n_fft, hop_length)
+                    # Pad for clean STFT frame count (padding only for STFT)
+                    if len(chunk_norm) < padded_samples:
+                        chunk_padded = torch.nn.functional.pad(chunk_norm, (0, padded_samples - len(chunk_norm)))
+                    else:
+                        chunk_padded = chunk_norm
+                    stft_ri = compute_stft(chunk_padded, window, n_fft, hop_length)
 
                     stft_chunks.append(stft_ri)
-                    wave_chunks.append(chunk_norm)
+                    wave_chunks.append(chunk_norm)  # Save unpadded waveform
                     rms_values.append(rms)
 
                 # Stack and save
