@@ -1,160 +1,185 @@
+"""
+Dataset and DataLoader for preprocessed stem pairs.
+
+Returns aligned stem pairs from the same track/time position for
+mixing equivariance training.
+"""
+
 import os
 import json
-from bisect import bisect_right
-from typing import Optional, Tuple, Iterator, List, Dict
+import random
+from typing import Optional, Tuple, List, Dict, Iterator
 
 import torch
 from torch.utils.data import Dataset, DataLoader, Sampler
 
 
-class STFTChunkDataset(Dataset):
-    """Chunk-level dataset for preprocessed MAESTRO STFT tensors and waveforms."""
+class StemPairDataset(Dataset):
+    """
+    Dataset that returns aligned stem pairs from preprocessed chunks.
+
+    Each __getitem__ returns a dict with:
+        x_stft:  [2, F, T]  - stem A STFT (for reconstruction loss)
+        x_wave:  [1, L]     - stem A waveform
+        x_stft2: [2, F, T]  - stem B STFT (paired for mixing loss)
+        x_wave2: [1, L]     - stem B waveform
+    """
 
     def __init__(
         self,
         chunks_dir: str,
         index_path: str,
         split: str,
-        dtype: torch.dtype = torch.float32,  # Use float32 by default (convert on CPU, not GPU)
-        cache_last_file: bool = True,  # Now default True since we access sequentially
+        dtype: torch.dtype = torch.float32,
+        augment: bool = False,
     ):
-        """
-        Args:
-            chunks_dir: Base directory containing split subfolders with .pt chunk files
-            index_path: Path to index.json produced by preprocessing
-            split: Which split to load (e.g., 'train', 'validation')
-            dtype: Desired dtype for returned chunks
-            cache_last_file: Cache the last loaded file (recommended with ShardedSampler)
-        
-        Returns:
-            Dict with keys 'x_stft' (STFT tensor) and 'x_wave' (waveform tensor)
-        """
         self.chunks_dir = chunks_dir
         self.split = split
+        self.augment = augment
         self.dtype = dtype
-        self.cache_last_file = cache_last_file
 
         if not os.path.exists(index_path):
-            raise FileNotFoundError(f"index.json not found at {index_path}. Run data preprocessing first.")
+            raise FileNotFoundError(
+                f"index.json not found at {index_path}. "
+                "Run preprocessing first."
+            )
 
         with open(index_path, "r") as f:
             index = json.load(f)
 
         if split not in index:
-            raise ValueError(f"Split '{split}' not found in index.json. Available: {list(index.keys())}")
-
-        split_index = index[split]
-        if not isinstance(split_index, dict) or len(split_index) == 0:
-            raise RuntimeError(f"No entries found for split '{split}' in index.json.")
-
-        self.files = []
-        total = 0
-        missing = []
-
-        # Sort for deterministic ordering
-        for filename, count in sorted(split_index.items()):
-            path = os.path.join(chunks_dir, split, filename)
-            if not os.path.exists(path):
-                missing.append(path)
-                continue
-
-            count = int(count)
-            start = total
-            total += count
-            self.files.append({"path": path, "count": count, "start": start, "end": total})
-
-        if missing:
-            raise FileNotFoundError(
-                f"Missing chunk files for split '{split}': {missing[:3]}{'...' if len(missing) > 3 else ''}"
+            raise ValueError(
+                f"Split '{split}' not in index. Available: {list(index.keys())}"
             )
 
-        if total == 0:
-            raise RuntimeError(f"Split '{split}' contains zero chunks.")
+        # Build track list: [(track_key, num_chunks, {stem_name: filepath}), ...]
+        self.tracks: List[Tuple[str, int, Dict[str, str]]] = []
+        total_chunks = 0
 
-        self.total_chunks = total
-        self._ends = [f["end"] for f in self.files]
-        self.file_count = len(self.files)
+        for track_key, track_info in sorted(index[split].items()):
+            num_chunks = track_info["num_chunks"]
+            stems = track_info["stems"]
 
-        # Cache for sequential access
-        self._cache_path = None
-        self._cache_data = None
+            # Verify all stem files exist
+            stem_paths = {}
+            all_exist = True
+            for stem_name, filename in stems.items():
+                path = os.path.join(chunks_dir, split, filename)
+                if not os.path.exists(path):
+                    all_exist = False
+                    break
+                stem_paths[stem_name] = path
+
+            if not all_exist or num_chunks == 0:
+                continue
+
+            self.tracks.append((track_key, num_chunks, stem_paths))
+            total_chunks += num_chunks
+
+        if not self.tracks:
+            raise RuntimeError(f"No valid tracks found for split '{split}'.")
+
+        self.total_chunks = total_chunks
+        self.stem_names: List[str] = list(self.tracks[0][2].keys())
+
+        # Build cumulative index for global -> (track_idx, chunk_idx) mapping
+        self._cumulative = []
+        cum = 0
+        for _, num_chunks, _ in self.tracks:
+            cum += num_chunks
+            self._cumulative.append(cum)
+
+        # File cache: {path: tensor_dict}
+        self._cache: Dict[str, Dict[str, torch.Tensor]] = {}
+        self._cache_keys: List[str] = []
+        self._max_cache = 4  # LRU cache size per worker (kept small for Windows spawn)
 
     def __len__(self):
         return self.total_chunks
 
+    def _global_to_local(self, idx: int) -> Tuple[int, int]:
+        """Convert global index to (track_idx, chunk_idx)."""
+        for ti, cum in enumerate(self._cumulative):
+            if idx < cum:
+                prev = self._cumulative[ti - 1] if ti > 0 else 0
+                return ti, idx - prev
+        raise IndexError(f"Index {idx} out of range for {self.total_chunks} chunks")
+
     def _load_file(self, path: str) -> Dict[str, torch.Tensor]:
-        if self.cache_last_file and path == self._cache_path and self._cache_data is not None:
-            return self._cache_data
+        """Load a .pt file into RAM with LRU cache."""
+        if path in self._cache:
+            return self._cache[path]
 
         data = torch.load(path, map_location="cpu", weights_only=True)
-        
-        # Handle both old format (stft) and new format (x_stft, x_wave)
-        if isinstance(data, dict):
-            # New format with x_stft and x_wave
-            if "x_stft" in data and "x_wave" in data:
-                result = {"x_stft": data["x_stft"], "x_wave": data["x_wave"]}
-            # Old format with just stft - need to reprocess
-            elif "stft" in data:
-                raise RuntimeError(
-                    f"Old format detected in {path}. File contains 'stft' but not 'x_stft' and 'x_wave'. "
-                    f"Please reprocess the data by running: python -m data.preprocess --config config.yaml --force"
-                )
-            else:
-                raise ValueError(
-                    f"Unexpected data format in {path}. Expected dict with 'x_stft' and 'x_wave' keys."
-                )
-        else:
-            raise RuntimeError(
-                f"Old format detected in {path}. File is a tensor, not a dict with 'x_stft' and 'x_wave'. "
-                f"Please reprocess the data by running: python -m data.preprocess --config config.yaml --force"
-            )
+        result = {"x_stft": data["x_stft"], "x_wave": data["x_wave"]}
 
-        if self.cache_last_file:
-            self._cache_path = path
-            self._cache_data = result
+        # LRU eviction
+        if len(self._cache_keys) >= self._max_cache:
+            old_key = self._cache_keys.pop(0)
+            self._cache.pop(old_key, None)
+
+        self._cache[path] = result
+        self._cache_keys.append(path)
         return result
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        if idx < 0 or idx >= self.total_chunks:
-            raise IndexError(f"Index {idx} out of range for dataset length {self.total_chunks}")
+        track_idx, chunk_idx = self._global_to_local(idx)
+        _, _, stem_paths = self.tracks[track_idx]
 
-        file_idx = bisect_right(self._ends, idx)
-        start = 0 if file_idx == 0 else self._ends[file_idx - 1]
-        local_idx = idx - start
+        # Pick two different stems randomly
+        stem_keys = list(stem_paths.keys())
+        stem_a, stem_b = random.sample(stem_keys, 2)
 
-        file_entry = self.files[file_idx]
-        file_data = self._load_file(file_entry["path"])
-        
-        x_stft = file_data["x_stft"][local_idx].to(self.dtype).contiguous()
-        x_wave = file_data["x_wave"][local_idx].to(self.dtype).contiguous()
-        
-        return {"x_stft": x_stft, "x_wave": x_wave}
+        # Load both stems
+        data_a = self._load_file(stem_paths[stem_a])
+        data_b = self._load_file(stem_paths[stem_b])
+
+        x_stft = data_a["x_stft"][chunk_idx].to(self.dtype).clone()
+        x_wave = data_a["x_wave"][chunk_idx].to(self.dtype).clone()
+        x_stft2 = data_b["x_stft"][chunk_idx].to(self.dtype).clone()
+        x_wave2 = data_b["x_wave"][chunk_idx].to(self.dtype).clone()
+
+        # Ensure wave has channel dim [1, L]
+        if x_wave.dim() == 1:
+            x_wave = x_wave.unsqueeze(0)
+        if x_wave2.dim() == 1:
+            x_wave2 = x_wave2.unsqueeze(0)
+
+        # Random gain augmentation (independent per stem)
+        if self.augment:
+            gain1 = 10 ** (torch.empty(1).uniform_(-6, 6) / 20)
+            gain2 = 10 ** (torch.empty(1).uniform_(-6, 6) / 20)
+            x_stft, x_wave = x_stft * gain1, x_wave * gain1
+            x_stft2, x_wave2 = x_stft2 * gain2, x_wave2 * gain2
+
+        return {
+            "x_stft": x_stft,
+            "x_wave": x_wave,
+            "x_stft2": x_stft2,
+            "x_wave2": x_wave2,
+        }
 
 
-class ShardedSampler(Sampler[int]):
+class TrackSampler(Sampler[int]):
     """
-    Sampler that shuffles at file (shard) level, then iterates chunks within each file.
-    
-    This prevents disk thrashing by ensuring sequential access within files.
-    Each file is loaded once per epoch, and chunks within are accessed in order
-    (or shuffled within file if shuffle_within_file=True).
+    Sampler that shuffles at track level, then iterates chunks within each track.
+
+    Keeps all chunks from one track together to minimize file I/O
+    (stems from the same track are loaded together).
     """
 
     def __init__(
         self,
-        dataset: STFTChunkDataset,
-        shuffle_files: bool = True,
-        shuffle_within_file: bool = True,
+        dataset: StemPairDataset,
+        shuffle: bool = True,
         seed: int = 0,
     ):
         self.dataset = dataset
-        self.shuffle_files = shuffle_files
-        self.shuffle_within_file = shuffle_within_file
+        self.shuffle = shuffle
         self.seed = seed
         self.epoch = 0
 
     def set_epoch(self, epoch: int):
-        """Set epoch for deterministic shuffling across epochs."""
         self.epoch = epoch
 
     def __len__(self) -> int:
@@ -164,87 +189,231 @@ class ShardedSampler(Sampler[int]):
         g = torch.Generator()
         g.manual_seed(self.seed + self.epoch)
 
-        # Get file order
-        file_indices = list(range(self.dataset.file_count))
-        if self.shuffle_files:
-            file_indices = torch.randperm(len(file_indices), generator=g).tolist()
+        # Build track order
+        track_indices = list(range(len(self.dataset.tracks)))
+        if self.shuffle:
+            track_indices = torch.randperm(len(track_indices), generator=g).tolist()
 
         indices: List[int] = []
-        for file_idx in file_indices:
-            file_entry = self.dataset.files[file_idx]
-            start = file_entry["start"]
-            count = file_entry["count"]
-            
-            # Chunk indices within this file
-            chunk_indices = list(range(start, start + count))
-            
-            if self.shuffle_within_file:
-                # Shuffle within file
+        for ti in track_indices:
+            prev = self.dataset._cumulative[ti - 1] if ti > 0 else 0
+            num_chunks = self.dataset.tracks[ti][1]
+            chunk_indices = list(range(prev, prev + num_chunks))
+
+            if self.shuffle:
                 perm = torch.randperm(len(chunk_indices), generator=g).tolist()
                 chunk_indices = [chunk_indices[i] for i in perm]
-            
+
             indices.extend(chunk_indices)
 
         return iter(indices)
 
 
-def build_dataloaders(
+class SingleStemDataset(Dataset):
+    """
+    Dataset that returns individual stems from preprocessed chunks.
+
+    Each __getitem__ returns a dict with:
+        x_stft:  [2, F, T]  - stem STFT
+        x_wave:  [1, L]     - stem waveform
+    """
+
+    def __init__(
+        self,
+        chunks_dir: str,
+        index_path: str,
+        split: str,
+        dtype: torch.dtype = torch.float32,
+        augment: bool = False,
+    ):
+        self.chunks_dir = chunks_dir
+        self.split = split
+        self.augment = augment
+        self.dtype = dtype
+
+        if not os.path.exists(index_path):
+            raise FileNotFoundError(
+                f"index.json not found at {index_path}. "
+                "Run preprocessing first."
+            )
+
+        with open(index_path, "r") as f:
+            index = json.load(f)
+
+        if split not in index:
+            raise ValueError(
+                f"Split '{split}' not in index. Available: {list(index.keys())}"
+            )
+
+        # Build file list: [(stem_file_path, num_chunks), ...]
+        # Each stem file becomes a separate "file" entry for sampling
+        self.files: List[Dict] = []
+        total_chunks = 0
+
+        for track_key, track_info in sorted(index[split].items()):
+            num_chunks = track_info["num_chunks"]
+            stems = track_info["stems"]
+
+            for stem_name, filename in stems.items():
+                path = os.path.join(chunks_dir, split, filename)
+                if not os.path.exists(path) or num_chunks == 0:
+                    continue
+
+                self.files.append({
+                    "path": path,
+                    "count": num_chunks,
+                    "start": total_chunks,
+                    "end": total_chunks + num_chunks,
+                    "track_key": track_key,
+                    "stem_name": stem_name,
+                })
+                total_chunks += num_chunks
+
+        if not self.files:
+            raise RuntimeError(f"No valid stem files found for split '{split}'.")
+
+        self.total_chunks = total_chunks
+
+        # File cache: {path: tensor_dict}
+        self._cache: Dict[str, Dict[str, torch.Tensor]] = {}
+        self._cache_keys: List[str] = []
+        self._max_cache = 4  # LRU cache size per worker (kept small for Windows spawn)
+
+    def __len__(self):
+        return self.total_chunks
+
+    def _global_to_local(self, idx: int) -> Tuple[int, int]:
+        """Convert global index to (file_idx, chunk_idx_within_file)."""
+        for fi, f in enumerate(self.files):
+            if idx < f["end"]:
+                return fi, idx - f["start"]
+        raise IndexError(f"Index {idx} out of range for {self.total_chunks} chunks")
+
+    def _load_file(self, path: str) -> Dict[str, torch.Tensor]:
+        """Load a .pt file into RAM with LRU cache."""
+        if path in self._cache:
+            return self._cache[path]
+
+        data = torch.load(path, map_location="cpu", weights_only=True)
+        result = {"x_stft": data["x_stft"], "x_wave": data["x_wave"]}
+
+        if len(self._cache_keys) >= self._max_cache:
+            old_key = self._cache_keys.pop(0)
+            self._cache.pop(old_key, None)
+
+        self._cache[path] = result
+        self._cache_keys.append(path)
+        return result
+
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        file_idx, chunk_idx = self._global_to_local(idx)
+        file_info = self.files[file_idx]
+
+        data = self._load_file(file_info["path"])
+
+        # .clone() materializes from mmap and detaches from the mapped file
+        x_stft = data["x_stft"][chunk_idx].to(self.dtype).clone()
+        x_wave = data["x_wave"][chunk_idx].to(self.dtype).clone()
+
+        if x_wave.dim() == 1:
+            x_wave = x_wave.unsqueeze(0)
+
+        # Random gain augmentation
+        if self.augment:
+            gain = 10 ** (torch.empty(1).uniform_(-6, 6) / 20)
+            x_stft, x_wave = x_stft * gain, x_wave * gain
+
+        return {"x_stft": x_stft, "x_wave": x_wave}
+
+
+class SingleStemSampler(Sampler[int]):
+    """
+    Sampler that shuffles at file level, then iterates chunks within each file.
+
+    Keeps all chunks from one stem file together to minimize file I/O.
+    """
+
+    def __init__(
+        self,
+        dataset: SingleStemDataset,
+        shuffle: bool = True,
+        seed: int = 0,
+    ):
+        self.dataset = dataset
+        self.shuffle = shuffle
+        self.seed = seed
+        self.epoch = 0
+
+    def set_epoch(self, epoch: int):
+        self.epoch = epoch
+
+    def __len__(self) -> int:
+        return self.dataset.total_chunks
+
+    def __iter__(self) -> Iterator[int]:
+        g = torch.Generator()
+        g.manual_seed(self.seed + self.epoch)
+
+        file_indices = list(range(len(self.dataset.files)))
+        if self.shuffle:
+            file_indices = torch.randperm(len(file_indices), generator=g).tolist()
+
+        indices: List[int] = []
+        for fi in file_indices:
+            f = self.dataset.files[fi]
+            chunk_indices = list(range(f["start"], f["end"]))
+
+            if self.shuffle:
+                perm = torch.randperm(len(chunk_indices), generator=g).tolist()
+                chunk_indices = [chunk_indices[i] for i in perm]
+
+            indices.extend(chunk_indices)
+
+        return iter(indices)
+
+
+def build_single_stem_dataloaders(
     chunks_dir: str,
-    train_split: str,
-    val_split: str,
     batch_size: int,
     num_workers: int,
     device: torch.device,
-    latent_mix_weight: float,
-    decode_mix_weight: float = 0.0,
     logger: Optional[object] = None,
     pin_memory: Optional[bool] = None,
     persistent_workers: Optional[bool] = None,
     prefetch_factor: Optional[int] = None,
-) -> Tuple[DataLoader, DataLoader, STFTChunkDataset, STFTChunkDataset, ShardedSampler]:
+) -> Tuple[DataLoader, DataLoader, SingleStemDataset, SingleStemDataset, SingleStemSampler]:
     """
-    Create train/val datasets and dataloaders with sharded sampling.
-    
+    Create train/val dataloaders for individual stems (no pairing).
+
     Returns:
         train_loader, val_loader, train_dataset, val_dataset, train_sampler
-        (train_sampler returned so you can call set_epoch() each epoch)
     """
     index_path = os.path.join(chunks_dir, "index.json")
-    # Both mixing losses require even batch size
-    drop_last = latent_mix_weight > 0.0 or decode_mix_weight > 0.0
-    
+
     if pin_memory is None:
         pin_memory = device.type == "cuda"
     if persistent_workers is None:
         persistent_workers = pin_memory and num_workers > 0
 
-    # Cache is beneficial with sharded sampler (sequential file access)
-    train_dataset = STFTChunkDataset(
+    train_dataset = SingleStemDataset(
         chunks_dir=chunks_dir,
         index_path=index_path,
-        split=train_split,
-        cache_last_file=True,
+        split="train",
+        augment=True,
     )
-    val_dataset = STFTChunkDataset(
+    val_dataset = SingleStemDataset(
         chunks_dir=chunks_dir,
         index_path=index_path,
-        split=val_split,
-        cache_last_file=True,
+        split="test",
     )
 
-    # Sharded sampler for train (shuffles files, then chunks within files)
-    train_sampler = ShardedSampler(
-        train_dataset,
-        shuffle_files=True,
-        shuffle_within_file=True,
-    )
+    train_sampler = SingleStemSampler(train_dataset, shuffle=True)
 
-    # Build loader kwargs
     loader_kwargs = {
         "batch_size": batch_size,
         "num_workers": num_workers,
         "pin_memory": pin_memory,
-        "drop_last": drop_last,
+        "drop_last": True,
     }
     if num_workers > 0:
         loader_kwargs["persistent_workers"] = persistent_workers
@@ -253,27 +422,97 @@ def build_dataloaders(
 
     train_loader = DataLoader(
         train_dataset,
-        sampler=train_sampler,  # Use sharded sampler instead of shuffle=True
+        sampler=train_sampler,
         **loader_kwargs,
     )
 
-    # Validation: no shuffle, sequential access
-    # Also need to drop last batch if mixing losses require even batch size
-    val_loader_kwargs = loader_kwargs.copy()
-    val_loader_kwargs["drop_last"] = drop_last  # Use same drop_last as train when mixing is enabled
     val_loader = DataLoader(
         val_dataset,
         shuffle=False,
-        **val_loader_kwargs,
+        **loader_kwargs,
     )
 
     if logger:
         logger.info(
-            f"Train split '{train_split}': {len(train_dataset):,} chunks across {train_dataset.file_count} files"
+            f"Single-stem train: {len(train_dataset):,} chunks from "
+            f"{len(train_dataset.files)} stem files"
         )
         logger.info(
-            f"Val split '{val_split}': {len(val_dataset):,} chunks across {val_dataset.file_count} files"
+            f"Single-stem val: {len(val_dataset):,} chunks from "
+            f"{len(val_dataset.files)} stem files"
         )
-        logger.info(f"Using ShardedSampler for sequential file access (reduces disk thrashing)")
+
+    return train_loader, val_loader, train_dataset, val_dataset, train_sampler
+
+
+def build_stem_pair_dataloaders(
+    chunks_dir: str,
+    batch_size: int,
+    num_workers: int,
+    device: torch.device,
+    logger: Optional[object] = None,
+    pin_memory: Optional[bool] = None,
+    persistent_workers: Optional[bool] = None,
+    prefetch_factor: Optional[int] = None,
+) -> Tuple[DataLoader, DataLoader, StemPairDataset, StemPairDataset, TrackSampler]:
+    """
+    Create train/val dataloaders for stem pairs.
+
+    Returns:
+        train_loader, val_loader, train_dataset, val_dataset, train_sampler
+    """
+    index_path = os.path.join(chunks_dir, "index.json")
+
+    if pin_memory is None:
+        pin_memory = device.type == "cuda"
+    if persistent_workers is None:
+        persistent_workers = pin_memory and num_workers > 0
+
+    train_dataset = StemPairDataset(
+        chunks_dir=chunks_dir,
+        index_path=index_path,
+        split="train",
+        augment=True,
+    )
+    val_dataset = StemPairDataset(
+        chunks_dir=chunks_dir,
+        index_path=index_path,
+        split="test",
+    )
+
+    train_sampler = TrackSampler(train_dataset, shuffle=True)
+
+    loader_kwargs = {
+        "batch_size": batch_size,
+        "num_workers": num_workers,
+        "pin_memory": pin_memory,
+        "drop_last": True,
+    }
+    if num_workers > 0:
+        loader_kwargs["persistent_workers"] = persistent_workers
+        if prefetch_factor is not None:
+            loader_kwargs["prefetch_factor"] = prefetch_factor
+
+    train_loader = DataLoader(
+        train_dataset,
+        sampler=train_sampler,
+        **loader_kwargs,
+    )
+
+    val_loader = DataLoader(
+        val_dataset,
+        shuffle=False,
+        **loader_kwargs,
+    )
+
+    if logger:
+        logger.info(
+            f"Stem-pair train: {len(train_dataset):,} chunks from "
+            f"{len(train_dataset.tracks)} tracks"
+        )
+        logger.info(
+            f"Stem-pair val: {len(val_dataset):,} chunks from "
+            f"{len(val_dataset.tracks)} tracks"
+        )
 
     return train_loader, val_loader, train_dataset, val_dataset, train_sampler

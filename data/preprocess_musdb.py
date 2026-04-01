@@ -33,7 +33,7 @@ import numpy as np
 import yaml
 from tqdm import tqdm
 
-from data.preprocess import compute_stft, rms_normalize
+from utils.audio import compute_stft, rms_normalize
 
 
 STEM_NAMES = {
@@ -51,6 +51,15 @@ def make_track_hash(track_path: str) -> str:
     return hashlib.md5(rel.encode("utf-8")).hexdigest()[:8]
 
 
+def _ensure_ffmpeg_on_path():
+    """Add conda env Library/bin to PATH so stempeg can find ffmpeg."""
+    import sys
+    env_dir = os.path.dirname(sys.executable)
+    lib_bin = os.path.join(env_dir, "Library", "bin")
+    if os.path.isdir(lib_bin) and lib_bin not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = lib_bin + os.pathsep + os.environ.get("PATH", "")
+
+
 def load_stems(track_path: str, sample_rate: int = 44100) -> np.ndarray:
     """
     Load all stems from a .stem.mp4 file using stempeg.
@@ -59,6 +68,7 @@ def load_stems(track_path: str, sample_rate: int = 44100) -> np.ndarray:
         stems: np.ndarray [num_stems, num_samples, num_channels]
                Typically [5, N, 2] for stereo stems.
     """
+    _ensure_ffmpeg_on_path()
     import stempeg
 
     stems, sr = stempeg.read_stems(track_path, sample_rate=sample_rate)
@@ -77,6 +87,7 @@ def preprocess_musdb(
     win_length: int = 1024,
     min_rms: float = 1e-4,
     force: bool = False,
+    frames_per_segment: int = 6,
 ):
     """
     Convert MUSDB18 .stem.mp4 files into RMS-normalized STFT chunks.
@@ -110,9 +121,9 @@ def preprocess_musdb(
     n_freq_bins = n_fft // 2 + 1
     window = torch.hann_window(win_length)
 
-    # With center=True, pad chunks for clean frame count (divisible by 6)
+    # With center=True, pad chunks for clean frame count
     natural_frames = chunk_samples // hop_length + 1
-    padded_frames = ((natural_frames + 5) // 6) * 6
+    padded_frames = ((natural_frames + frames_per_segment - 1) // frames_per_segment) * frames_per_segment
     padded_samples = (padded_frames - 1) * hop_length
 
     dummy_stft = compute_stft(torch.zeros(padded_samples), window, n_fft, hop_length)
@@ -307,11 +318,18 @@ if __name__ == "__main__":
     parser.add_argument("--force", action="store_true", help="Regenerate all files")
     args = parser.parse_args()
 
-    with open(args.config, "r") as f:
-        config = yaml.safe_load(f)
+    from training.config import load_config
+    config = load_config(args.config)
 
     stft_cfg = config["stft"]
     data_cfg = config.get("data", {})
+    model_cfg = config.get("model", {})
+
+    # Compute frames_per_segment from upsampling_factors
+    upsampling_factors = model_cfg.get("upsampling_factors", [1, 1, 2, 3])
+    fps = 1
+    for f in upsampling_factors:
+        fps *= f
 
     preprocess_musdb(
         musdb_dir=args.musdb_dir,
@@ -323,4 +341,5 @@ if __name__ == "__main__":
         hop_length=stft_cfg["hop_length"],
         win_length=stft_cfg["win_length"],
         force=args.force,
+        frames_per_segment=fps,
     )

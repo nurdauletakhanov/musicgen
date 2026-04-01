@@ -7,8 +7,6 @@ to/from HuggingFace Hub, as well as manage authentication.
 
 import os
 import re
-import subprocess
-import tempfile
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
@@ -21,7 +19,6 @@ try:
         list_repo_files,
         login,
         whoami,
-        Repository,
     )
     from huggingface_hub.utils import RepositoryNotFoundError, EntryNotFoundError
     HF_AVAILABLE = True

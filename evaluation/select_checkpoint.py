@@ -37,7 +37,8 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
-from evaluation.test_evaluation import load_model, run_test_evaluation
+from evaluation.utils import load_model
+from evaluation.test_evaluation import run_test_evaluation
 
 
 def discover_checkpoints(checkpoint_dir: str) -> List[int]:
@@ -123,7 +124,7 @@ def main():
     parser.add_argument(
         "--chunks-dir",
         type=str,
-        default="./musdb-chunks-stft",
+        default="./musdb-chunks-stft-v2",
         help="Directory containing preprocessed MUSDB chunks",
     )
     parser.add_argument(

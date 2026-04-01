@@ -1,0 +1,43 @@
+name: diffusion-dit-v1
+
+data:
+  sample_rate: 44100
+
+diffusion:
+  # Autoencoder (frozen, for latent extraction + sample decoding)
+  ae_checkpoint: ./checkpoints/comp-24x-v6-phase2-mix0.01/best_model.pth
+  latent_dir: ./latent-cache/musdb-5s
+
+  # DiT architecture
+  seq_len: 96
+  d_model: 96
+  depth: 8
+  n_heads: 6
+  mlp_ratio: 4.0
+  num_classes: 4        # drums, bass, other, vocals
+  dropout: 0.0
+
+  # Noise schedule
+  num_timesteps: 1000
+
+  # Sampling
+  ddim_steps: 50
+
+  # Classifier-free guidance
+  cfg_drop_prob: 0.1    # 10% of training steps use unconditional
+  cfg_scale: 0.0        # 0 = no guidance at inference (set > 0 to enable)
+
+  # Latent normalization
+  normalize_latents: true
+
+train:
+  batch_size: 64
+  num_epochs: 500
+  learning_rate: 0.0003
+  weight_decay: 0.01
+  grad_clip: 1.0
+  warmup_epochs: 10
+  save_interval: 50
+  sample_interval: 50
+  num_workers: 4
+  save_path: ./checkpoints

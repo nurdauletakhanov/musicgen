@@ -29,6 +29,8 @@ def save_checkpoint(
     hf_push_checkpoints: bool = False,
     hf_push_interval: int = 5,
     hf_private: bool = False,
+    discriminator: Optional[torch.nn.Module] = None,
+    disc_optimizer: Optional[torch.optim.Optimizer] = None,
 ):
     """
     Save model checkpoint to disk and optionally upload to HuggingFace Hub.
@@ -62,6 +64,10 @@ def save_checkpoint(
         'val_loss': val_loss,
         'best_val_loss': best_val_loss,
     }
+    if discriminator is not None:
+        ckpt['discriminator_state_dict'] = discriminator.state_dict()
+    if disc_optimizer is not None:
+        ckpt['disc_optimizer_state_dict'] = disc_optimizer.state_dict()
     
     if is_best:
         path = os.path.join(save_path, "best_model.pth")
@@ -113,6 +119,8 @@ def load_checkpoint(
     device: torch.device,
     reset_scheduler: bool = False,
     logger: Optional[object] = None,
+    discriminator: Optional[torch.nn.Module] = None,
+    disc_optimizer: Optional[torch.optim.Optimizer] = None,
 ) -> tuple:
     """
     Load checkpoint to resume training.
@@ -163,7 +171,14 @@ def load_checkpoint(
     
     if 'scaler_state_dict' in ckpt:
         scaler.load_state_dict(ckpt['scaler_state_dict'])
-    
+
+    if discriminator is not None and 'discriminator_state_dict' in ckpt:
+        discriminator.load_state_dict(ckpt['discriminator_state_dict'])
+        if logger:
+            logger.info("Loaded discriminator state from checkpoint")
+    if disc_optimizer is not None and 'disc_optimizer_state_dict' in ckpt:
+        disc_optimizer.load_state_dict(ckpt['disc_optimizer_state_dict'])
+
     start_epoch = ckpt['epoch'] + 1
     best_val_loss = ckpt.get('best_val_loss', float('inf'))
     

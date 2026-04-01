@@ -1,171 +1,183 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from models.decoder import LEAKY_RELU_SLOPE, NUM_GROUPS
+
 
 class ConvBlock2D(nn.Module):
-    """Conv2D block with GroupNorm and activation."""
-    def __init__(self, in_channels, out_channels, kernel_size, stride, padding, num_groups=8):
+    """Conv2D block with GroupNorm and LeakyReLU."""
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding,
+                 num_groups=NUM_GROUPS):
         super().__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, 
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size,
                               stride=stride, padding=padding)
         self.norm = nn.GroupNorm(num_groups, out_channels)
-        
-    def forward(self, x):
-        return F.leaky_relu(self.norm(self.conv(x)), 0.2, inplace=True)
-
-
-class SegmentEncoderCNN(nn.Module):
-    def __init__(self, d_model, n_freq_bins):
-        """
-        Conv2D encoder for complex STFT segments.
-        
-        Treats real/imag as 2 input channels, with (frequency, time) as spatial axes.
-        This respects frequency locality (harmonics are adjacent bins).
-        Uses GroupNorm for training stability.
-        
-        Args:
-            d_model: Output embedding dimension
-            n_freq_bins: Number of frequency bins (n_fft // 2 + 1)
-        """
-        super().__init__()
-        self.n_freq_bins = n_freq_bins
-
-        # Conv2D: channels=2 (real/imag), spatial=(freq, time)
-        # Kernels are (freq_size, time_size) to capture harmonic structure
-        # Downsample frequency aggressively, preserve time resolution
-        self.conv = nn.Sequential(
-            ConvBlock2D(2, 64, kernel_size=(7, 3), stride=(2, 1), padding=(3, 1), num_groups=8),
-            ConvBlock2D(64, 128, kernel_size=(5, 3), stride=(2, 1), padding=(2, 1), num_groups=8),
-            ConvBlock2D(128, 256, kernel_size=(5, 3), stride=(2, 1), padding=(2, 1), num_groups=8),
-            ConvBlock2D(256, 512, kernel_size=(5, 3), stride=(2, 1), padding=(2, 1), num_groups=8),
-            # Global pool over remaining (freq, time) dims
-            nn.AdaptiveAvgPool2d((1, 3)),
-        )
-        
-        self.out_norm = nn.GroupNorm(8, 512)
-        self.proj = nn.Linear(512 * 3, d_model)
 
     def forward(self, x):
-        # x: [B, S, 2, F, T_seg] - S segments, 2 channels (real/imag), F freq bins, T_seg frames
-        B, S, C, F, T = x.shape
-
-        # Merge batch and segments: [B*S, 2, F, T]
-        x = x.reshape(B * S, C, F, T)
-        
-        # Conv2D over (freq, time) spatial dims
-        h = self.conv(x)          # [B*S, 512, 1, 3]
-        h = self.out_norm(h)
-        h = h.flatten(1)          # [B*S, 512 * 3]
-        z = self.proj(h)          # [B*S, d_model]
-        z = z.view(B, S, -1)      # [B, S, d_model]
-        return z
-    
-    def num_parameters(self):
-        return sum(p.numel() for p in self.parameters())
-
-class GlobalEncoderTransformer(nn.Module):
-    def __init__(self, d_model, n_heads, n_layers, num_segments, dropout=0.0):
-        super().__init__()
-        self.d_model = d_model
-        self.num_segments = num_segments
-
-        self.segment_pos_embed = nn.Parameter(torch.randn(1, num_segments, d_model) * 0.02)
-
-        # Store layers individually for gradient checkpointing
-        self.layers = nn.ModuleList([
-            nn.TransformerEncoderLayer(
-                d_model=d_model,
-                nhead=n_heads,
-                dim_feedforward=d_model * 4,
-                activation='gelu',
-                dropout=dropout,
-                batch_first=True,
-                norm_first=True,
-            )
-            for _ in range(n_layers)
-        ])
-        self.use_checkpoint = True  # Enable gradient checkpointing to save memory
-
-    def forward(self, x):
-        from torch.utils.checkpoint import checkpoint
-        
-        B, T, D = x.shape
-        assert T <= self.num_segments, "Number of input segments exceeds num_segments"
-
-        x = x + self.segment_pos_embed[:, :T, :]
-        
-        for layer in self.layers:
-            if self.use_checkpoint and self.training:
-                x = checkpoint(layer, x, use_reentrant=False)
-            else:
-                x = layer(x)
-        
-        return x
-
-    def num_parameters(self):
-        return sum(p.numel() for p in self.parameters())
+        return F.leaky_relu(self.norm(self.conv(x)), LEAKY_RELU_SLOPE, inplace=True)
 
 
 class Encoder(nn.Module):
-    def __init__(self, d_model, n_heads, n_layers, num_segments, n_freq_bins, dropout=0.0):
-        """
-        Full encoder for complex STFT spectrograms.
-        
-        Uses Conv2D with:
-        - channels = 2 (real/imag)
-        - spatial axes = (frequency, time)
-        
-        This respects frequency locality (harmonics are adjacent bins).
-        
-        Args:
-            d_model: Latent dimension
-            n_heads: Transformer attention heads
-            n_layers: Transformer layers
-            num_segments: Number of time segments (= number of output tokens)
-            n_freq_bins: Number of frequency bins (n_fft // 2 + 1)
-            dropout: Dropout rate
-        """
+    """
+    Pure strided 2D CNN encoder for complex STFT spectrograms.
+
+    Treats the STFT [B, 2, F, T] as a 2D image and compresses it to
+    [B, num_segments, d_model] using only learned strided convolutions.
+
+    Stride schedule is fully configurable via freq_strides and time_strides.
+    After the strided conv stack, a learned freq_collapse Conv2D reduces the
+    remaining frequency bins to 1, then an optional transformer mixes tokens.
+
+    Example (v5, 5s @ 44.1kHz, n_fft=1024, hop=256):
+      STFT:   [B, 2, 513, 864]
+      Conv stack with freq_strides=(3,3,3,3,3), time_strides=(1,3,3,1,1):
+        [B,48,171,864] → [B,96,57,288] → [B,96,19,96] → [B,96,7,96] → [B,96,3,96]
+      freq_collapse (3,1): [B, 96, 1, 96]
+      Latent: [B, 96, 96]
+    """
+
+    # Legacy class attributes for backward compat (decoder imports TOTAL_TIME_STRIDE)
+    TIME_STRIDES = (1, 2, 3, 3)
+    TOTAL_TIME_STRIDE = 18
+
+    def __init__(self, d_model, n_heads, n_layers, num_segments,
+                 n_freq_bins=513, dropout=0.0, encoder_channels=None,
+                 freq_strides=None, time_strides=None):
         super().__init__()
+        self.d_model = d_model
         self.num_segments = num_segments
         self.n_freq_bins = n_freq_bins
-        
-        self.segment_encoder = SegmentEncoderCNN(
-            d_model=d_model, 
-            n_freq_bins=n_freq_bins,
+
+        # --- Stride configuration ---
+        if freq_strides is not None:
+            self.freq_strides = list(freq_strides)
+        else:
+            self.freq_strides = [2, 2, 2, 2]  # v4 default
+
+        if time_strides is not None:
+            self.time_strides = list(time_strides)
+        else:
+            self.time_strides = [1, 2, 3, 3]  # v4 default
+
+        n_blocks = len(self.freq_strides)
+        assert len(self.time_strides) == n_blocks, \
+            f"freq_strides ({n_blocks}) and time_strides ({len(self.time_strides)}) must have same length"
+
+        # Compute total time stride and required input T
+        self.total_time_stride = 1
+        for ts in self.time_strides:
+            self.total_time_stride *= ts
+        self._required_T = num_segments * self.total_time_stride
+
+        # Compute freq dim after all strided convs
+        # Each conv with kernel k, stride s, padding p: out = floor((in + 2p - k) / s) + 1
+        # We use the same padding formula as the conv stack below
+        freq = n_freq_bins
+        self._freq_dims = [freq]  # track for debugging
+        for i, fs in enumerate(self.freq_strides):
+            k_f = 7 if i == 0 else 5
+            p_f = 3 if i == 0 else 2
+            freq = (freq + 2 * p_f - k_f) // fs + 1
+            self._freq_dims.append(freq)
+        self._freq_after_strides = freq
+
+        # --- Channel configuration ---
+        if encoder_channels is not None:
+            assert len(encoder_channels) == n_blocks, \
+                f"encoder_channels must have {n_blocks} elements, got {len(encoder_channels)}"
+            ch = list(encoder_channels)
+        else:
+            ch = [32, 64, 128, 192]  # v4 default (only valid for 4 blocks)
+            assert n_blocks == 4, \
+                f"Default encoder_channels only supports 4 blocks, got {n_blocks}. Provide encoder_channels explicitly."
+
+        # --- Conv stack ---
+        blocks = []
+        in_ch = 2
+        for i in range(n_blocks):
+            k_f = 7 if i == 0 else 5
+            p_f = 3 if i == 0 else 2
+            blocks.append(ConvBlock2D(
+                in_ch, ch[i],
+                kernel_size=(k_f, 3),
+                stride=(self.freq_strides[i], self.time_strides[i]),
+                padding=(p_f, 1),
+            ))
+            in_ch = ch[i]
+        self.conv_stack = nn.Sequential(*blocks)
+
+        # Learned frequency collapse: remaining freq bins → 1
+        self.freq_collapse = nn.Conv2d(
+            ch[-1], d_model,
+            kernel_size=(self._freq_after_strides, 1),
+            stride=(1, 1),
+            padding=(0, 0),
         )
-        self.global_encoder = GlobalEncoderTransformer(
-            d_model=d_model, 
-            n_heads=n_heads, 
-            n_layers=n_layers, 
-            num_segments=num_segments,
-            dropout=dropout,
-        )
+        self.freq_norm = nn.GroupNorm(NUM_GROUPS, d_model)
+
+        # Optional transformer for cross-token context
+        self.use_transformer = n_layers > 0
+        if self.use_transformer:
+            self.pos_embed = nn.Parameter(
+                torch.randn(1, num_segments, d_model) * 0.02
+            )
+            self.transformer_layers = nn.ModuleList([
+                nn.TransformerEncoderLayer(
+                    d_model=d_model,
+                    nhead=n_heads,
+                    dim_feedforward=d_model * 4,
+                    activation='gelu',
+                    dropout=dropout,
+                    batch_first=True,
+                    norm_first=True,
+                )
+                for _ in range(n_layers)
+            ])
 
     def forward(self, x):
-        # x: [B, 2, n_freq_bins, n_frames] - complex STFT (real, imag)
-        B, C, Freq, T = x.shape
-        assert C == 2, f"Expected 2 channels (real, imag), got {C}"
-        assert Freq == self.n_freq_bins, f"Expected {self.n_freq_bins} frequency bins, got {Freq}"
+        """
+        Args:
+            x: [B, 2, F, T] complex STFT (real/imag channels), float32
+        Returns:
+            z: [B, num_segments, d_model] latent tokens
+        """
+        from torch.utils.checkpoint import checkpoint
 
-        # Pad to make divisible by num_segments (preserves all input data)
-        remainder = T % self.num_segments
-        if remainder > 0:
-            x = F.pad(x, (0, self.num_segments - remainder))
-            T = x.shape[-1]
-        frames_per_segment = T // self.num_segments
+        B = x.shape[0]
+        x = x.float()  # cuFFT / conv requires float32
 
-        # Reshape into (batch, num_segments, 2, n_freq_bins, frames_per_segment)
-        x = x.view(B, C, Freq, self.num_segments, frames_per_segment)
-        x = x.permute(0, 3, 1, 2, 4)  # [B, num_segments, 2, n_freq_bins, frames_per_segment]
+        # Pad or truncate time dim to exactly required_T (= num_segments × total_time_stride)
+        T = x.shape[-1]
+        if T < self._required_T:
+            x = F.pad(x, (0, self._required_T - T))
+        elif T > self._required_T:
+            x = x[..., :self._required_T]
 
-        tokens = self.segment_encoder(x)
-        z = self.global_encoder(tokens)
+        # Strided 2D conv stack
+        h = self.conv_stack(x)
+        assert h.shape[2] == self._freq_after_strides, \
+            f"Freq dim after conv stack: expected {self._freq_after_strides}, got {h.shape[2]}"
+
+        # Learned freq collapse
+        h = self.freq_collapse(h)                          # [B, d_model, 1, num_segments]
+        h = F.leaky_relu(self.freq_norm(h), LEAKY_RELU_SLOPE, inplace=True)
+
+        # [B, d_model, 1, num_segments] → [B, num_segments, d_model]
+        z = h.squeeze(2).permute(0, 2, 1)
+
+        # Optional transformer
+        if self.use_transformer:
+            z = z + self.pos_embed[:, :z.shape[1], :]
+            for layer in self.transformer_layers:
+                if self.training:
+                    z = checkpoint(layer, z, use_reentrant=False)
+                else:
+                    z = layer(z)
+
         return z
 
     def num_parameters(self):
-        return {
-            "segment_encoder": self.segment_encoder.num_parameters(),
-            "global_encoder": self.global_encoder.num_parameters(),
-            "total": self.segment_encoder.num_parameters() + self.global_encoder.num_parameters(),
-        }
+        return sum(p.numel() for p in self.parameters())

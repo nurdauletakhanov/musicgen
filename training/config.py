@@ -100,34 +100,41 @@ def build_model_config(cfg: dict) -> dict:
     target_length = chunk_samples
     
     num_segments = model_cfg['num_segments']
-    channels = model_cfg.get('channels', [])
-    upsampling_factors = model_cfg.get('upsampling_factors', [])
-    if len(channels) > 1 and len(upsampling_factors) != len(channels) - 1:
-        raise ValueError(
-            f"upsampling_factors length ({len(upsampling_factors)}) "
-            f"must match len(channels)-1 ({len(channels) - 1})"
-        )
 
-    return {
+    config = {
         'd_model': model_cfg['d_model'],
         'n_heads': model_cfg['n_heads'],
         'n_layers': model_cfg['n_layers'],
         'num_segments': num_segments,
         'n_freq_bins': n_freq_bins,
-        'channels': channels,
-        'upsampling_factors': upsampling_factors,
         'target_length': target_length,
         'latent_mix_weight': model_cfg.get('latent_mix_weight', 0.0),
         'decode_mix_weight': model_cfg.get('decode_mix_weight', 0.0),
         'mrstft_weight': model_cfg.get('mrstft_weight', 1.0),
-        'l1_weight': model_cfg.get('l1_weight', 1.0),
-        'stft_loss_weight': model_cfg.get('stft_loss_weight', 0.0),
         'mix_l1_weight': model_cfg.get('mix_l1_weight', 1.0),
         'mix_mrstft_weight': model_cfg.get('mix_mrstft_weight', 1.0),
+        'mel_weight': model_cfg.get('mel_weight', 0.0),
+        'sample_rate': sample_rate,
         'dropout': model_cfg.get('dropout', 0.1),
         'n_fft': n_fft,
         'hop_length': hop_length,
         'win_length': win_length,
+        'num_refine_blocks': model_cfg.get('num_refine_blocks', 1),
+        'channels': model_cfg.get('channels', None),
+        'encoder_channels': model_cfg.get('encoder_channels', None),
+        'freq_strides': model_cfg.get('freq_strides', None),
+        'time_strides': model_cfg.get('time_strides', None),
+        'latent_l2_weight': model_cfg.get('latent_l2_weight', 0.0),
+        'consistency_weight': model_cfg.get('consistency_weight', 0.0),
+        'waveform_l1_weight': model_cfg.get('waveform_l1_weight', 0.0),
     }
+
+    # MR-STFT resolution config (optional override from model config)
+    if 'mrstft_ffts' in model_cfg:
+        config['mrstft_ffts'] = tuple(model_cfg['mrstft_ffts'])
+        config['mrstft_hops'] = tuple(model_cfg['mrstft_hops'])
+        config['mrstft_wins'] = tuple(model_cfg['mrstft_wins'])
+
+    return config
 
 

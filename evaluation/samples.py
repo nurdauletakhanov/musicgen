@@ -68,7 +68,7 @@ def save_test_samples(
             
             with autocast("cuda", enabled=use_amp):
                 z = model.encoder(x_stft)
-                y_hat = model.decoder(z)
+                y_hat, _ = model.decoder(z)
             
             x_wave_orig = x_wave[0, 0].cpu().float()
             y_hat_recon = y_hat[0, 0].cpu().float()

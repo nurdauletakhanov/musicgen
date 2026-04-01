@@ -1,0 +1,59 @@
+# comp-24x-v7: Same architecture as v6, adds STFT consistency loss + waveform L1
+#
+# Key changes from v6:
+#   - consistency_weight: 1.0 (penalizes invalid STFT predictions)
+#   - waveform_l1_weight: 0.1 (direct time-domain supervision)
+#
+# Run:
+#   python -m training.train --config configs/experiments/compression/comp_24x_v7.yaml
+
+name: comp-24x-v7
+
+data:
+  chunk_seconds: 5.0
+  chunks_dir: ./musdb-chunks-stft-5s
+  use_stem_pairs: false
+
+model:
+  num_segments: 96
+  d_model: 96
+  n_heads: 4
+  n_layers: 6
+
+  encoder_channels: [48, 96, 96, 96, 96]
+  freq_strides: [3, 3, 3, 3, 3]
+  time_strides: [1, 3, 3, 1, 1]
+
+  channels: [96, 96, 64, 48, 32, 32]
+  num_refine_blocks: 6
+
+  mrstft_weight: 1.0
+  mel_weight: 1.0
+  mrstft_ffts: [256, 512, 1024, 2048, 4096]
+  mrstft_hops: [64,  128,  256,  512, 1024]
+  mrstft_wins: [256, 512, 1024, 2048, 4096]
+
+  consistency_weight: 1.0
+  waveform_l1_weight: 0.1
+
+  latent_mix_weight: 0.0
+  decode_mix_weight: 0.0
+  latent_l2_weight: 0.001
+
+  use_discriminator: true
+  disc_weight: 0.5
+  feat_match_weight: 1.0
+  disc_start_epoch: 25
+
+train:
+  batch_size: 12
+  num_epochs: 300
+  learning_rate: 0.0003
+  disc_lr: 0.0003
+  weight_decay: 0.01
+  scheduler: cosine
+  warmup_epochs: 5
+  gradient_accumulation_steps: 8
+  save_interval: 10
+  num_test_samples: 5
+  disc_crop_seconds: 1.0

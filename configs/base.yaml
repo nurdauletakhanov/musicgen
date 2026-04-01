@@ -7,10 +7,15 @@ model:
   d_model: 384         # Latent dimension
   n_heads: 8           # Transformer attention heads
   n_layers: 6          # Transformer layers
-  channels: [256, 128, 64, 32, 16]     # Decoder channel counts for 2D upsampling blocks
-  upsampling_factors: [1, 1, 2, 3]     # Temporal upsampling factors (product=6 frames/segment)
+  channels: [256, 192, 128, 64, 32]    # Decoder channel counts for 5 upsample stages
   dropout: 0.0         # Regularization to prevent overfitting
-  stft_loss_weight: 0.0  # Direct STFT prediction loss (0.0 = disabled)
+  num_refine_blocks: 1 # Post-stitch refinement ResBlocks in decoder
+
+  # Discriminator (adversarial training)
+  use_discriminator: false
+  disc_weight: 1.0
+  feat_match_weight: 2.0
+  disc_start_epoch: 5
 
 stft:
   n_fft: 1024          # FFT size -> 513 frequency bins
@@ -18,17 +23,10 @@ stft:
   win_length: 1024     # Window length (same as n_fft)
 
 data:
-  data_dir: ./maestro-v3.0.0
-  chunks_dir: ./maestro-chunks-stft
+  chunks_dir: ./musdb-chunks-stft-v2
   chunk_seconds: 1.0
   sample_rate: 44100
-  overlap: 0.5  # 50% overlap for chunk diversity (doubles training data)
-  split: train
-  val_split: validation
-  # MUSDB18 stem pair training (set musdb_chunks_dir to enable)
-  musdb_chunks_dir: null
   use_stem_pairs: false
-  use_musdb_single: false
 
 train:
   batch_size: 32
@@ -37,8 +35,8 @@ train:
   weight_decay: 0.0001
   save_interval: 2
   save_path: ./checkpoints
-  num_workers: 4
-  prefetch_factor: 2
+  num_workers: 8
+  prefetch_factor: 4
   pin_memory: true
   persistent_workers: true
   scheduler: cosine
