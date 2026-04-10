@@ -1,0 +1,81 @@
+name: comp-22k-v9
+
+# v9: drop the magnitude-soup, drop the GAN. Direct complex STFT supervision.
+#
+# Why v9 exists: v6→v8.1 all stalled at WL1 ≈ 0.15, Phase ≈ 89.5°, SI-SDR ≈ -35.
+# Diagnosis: every recon term we had was phase-blind (MR-STFT, Mel) or
+# chaotic (WL1 on waveform). The encoder had no incentive to encode phase.
+# Adding a discriminator (v8, v8.1) didn't reach the encoder cleanly.
+#
+# v9 fix: replace the entire recon stack with one supervised, dense, phase-aware
+# loss — L1 on the (real, imag) of the predicted STFT vs the target STFT.
+#
+#   total = complex_l1 + 0.5 * consistency + 0.001 * latent_l2
+#
+# Three terms. Each has a clear role:
+#   - complex_l1  : per-bin supervised gradient on real & imag → encoder must
+#                   encode phase. This is the missing signal in v6→v8.1.
+#   - consistency : pulls predicted STFT back onto the STFT manifold (valid signal).
+#   - latent_l2   : keeps latents bounded.
+#
+# Architectural change: decoder head goes from 3 channels (mag, cos, sin with
+# unit-circle normalization) to 2 channels (real, imag) directly. Removes a
+# nonlinear coupling between magnitude and phase that was forcing them to fight.
+#
+# Memory budget: removing MR-STFT (9 STFTs/step), Mel (1 STFT + filterbank),
+# and WL1 frees ~5 GB on the 5090. Used to bump batch size 8 → 16 and to
+# afford a wider decoder (~7M params instead of 5.2M).
+#
+# Discriminator OFF in v9 phase 1. If complex L1 works, we may add disc back
+# later as v9.1 for perceptual polish (DAC's actual role for the disc — fix
+# high-frequency ringing, not teach phase).
+
+data:
+  chunk_seconds: 3.0
+  sample_rate: 22050
+  chunks_dir: ./musdb-chunks-22k-3s
+  use_stem_pairs: false
+
+stft:
+  n_fft: 1024
+  hop_length: 256
+  win_length: 1024
+
+model:
+  num_segments: 29
+  d_model: 96
+  n_heads: 4
+  n_layers: 6
+
+  # Encoder: identical to v7/v8/v8.1 (proven adequate)
+  encoder_channels: [48, 96, 96, 96, 96]
+  freq_strides: [3, 3, 3, 3, 3]
+  time_strides: [1, 3, 3, 1, 1]
+
+  # Decoder: WIDER than v8.1 (was [96,192,160,128,96,64], 5.2M params).
+  # Memory freed by dropping MR/Mel goes to decoder capacity.
+  channels: [128, 256, 224, 192, 128, 96]
+  num_refine_blocks: 12
+
+  # v9 recon recipe — complex L1 (phase) + log-mag L1 (magnitude anchor) + consistency
+  complex_l1_weight: 1.0
+  logmag_l1_weight: 1.0
+  consistency_weight: 0.5
+  latent_l2_weight: 0.001
+
+  # Mixing OFF (phase 2)
+  latent_mix_weight: 0.0
+  decode_mix_weight: 0.0
+
+  # Discriminator OFF
+  use_discriminator: false
+
+train:
+  batch_size: 8
+  num_epochs: 100
+  learning_rate: 0.0003
+  weight_decay: 0.01
+  scheduler: cosine
+  warmup_epochs: 5
+  save_interval: 10
+  num_test_samples: 5

@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Optional
 
 import soundfile as sf
 import torch
-from torch.amp import autocast
 from torch.nn import functional as F
 from torch.utils.data import Dataset
 
@@ -23,13 +22,12 @@ def save_test_samples(
     chunk_samples: int,
     num_samples: int = 5,
     device: torch.device = None,
-    use_amp: bool = True,
     logger: Optional[object] = None,
     tb_logger: Optional["TBLogger"] = None,
 ):
     """
     Save original and reconstructed audio samples for evaluation.
-    
+
     Args:
         model: Autoencoder model with encoder and decoder
         dataset: Dataset to sample from (validation set)
@@ -39,7 +37,6 @@ def save_test_samples(
         chunk_samples: Expected number of samples per chunk
         num_samples: Number of samples to save
         device: Device to run inference on
-        use_amp: Whether to use automatic mixed precision
         logger: Optional logger for info messages
         tb_logger: Optional TensorBoard logger for audio samples
     """
@@ -66,9 +63,8 @@ def save_test_samples(
             if x_wave.dim() == 2:
                 x_wave = x_wave.unsqueeze(1)
             
-            with autocast("cuda", enabled=use_amp):
-                z = model.encoder(x_stft)
-                y_hat, _ = model.decoder(z)
+            z = model.encoder(x_wave)
+            y_hat = model.decoder(z)
             
             x_wave_orig = x_wave[0, 0].cpu().float()
             y_hat_recon = y_hat[0, 0].cpu().float()

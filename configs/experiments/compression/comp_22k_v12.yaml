@@ -1,0 +1,93 @@
+name: comp-22k-v12
+
+# v12: split STFT decoder = per-token phase MLP + cross-token CNN magnitude head.
+#
+# Why v12 exists. v11 (single per-token MLP) reaches +16 dB / 3 deg on
+# overfit-one-batch but stalls at Phase=89.6 deg with muffled "outside the
+# room" audio on full-data training even after adding mel L1. The
+# diag_v11_swap.py test isolated the failure mode:
+#   - target_mag * pred_phase  -> sounds clean (phase is fine)
+#   - pred_mag   * target_phase -> sounds muffled (magnitude has collapsed)
+# The encoder bottleneck (29*96 = 2784 floats / 3s) cannot carry both rapidly
+# rotating phase AND a smooth spectral envelope through a single per-token
+# expansion.
+#
+# v12 fix. Decode phase and magnitude through SEPARATE heads with appropriate
+# inductive biases:
+#   - Phase: per-token MLP (identical to v11), output L2-normalized to a unit
+#     direction. NO cross-token mixing — the v11 win.
+#   - Magnitude: 1D dilated CNN (k=3, dilations 1/2/4) over the latent token
+#     dimension, GroupNorm + GELU, final 1x1 conv to fpt*F log-magnitudes.
+#     Cross-token context is allowed because magnitude is locally smooth in
+#     time, unlike phase. Receptive field over tokens: 1+2+4+8 = 15 of 29.
+#
+# stft_pred = unit_phase_head(z) * mag_head(z).unsqueeze(1)  -> iSTFT
+#
+# Loss recipe unchanged from v11:
+#   total = 1.0 * complex_l1 + 1.0 * wave_l1 + 1.0 * mel_l1 + 0.001 * latent_l2
+# (mel L1 already proven to be the right magnitude loss in v11 — log-mel,
+# bounded, no silence-floor blowup; the issue with v11 was the architecture,
+# not the loss.)
+#
+# Discriminator OFF in phase 1 (same as v11).
+
+data:
+  chunk_seconds: 3.0
+  sample_rate: 22050
+  chunks_dir: ./musdb-chunks-22k-3s
+  use_stem_pairs: false
+
+stft:
+  n_fft: 1024
+  hop_length: 256
+  win_length: 1024
+
+model:
+  num_segments: 29
+  d_model: 96
+  n_heads: 4
+  n_layers: 6
+
+  # Encoder: identical to v7..v11 (proven adequate at 24x compression)
+  encoder_channels: [48, 96, 96, 96, 96]
+  freq_strides: [3, 3, 3, 3, 3]
+  time_strides: [1, 3, 3, 1, 1]   # product = 9 = frames_per_token
+
+  # v12 split decoder
+  phase_hidden_dim: 2048   # per-token phase MLP (same as v11 decoder_hidden_dim)
+  mag_hidden_dim: 128      # cross-token CNN magnitude head channel width
+  mag_n_groups: 8
+
+  # v12 recon recipe (recon-only, no discriminator).
+  # Outcome: mel L1 (any weight) crushes phase learning by pulling the
+  # optimizer into a mel-only basin. With mel removed, phase learns but
+  # complex_l1 collapses magnitude to quiet output (mel L1 rises through
+  # training even though we don't optimize it). v12 never reached usable
+  # reconstruction. v13 adds an FM-only discriminator to provide the
+  # missing magnitude signal.
+  complex_l1_weight: 1.0
+  wave_l1_weight: 1.0
+  mel_l1_weight: 0.0
+  latent_l2_weight: 0.001
+
+  # Mixing OFF
+  latent_mix_weight: 0.0
+  decode_mix_weight: 0.0
+
+  # Discriminator OFF in v12
+  use_discriminator: false
+  disc_start_epoch: 0
+
+train:
+  batch_size: 32
+  num_epochs: 100
+  learning_rate: 0.0003
+  weight_decay: 0.01
+  scheduler: cosine
+  warmup_epochs: 2
+  save_interval: 10
+  num_test_samples: 5
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 6

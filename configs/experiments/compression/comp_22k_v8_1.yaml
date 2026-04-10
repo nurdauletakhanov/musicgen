@@ -1,0 +1,85 @@
+name: comp-22k-v8-1
+
+# v8.1: v8 architecture + bigger/faster/heavier discriminator.
+#
+# Why v8.1 exists: v8 ran 28 epochs with the disc active from epoch 6.
+# Disc loss drifted UP (1.49 → 1.66, toward the hinge stalemate of 2.0),
+# meaning the disc could not separate real from fake. WL1 stayed flat
+# (0.185 → 0.174), Phase locked at ~89.6°. The adversarial gradient was
+# too weak to push the generator out of the magnitude-only basin.
+#
+# Three changes vs v8 — fix all suspects in one shot to save time:
+#   - disc_channels  32 → 64   : ~4× disc params (~283k → ~1.1M).
+#                                v8's disc was 22× smaller than the gen
+#                                (283k vs 6.4M); DAC's MSSTFTD is closer to
+#                                4M. Bumping width is the cheapest capacity fix.
+#   - disc_lr        2e-4 → 5e-4: A small disc against a big gen needs to
+#                                 learn faster. 2e-4 was the DAC default for a
+#                                 disc that's 10× larger than ours.
+#   - disc_weight    1.0  → 2.0 : v8's recon term was ~2.55, adv was ~0.56.
+#                                 Adversarial gradient was drowned. 2.0 brings
+#                                 adv into the same order of magnitude as recon.
+#
+# Everything else (architecture, recon recipe, schedule, batch size, warmup)
+# is identical to v8. One change-set, one verdict.
+#
+# If v8.1 stalls (disc loss stays ≥1.4 through epoch 10): drop warmup to 1
+# in v8.2. If disc loss collapses to ~0 by epoch 8: scale back in v8.1b.
+# See plan for the full escalation ladder.
+
+data:
+  chunk_seconds: 3.0
+  sample_rate: 22050
+  chunks_dir: ./musdb-chunks-22k-3s
+  use_stem_pairs: false
+
+stft:
+  n_fft: 1024
+  hop_length: 256
+  win_length: 1024
+
+model:
+  # Architecture identical to v7/v8
+  num_segments: 29
+  d_model: 96
+  n_heads: 4
+  n_layers: 6
+
+  encoder_channels: [48, 96, 96, 96, 96]
+  freq_strides: [3, 3, 3, 3, 3]
+  time_strides: [1, 3, 3, 1, 1]
+
+  channels: [96, 192, 160, 128, 96, 64]
+  num_refine_blocks: 10
+
+  # Recon recipe identical to v8 (disc carries phase signal)
+  mrstft_weight: 1.0
+  mel_weight: 1.0
+  waveform_l1_weight: 1.0
+  consistency_weight: 1.0
+
+  mrstft_ffts: [256, 512, 1024]
+  mrstft_hops: [64,  128,  256]
+  mrstft_wins: [256, 512, 1024]
+
+  latent_mix_weight: 0.0
+  decode_mix_weight: 0.0
+  latent_l2_weight: 0.001
+
+  # Discriminator: bigger, faster, heavier than v8
+  use_discriminator: true
+  disc_start_epoch: 5
+  disc_channels: 64        # was 32 in v8 (default). ~1.1M params total.
+  disc_lr: 5.0e-4          # was 2e-4 in v8 (hardcoded).
+  disc_weight: 2.0         # was 1.0 in v8.
+  feat_match_weight: 2.0   # unchanged (DAC default)
+
+train:
+  batch_size: 8
+  num_epochs: 150
+  learning_rate: 0.0003
+  weight_decay: 0.01
+  scheduler: cosine
+  warmup_epochs: 5
+  save_interval: 10
+  num_test_samples: 5

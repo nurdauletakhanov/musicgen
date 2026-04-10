@@ -104,8 +104,8 @@ def evaluate_reconstruction(name, checkpoint_path, pairs, device):
 
         with torch.no_grad():
             with torch.amp.autocast("cuda", enabled=True):
-                z = model.encoder(x_stft)
-                x_hat, _ = model.decoder(z)
+                z = model.encoder(x_wave)
+                x_hat = model.decoder(z)
                 l1 = torch.nn.functional.l1_loss(x_hat, x_wave).item()
                 mr = model.mrstft_loss(x_hat, x_wave).item()
                 sisdr_val = si_sdr(x_hat.float(), x_wave.float())
@@ -147,7 +147,30 @@ def main():
         "--skip-recon", action="store_true",
         help="Skip reconstruction evaluation (faster)",
     )
+    parser.add_argument(
+        "--checkpoints", type=str, nargs="+", default=None,
+        help="Subset of SWEEP_CHECKPOINTS keys to evaluate (default: all)",
+    )
+    parser.add_argument(
+        "--ckpt-path", type=str, default=None,
+        help="Evaluate a single ad-hoc checkpoint path under the name given by --ckpt-name",
+    )
+    parser.add_argument(
+        "--ckpt-name", type=str, default="adhoc",
+        help="Display name for --ckpt-path",
+    )
     args = parser.parse_args()
+
+    if args.ckpt_path is not None:
+        selected = {args.ckpt_name: args.ckpt_path}
+    else:
+        selected = {
+            k: v for k, v in SWEEP_CHECKPOINTS.items()
+            if args.checkpoints is None or k in args.checkpoints
+        }
+        if not selected:
+            raise SystemExit(f"No checkpoints matched {args.checkpoints}. "
+                             f"Valid keys: {list(SWEEP_CHECKPOINTS.keys())}")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
@@ -159,7 +182,7 @@ def main():
 
     all_results = {}
 
-    for name, ckpt_path in SWEEP_CHECKPOINTS.items():
+    for name, ckpt_path in selected.items():
         # Alpha sweep (MixRate)
         alpha_results = evaluate_single_model(
             name, ckpt_path, pairs, ALPHAS, device

@@ -1,0 +1,63 @@
+name: comp-22k-v15-nodisc-mix
+
+# Ablation: mixing loss alone, no discriminator, from scratch.
+#
+# Motivation: the comp-24x-v6 lambda_mix sweep (run 2026-04-09) showed
+# monotonic +15 dB SI-SDR improvement with decode_mix_weight applied in
+# phase 2, at matched ~328 epochs:
+#     lambda_mix=0.0:  -22.09 dB / 85.5 deg
+#     lambda_mix=2.0:   -6.97 dB / 74.7 deg
+# but the disc ran in phase 2 as well, so disc vs mixing is confounded.
+#
+# This config isolates the mixing loss: v15 waveform architecture, trained
+# from scratch with decode_mix_weight=1.0 from epoch 0, disc OFF.
+# If SI-SDR still improves substantially over disc+no-mix, the paper claim
+# "decode-mixing loss is the phase supervisor; disc is unnecessary" holds.
+
+data:
+  chunk_seconds: 3.0
+  sample_rate: 22050
+  chunks_dir: ./musdb-chunks-22k-3s
+  use_stem_pairs: false  # random-pair mixing uses the single-stem batch directly
+
+stft:
+  n_fft: 1024
+  hop_length: 256
+  win_length: 1024
+
+model:
+  num_segments: 22
+  d_model: 128
+  n_heads: 4
+  n_layers: 6
+
+  encoder_strides: [6, 8, 8, 8]
+  encoder_channels: [64, 96, 128, 128]
+  encoder_initial_channels: 32
+
+  decoder_strides: [8, 8, 8, 6]
+  decoder_channels: [128, 96, 64, 32]
+
+  mel_l1_weight: 1.0
+  mrstft_mag_l1_weight: 1.0
+  latent_l2_weight: 0.001
+
+  # The whole point: mixing loss from epoch 0, every step, random pairs.
+  decode_mix_weight: 1.0
+
+  # Discriminator OFF.
+  use_discriminator: false
+
+train:
+  batch_size: 64
+  num_epochs: 100
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  scheduler: cosine
+  warmup_epochs: 5
+  save_interval: 10
+  num_test_samples: 5
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 6

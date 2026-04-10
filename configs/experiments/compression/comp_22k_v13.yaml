@@ -1,0 +1,112 @@
+name: comp-22k-v13
+
+# v13: v12 architecture + FM-only discriminator for the magnitude signal.
+#
+# What v12 told us:
+#   - Phase learns IF mel L1 is removed (no mel-attractor pulling the
+#     optimizer into a magnitude-only basin). SI-SDR drops, phase improves.
+#   - But complex_l1 + wave_l1 alone collapse magnitude to a quiet output
+#     (raw mel L1, computed for diagnostics, RISES through training).
+#   - We need a magnitude signal that does NOT have mel's gradient
+#     dominance and does NOT have the silence-floor pathology of log-mag.
+#
+# v13 fix: add a multi-scale STFT discriminator and use ONLY its
+# feature-matching loss as the magnitude signal. The discriminator's first
+# layer is an STFT, so its intermediate features encode magnitude structure
+# across frequency bands. FM = L1 between (gen features, real features) at
+# every layer of every scale. Properties:
+#   - perceptual: rewards "looks like real audio" rather than bin-exact
+#   - no log => no silence-floor blowup
+#   - scale matched to disc features (not 5x larger than CL1)
+#   - captures phase/mag correlations that random or quiet outputs lack
+#
+# Why FM-only and not full adversarial:
+#   v10/hifigan failed because the adversarial term destabilized training
+#   (gen collapsed once disc started). FM is the STABLE component of
+#   adversarial training (DAC, BigVGAN, HiFi-GAN all weight FM 2-10x
+#   higher than the adversarial term for this reason). With disc_weight=0
+#   the generator never sees the minimax pressure, only the perceptual
+#   gradient. The discriminator still trains adversarially against real
+#   vs fake on its own optimizer so its features stay informative.
+#
+#   If FM-only is insufficient (mag still collapses, audio still quiet),
+#   escalate by setting disc_weight: 0.1 in this config — small adversarial
+#   pressure with FM still dominant.
+#
+# Loss recipe:
+#   total = 1.0 * complex_l1
+#         + 1.0 * wave_l1
+#         + 2.0 * feat_match
+#         + 0.001 * latent_l2
+#
+# Architecture: identical to v12 (split STFT decoder = per-token phase MLP
+# + cross-token CNN magnitude head). The architecture is sound — overfit
+# v12 reached +16dB / 12deg. The full-data failure was a loss problem.
+
+data:
+  chunk_seconds: 3.0
+  sample_rate: 22050
+  chunks_dir: ./musdb-chunks-22k-3s
+  use_stem_pairs: false
+
+stft:
+  n_fft: 1024
+  hop_length: 256
+  win_length: 1024
+
+model:
+  num_segments: 29
+  d_model: 96
+  n_heads: 4
+  n_layers: 6
+
+  # Encoder: identical to v7..v12
+  encoder_channels: [48, 96, 96, 96, 96]
+  freq_strides: [3, 3, 3, 3, 3]
+  time_strides: [1, 3, 3, 1, 1]
+
+  # v12 split decoder (unchanged in v13)
+  phase_hidden_dim: 2048
+  mag_hidden_dim: 128
+  mag_n_groups: 8
+
+  # Recon recipe — no mel L1 (it killed phase in v12)
+  complex_l1_weight: 1.0
+  wave_l1_weight: 1.0
+  mel_l1_weight: 0.0
+  latent_l2_weight: 0.001
+
+  # Mixing OFF (phase 2 — only after v13 phase 1 reaches usable reconstruction)
+  latent_mix_weight: 0.0
+  decode_mix_weight: 0.0
+
+  # FM-only discriminator. Disc trains adversarially on its own optimizer;
+  # generator only optimizes feature matching (disc_weight=0). disc_lr is
+  # conservative (1e-5) to keep the disc from outpacing the gen, since the
+  # gen has no adversarial gradient pushing it back.
+  use_discriminator: true
+  disc_start_epoch: 0
+  disc_channels: 64         # bigger than DAC's 32 — FM-only needs richer
+                            # features (no adversarial pressure to keep it
+                            # small). ~1.1M params, ~20x smaller than gen.
+  disc_lr: 0.0001          # match gen scale. The "lower disc_lr to prevent
+                           # outpacing" reasoning doesn't apply with disc_weight=0
+                           # — there's no minimax pressure for disc to dominate.
+                           # Disc must track gen's rapidly-shifting output
+                           # distribution or its features become uninformative.
+  disc_weight: 0.0          # NO adversarial term — FM only
+  feat_match_weight: 2.0    # DAC default; dominant signal for the gen
+
+train:
+  batch_size: 16
+  num_epochs: 100
+  learning_rate: 0.0003
+  weight_decay: 0.01
+  scheduler: cosine
+  warmup_epochs: 2
+  save_interval: 10
+  num_test_samples: 5
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 6

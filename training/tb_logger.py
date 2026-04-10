@@ -265,12 +265,11 @@ class TBLogger:
         num_samples: int,
         epoch: int,
         device: torch.device,
-        use_amp: bool,
         logger=None,
     ):
         """
         Run fixed alpha sweep and log results to TensorBoard.
-        
+
         Args:
             model: Autoencoder model
             dataset: Validation dataset
@@ -278,24 +277,22 @@ class TBLogger:
             num_samples: Number of sample pairs to evaluate
             epoch: Current epoch number
             device: Device for inference
-            use_amp: Whether to use AMP
             logger: Optional text logger for console output
         """
         if not self.enabled:
             return
-        
+
         from evaluation.alpha_sweep import run_alpha_sweep
-        
+
         if logger:
             logger.info(f"Running alpha sweep evaluation at epoch {epoch + 1}...")
-        
+
         results = run_alpha_sweep(
             model=model,
             dataset=dataset,
             alphas=alphas,
             num_samples=num_samples,
             device=device,
-            use_amp=use_amp,
         )
         
         for alpha, metrics in results.items():

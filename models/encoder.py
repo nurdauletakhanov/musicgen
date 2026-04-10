@@ -1,124 +1,134 @@
-import math
+"""Waveform-domain hybrid encoder (v15).
+
+Takes a raw waveform [B, 1, L] and produces latent tokens [B, S, D] via a
+DAC-style 1D-CNN trunk followed by a transformer over the token dimension.
+
+Why waveform-in: STFT-input encoders (v6..v14) never generalized phase
+through the 24x bottleneck. The dilated decoder reached +20 dB / 6 deg on
+overfit with wave_l1, but full-data training stalled at Phase=90 deg
+regardless of loss weighting. The discriminator finds a magnitude shortcut
+and wave_l1 is a barrier (not a smooth gradient) between RMS-normalized
+random-phase candidates. Every working continuous music AE (DAC, EnCodec,
+Stable Audio VAE) encodes waveform-to-latent directly. v15 follows suit.
+
+Architecture (defaults — 22050 Hz, 3s chunks, 22 tokens, d_model=128):
+
+    [B, 1, 67584]                              (padded from 66150)
+      -> Conv1d(1 -> 32, k=7)                  # initial projection
+      -> EncoderBlock(32 -> 64,  stride=6)     # 2x ResidualUnit + stride conv
+      -> EncoderBlock(64 -> 96,  stride=8)
+      -> EncoderBlock(96 -> 128, stride=8)
+      -> EncoderBlock(128 -> 128,stride=8)
+    [B, 128, 22]
+      -> permute to [B, 22, 128]
+      -> +learned pos embed
+      -> 6x TransformerEncoderLayer              (pre-norm, GELU)
+    [B, 22, 128]
+
+Downsample product = 6*8*8*8 = 3072. Input padded to 22*3072 = 67584.
+Latent size: 22 * 128 = 2816 floats for 66150 samples -> 23.5x compression.
+
+ResidualUnit follows DAC: dilated depthwise-style conv (k=7) -> GELU ->
+pointwise conv (k=1) -> residual. Each block has 2 units with dilations
+(1, 3) before a strided downsampling conv with kernel=2*stride, padding=
+stride//2 (gives exact floor(L/stride) output when L is a multiple of
+stride).
+"""
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.decoder import LEAKY_RELU_SLOPE, NUM_GROUPS
 
+class ResidualUnit(nn.Module):
+    """DAC-style residual unit: dilated k=7 conv -> GELU -> k=1 conv + residual."""
 
-class ConvBlock2D(nn.Module):
-    """Conv2D block with GroupNorm and LeakyReLU."""
-    def __init__(self, in_channels, out_channels, kernel_size, stride, padding,
-                 num_groups=NUM_GROUPS):
+    def __init__(self, channels, dilation):
         super().__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size,
-                              stride=stride, padding=padding)
-        self.norm = nn.GroupNorm(num_groups, out_channels)
+        self.conv1 = nn.Conv1d(
+            channels, channels, kernel_size=7,
+            padding=3 * dilation, dilation=dilation,
+        )
+        self.conv2 = nn.Conv1d(channels, channels, kernel_size=1)
 
     def forward(self, x):
-        return F.leaky_relu(self.norm(self.conv(x)), LEAKY_RELU_SLOPE, inplace=True)
+        h = F.gelu(self.conv1(x))
+        h = self.conv2(h)
+        return x + h
+
+
+class EncoderBlock(nn.Module):
+    """Two ResidualUnits then a strided downsampling conv."""
+
+    def __init__(self, in_channels, out_channels, stride):
+        super().__init__()
+        self.units = nn.Sequential(
+            ResidualUnit(in_channels, dilation=1),
+            ResidualUnit(in_channels, dilation=3),
+        )
+        self.downsample = nn.Conv1d(
+            in_channels, out_channels,
+            kernel_size=2 * stride,
+            stride=stride,
+            padding=stride // 2,
+        )
+
+    def forward(self, x):
+        x = self.units(x)
+        x = F.gelu(self.downsample(x))
+        return x
 
 
 class Encoder(nn.Module):
+    """Waveform-in hybrid CNN + transformer encoder.
+
+    Args:
+        d_model: latent token dim (also the last CNN channel count).
+        n_heads: transformer heads.
+        n_layers: transformer layers (0 disables the transformer).
+        num_segments: expected number of output tokens (S).
+        encoder_strides: downsampling strides per CNN block. Product is the
+            total downsample factor; input is padded to num_segments * product.
+        encoder_channels: per-block output channel counts. Length must equal
+            len(encoder_strides); last entry should equal d_model.
+        initial_channels: channels after the stem conv (before first block).
+        dropout: transformer dropout.
     """
-    Pure strided 2D CNN encoder for complex STFT spectrograms.
-
-    Treats the STFT [B, 2, F, T] as a 2D image and compresses it to
-    [B, num_segments, d_model] using only learned strided convolutions.
-
-    Stride schedule is fully configurable via freq_strides and time_strides.
-    After the strided conv stack, a learned freq_collapse Conv2D reduces the
-    remaining frequency bins to 1, then an optional transformer mixes tokens.
-
-    Example (v5, 5s @ 44.1kHz, n_fft=1024, hop=256):
-      STFT:   [B, 2, 513, 864]
-      Conv stack with freq_strides=(3,3,3,3,3), time_strides=(1,3,3,1,1):
-        [B,48,171,864] → [B,96,57,288] → [B,96,19,96] → [B,96,7,96] → [B,96,3,96]
-      freq_collapse (3,1): [B, 96, 1, 96]
-      Latent: [B, 96, 96]
-    """
-
-    # Legacy class attributes for backward compat (decoder imports TOTAL_TIME_STRIDE)
-    TIME_STRIDES = (1, 2, 3, 3)
-    TOTAL_TIME_STRIDE = 18
 
     def __init__(self, d_model, n_heads, n_layers, num_segments,
-                 n_freq_bins=513, dropout=0.0, encoder_channels=None,
-                 freq_strides=None, time_strides=None):
+                 encoder_strides=(6, 8, 8, 8),
+                 encoder_channels=(64, 96, 128, 128),
+                 initial_channels=32,
+                 dropout=0.0):
         super().__init__()
         self.d_model = d_model
         self.num_segments = num_segments
-        self.n_freq_bins = n_freq_bins
 
-        # --- Stride configuration ---
-        if freq_strides is not None:
-            self.freq_strides = list(freq_strides)
-        else:
-            self.freq_strides = [2, 2, 2, 2]  # v4 default
+        assert len(encoder_strides) == len(encoder_channels), \
+            f"encoder_strides ({len(encoder_strides)}) and encoder_channels " \
+            f"({len(encoder_channels)}) must match"
+        assert encoder_channels[-1] == d_model, \
+            f"last encoder_channels ({encoder_channels[-1]}) must equal d_model ({d_model})"
 
-        if time_strides is not None:
-            self.time_strides = list(time_strides)
-        else:
-            self.time_strides = [1, 2, 3, 3]  # v4 default
+        self.encoder_strides = tuple(encoder_strides)
+        self.encoder_channels = tuple(encoder_channels)
+        self.total_stride = 1
+        for s in encoder_strides:
+            self.total_stride *= s
+        self.required_L = num_segments * self.total_stride
 
-        n_blocks = len(self.freq_strides)
-        assert len(self.time_strides) == n_blocks, \
-            f"freq_strides ({n_blocks}) and time_strides ({len(self.time_strides)}) must have same length"
+        # Stem
+        self.stem = nn.Conv1d(1, initial_channels, kernel_size=7, padding=3)
 
-        # Compute total time stride and required input T
-        self.total_time_stride = 1
-        for ts in self.time_strides:
-            self.total_time_stride *= ts
-        self._required_T = num_segments * self.total_time_stride
-
-        # Compute freq dim after all strided convs
-        # Each conv with kernel k, stride s, padding p: out = floor((in + 2p - k) / s) + 1
-        # We use the same padding formula as the conv stack below
-        freq = n_freq_bins
-        self._freq_dims = [freq]  # track for debugging
-        for i, fs in enumerate(self.freq_strides):
-            k_f = 7 if i == 0 else 5
-            p_f = 3 if i == 0 else 2
-            freq = (freq + 2 * p_f - k_f) // fs + 1
-            self._freq_dims.append(freq)
-        self._freq_after_strides = freq
-
-        # --- Channel configuration ---
-        if encoder_channels is not None:
-            assert len(encoder_channels) == n_blocks, \
-                f"encoder_channels must have {n_blocks} elements, got {len(encoder_channels)}"
-            ch = list(encoder_channels)
-        else:
-            ch = [32, 64, 128, 192]  # v4 default (only valid for 4 blocks)
-            assert n_blocks == 4, \
-                f"Default encoder_channels only supports 4 blocks, got {n_blocks}. Provide encoder_channels explicitly."
-
-        # --- Conv stack ---
+        # Strided CNN trunk
         blocks = []
-        in_ch = 2
-        for i in range(n_blocks):
-            k_f = 7 if i == 0 else 5
-            p_f = 3 if i == 0 else 2
-            blocks.append(ConvBlock2D(
-                in_ch, ch[i],
-                kernel_size=(k_f, 3),
-                stride=(self.freq_strides[i], self.time_strides[i]),
-                padding=(p_f, 1),
-            ))
-            in_ch = ch[i]
-        self.conv_stack = nn.Sequential(*blocks)
+        in_ch = initial_channels
+        for out_ch, stride in zip(encoder_channels, encoder_strides):
+            blocks.append(EncoderBlock(in_ch, out_ch, stride))
+            in_ch = out_ch
+        self.blocks = nn.Sequential(*blocks)
 
-        # Learned frequency collapse: remaining freq bins → 1
-        self.freq_collapse = nn.Conv2d(
-            ch[-1], d_model,
-            kernel_size=(self._freq_after_strides, 1),
-            stride=(1, 1),
-            padding=(0, 0),
-        )
-        self.freq_norm = nn.GroupNorm(NUM_GROUPS, d_model)
-
-        # Optional transformer for cross-token context
+        # Transformer over tokens
         self.use_transformer = n_layers > 0
         if self.use_transformer:
             self.pos_embed = nn.Parameter(
@@ -137,40 +147,37 @@ class Encoder(nn.Module):
                 for _ in range(n_layers)
             ])
 
-    def forward(self, x):
+    def forward(self, x_wave):
         """
         Args:
-            x: [B, 2, F, T] complex STFT (real/imag channels), float32
+            x_wave: [B, 1, L] waveform (any L <= required_L; gets right-padded).
         Returns:
             z: [B, num_segments, d_model] latent tokens
         """
         from torch.utils.checkpoint import checkpoint
 
-        B = x.shape[0]
-        x = x.float()  # cuFFT / conv requires float32
+        if x_wave.dim() == 2:
+            x_wave = x_wave.unsqueeze(1)
+        x_wave = x_wave.float()
 
-        # Pad or truncate time dim to exactly required_T (= num_segments × total_time_stride)
-        T = x.shape[-1]
-        if T < self._required_T:
-            x = F.pad(x, (0, self._required_T - T))
-        elif T > self._required_T:
-            x = x[..., :self._required_T]
+        L = x_wave.size(-1)
+        if L < self.required_L:
+            x_wave = F.pad(x_wave, (0, self.required_L - L))
+        elif L > self.required_L:
+            x_wave = x_wave[..., :self.required_L]
 
-        # Strided 2D conv stack
-        h = self.conv_stack(x)
-        assert h.shape[2] == self._freq_after_strides, \
-            f"Freq dim after conv stack: expected {self._freq_after_strides}, got {h.shape[2]}"
+        h = F.gelu(self.stem(x_wave))                       # [B, C0, L]
+        h = self.blocks(h)                                   # [B, d_model, S]
 
-        # Learned freq collapse
-        h = self.freq_collapse(h)                          # [B, d_model, 1, num_segments]
-        h = F.leaky_relu(self.freq_norm(h), LEAKY_RELU_SLOPE, inplace=True)
+        assert h.size(-1) == self.num_segments, \
+            f"Encoder output length {h.size(-1)} != num_segments {self.num_segments}"
+        assert h.size(1) == self.d_model, \
+            f"Encoder output channels {h.size(1)} != d_model {self.d_model}"
 
-        # [B, d_model, 1, num_segments] → [B, num_segments, d_model]
-        z = h.squeeze(2).permute(0, 2, 1)
+        z = h.transpose(1, 2).contiguous()                   # [B, S, D]
 
-        # Optional transformer
         if self.use_transformer:
-            z = z + self.pos_embed[:, :z.shape[1], :]
+            z = z + self.pos_embed[:, :z.size(1), :]
             for layer in self.transformer_layers:
                 if self.training:
                     z = checkpoint(layer, z, use_reentrant=False)

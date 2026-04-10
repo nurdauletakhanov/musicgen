@@ -1,0 +1,31 @@
+# Preprocess config for 22 kHz, 3-second chunks.
+#
+# Usage:
+#   python -m data.preprocess_musdb \
+#     --config configs/preprocess_22k_3s.yaml \
+#     --output-dir ./musdb-chunks-22k-3s
+#
+# The preprocess script reads:
+#   - data.chunk_seconds, data.sample_rate, data.overlap
+#   - stft.n_fft, stft.hop_length, stft.win_length
+#   - model.upsampling_factors (used to compute frames_per_segment for padding)
+#
+# IMPORTANT: upsampling_factors must have product = 9 here so the padded STFT
+# frame count is divisible by the v7 encoder's time-stride product (1*3*3*1*1=9).
+# The base.yaml default of [1,1,2,3] (product 6) would pad 22050*3 samples to
+# 264 frames → 264/9 = 29.33 (non-integer segments → encoder breaks).
+# With [1,1,1,3,3] (product 9): padded to 261 frames → 261/9 = 29 segments ✓.
+
+data:
+  chunks_dir: ./musdb-chunks-22k-3s   # informational only; --output-dir is authoritative
+  chunk_seconds: 3.0
+  sample_rate: 22050
+  overlap: 0.0
+
+stft:
+  n_fft: 1024
+  hop_length: 256
+  win_length: 1024
+
+model:
+  upsampling_factors: [1, 1, 1, 3, 3]   # product 9 (matches v7 encoder time_strides)

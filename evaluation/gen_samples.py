@@ -50,8 +50,8 @@ def main():
                 x_wave = x_wave.unsqueeze(1)
 
             with autocast("cuda", enabled=True):
-                z = model.encoder(x_stft)
-                y_hat, _ = model.decoder(z)
+                z = model.encoder(x_wave)
+                y_hat = model.decoder(z)
 
             orig = x_wave[0, 0, :tgt].cpu().float()
             recon = y_hat[0, 0].cpu().float()

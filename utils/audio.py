@@ -54,18 +54,23 @@ def compute_stft(
     return torch.stack([stft.real, stft.imag], dim=0)
 
 
-def rms_normalize(waveform: torch.Tensor, eps: float = 1e-6) -> Tuple[torch.Tensor, float]:
+def peak_normalize(waveform: torch.Tensor, eps: float = 1e-6) -> Tuple[torch.Tensor, float]:
     """
-    RMS normalize waveform for consistent amplitude across tracks.
+    Peak normalize waveform so that abs(waveform).max() == 1.
+
+    Peak normalization is preferred over RMS normalization for this codebase:
+    it guarantees every sample stays inside [-1, 1] (no clipping when the model
+    tries to reproduce drum transients), it's the natural range for the iSTFT
+    output, and it makes the mixing math (alpha*x1 + beta*x2) easy to bound.
 
     Args:
         waveform: Audio tensor [samples]
-        eps: Small value to prevent division by zero
+        eps: Small value to prevent division by zero on silent chunks
 
     Returns:
-        normalized: Normalized waveform
-        rms: Original RMS value (for potential reconstruction)
+        normalized: Peak-normalized waveform (peak == 1 unless silent)
+        peak: Original peak value (for potential reconstruction)
     """
-    rms = waveform.pow(2).mean().sqrt().clamp_min(eps)
-    return waveform / rms, rms.item()
+    peak = waveform.abs().max().clamp_min(eps)
+    return waveform / peak, peak.item()
 

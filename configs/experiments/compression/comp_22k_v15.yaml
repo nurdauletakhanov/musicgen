@@ -1,0 +1,94 @@
+name: comp-22k-v15
+
+# v15: pivot to a waveform-domain autoencoder.
+#
+# Why: v6..v14 all used STFT-input encoders with a smooth conv/transformer
+# decoder. Phase never generalized through the 24x bottleneck — overfit-one-
+# batch hit +20 dB / 6 deg (with wave_l1), but every full-data run stalled
+# at Phase ~90 deg regardless of loss recipe (direct L1, mel+MRSTFT,
+# complex_l1+wave_l1, FM-only disc, full adversarial). Diagnosis:
+#   - wave_l1 is a *barrier*, not a smooth gradient, between RMS-normalized
+#     random-phase candidates. Weighting it higher just scales a flat signal.
+#   - The MS-STFT discriminator finds a magnitude-statistics shortcut; FM
+#     stops informing phase once the generator matches mag distributions.
+#   - Every continuous music AE that works (DAC, EnCodec, Stable Audio VAE)
+#     decodes waveform-to-waveform. The phase signal lives in sample-level
+#     conv alignment, not in any explicit loss.
+#
+# v15 architecture:
+#   Encoder: DAC-style 1D-CNN trunk (4 strided blocks, 2 ResidualUnits each)
+#   followed by a 6-layer transformer over latent tokens.
+#     [B, 1, 67584] -> stem Conv1d(1->32) -> blocks with strides [6,8,8,8]
+#     and channels [64, 96, 128, 128] -> [B, 128, 22] -> +pos embed
+#     -> 6x TransformerEncoderLayer -> [B, 22, 128]
+#   Total downsample 6*8*8*8 = 3072; input padded 66150 -> 22*3072 = 67584.
+#
+#   Decoder: mirror. Conv1d(128->128) -> blocks with strides [8,8,8,6] and
+#   channels [128, 96, 64, 32] -> Conv1d(32->1) -> tanh -> crop to 66150.
+#
+# Latent: 22 tokens * 128 dims = 2816 floats for 66150 samples -> 23.5x
+# compression (same ballpark as v14's 24x).
+#
+# Loss recipe: DAC defaults unchanged from v14, MINUS wave_l1.
+#   mel_l1 * 15 + mrstft_mag * 1 + adv * 1 + FM * 2 + latent_l2 * 0.001
+# wave_l1 was a phase prior for STFT-input v14; the waveform encoder/
+# decoder carry phase natively, so it's dropped.
+#
+# Discriminator: unchanged (MS-STFT, disc_channels=32, on from step 0).
+
+data:
+  chunk_seconds: 3.0
+  sample_rate: 22050
+  chunks_dir: ./musdb-chunks-22k-3s
+  use_stem_pairs: false
+
+stft:
+  n_fft: 1024
+  hop_length: 256
+  win_length: 1024
+
+model:
+  num_segments: 22
+  d_model: 128
+  n_heads: 4
+  n_layers: 6
+
+  # v15 waveform encoder
+  encoder_strides: [6, 8, 8, 8]      # product = 3072, 22*3072 = 67584
+  encoder_channels: [64, 96, 128, 128]
+  encoder_initial_channels: 32
+
+  # v15 waveform decoder
+  decoder_strides: [8, 8, 8, 6]
+  decoder_channels: [128, 96, 64, 32]
+
+  # DAC-aligned recon recipe
+  mel_l1_weight: 15.0
+  mrstft_mag_l1_weight: 1.0
+  latent_l2_weight: 0.001
+
+  # Mixing OFF (phase 2 — only after v15 phase 1 reaches usable reconstruction)
+  latent_mix_weight: 0.0
+  decode_mix_weight: 0.0
+
+  # Discriminator: MS-STFT, ON from step 0 (DAC default)
+  use_discriminator: true
+  disc_start_epoch: 0
+  disc_channels: 32
+  disc_lr: 0.0001
+  disc_weight: 1.0
+  feat_match_weight: 2.0
+
+train:
+  batch_size: 16
+  num_epochs: 100
+  learning_rate: 0.0001     # DAC generator LR
+  weight_decay: 0.01
+  scheduler: cosine
+  warmup_epochs: 5
+  save_interval: 10
+  num_test_samples: 5
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 6

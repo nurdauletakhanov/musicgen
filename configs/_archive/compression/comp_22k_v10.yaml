@@ -1,0 +1,85 @@
+name: comp-22k-v10
+
+# v10: pivot to a waveform-domain decoder (HiFi-GAN / DAC style).
+#
+# Why v10 exists: v6→v9 all stalled or collapsed because the decoder produced
+# an STFT and we asked the encoder to learn phase from phase-blind magnitude
+# losses (v6/v7/v8) or from a complex L1 that conv decoders can't satisfy on
+# high-frequency oscillating targets (v9). Phase ≈ 90°, SI-SDR ≤ -35 dB across
+# every variant. Diagnosis: STFT-output decoders are the wrong representation.
+#
+# v10 fix: replace the decoder wholesale with a HiFi-GAN-style 1D ConvTranspose +
+# Multi-Receptive-Field (MRF) waveform synthesizer. Encoder is unchanged
+# (still reads complex STFT, produces [B, 29, 96] latent). Loss recipe is the
+# published DAC recipe minus the things we don't need:
+#
+#   total = 15.0 * mel_l1 + 1.0 * mrstft_mag_l1
+#         + 1.0 * generator_loss(D(x_hat))
+#         + 2.0 * feature_matching(D(x), D(x_hat))
+#         + 0.001 * latent_l2
+#
+# - mel L1            : 80-band log-mel, supervises perceptual envelope
+# - MR-STFT mag L1    : 5 windows (2048/1024/512/256/128), spectral envelope
+#                       across multiple time-frequency resolutions
+# - adversarial       : MSSTFTD on [real, imag] STFT — phase-sensitive signal
+# - feature matching  : L1 between real/fake disc features (DAC default 2.0)
+# - latent L2         : keeps latents bounded (continuous, no RVQ)
+#
+# Discriminator ON from step 0. Recon-only stalls (v6→v9 proved this).
+
+data:
+  chunk_seconds: 3.0
+  sample_rate: 22050
+  chunks_dir: ./musdb-chunks-22k-3s
+  use_stem_pairs: false
+
+stft:
+  n_fft: 1024
+  hop_length: 256
+  win_length: 1024
+
+model:
+  num_segments: 29
+  d_model: 96
+  n_heads: 4
+  n_layers: 6
+
+  # Encoder: identical to v7/v8/v9 (proven adequate at 24× compression)
+  encoder_channels: [48, 96, 96, 96, 96]
+  freq_strides: [3, 3, 3, 3, 3]
+  time_strides: [1, 3, 3, 1, 1]
+
+  # Waveform decoder (HiFi-GAN V1 / DAC style)
+  # Total upsample = 4*4*4*4*3*3 = 2304
+  # 29 latent tokens × 2304 = 66816 samples → cropped to 66150 (= 3s @ 22050 Hz)
+  upsample_rates:        [4, 4, 4, 4, 3, 3]
+  upsample_channels:     [384, 256, 192, 128, 96, 64, 32]
+  resblock_kernel_sizes: [3, 7, 11]
+  resblock_dilations:    [[1, 3, 5], [1, 3, 5], [1, 3, 5]]
+
+  # v10 recon recipe (DAC defaults)
+  mel_l1_weight: 15.0
+  mrstft_mag_l1_weight: 1.0
+  latent_l2_weight: 0.001
+
+  # Mixing OFF (phase 2 — only after v10 phase 1 reaches usable reconstruction)
+  latent_mix_weight: 0.0
+  decode_mix_weight: 0.0
+
+  # Discriminator ON from step 0
+  use_discriminator: true
+  disc_start_epoch: 0
+  disc_weight: 1.0
+  feat_match_weight: 2.0
+  disc_channels: 32
+  disc_lr: 0.0001
+
+train:
+  batch_size: 8
+  num_epochs: 100
+  learning_rate: 0.0001        # DAC uses 1e-4 for the generator
+  weight_decay: 0.01
+  scheduler: cosine
+  warmup_epochs: 5
+  save_interval: 10
+  num_test_samples: 5

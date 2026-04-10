@@ -1,0 +1,110 @@
+name: comp-22k-v14
+
+# v14: clean DAC-aligned STFT autoencoder. Single dilated 1D-CNN decoder over
+# the latent token dimension; loss recipe is mel L1 + MR-STFT mag L1 (direct
+# magnitude signals) + adversarial + feature matching (phase).
+#
+# What previous versions told us:
+#   - v11/v12 split-head decoders overfit to +16 dB on a fixed batch but stalled
+#     at Phase=89.6 deg on full data: complex_l1 + mel_l1 are in a gradient war
+#     (mel ~5x larger pulls the optimizer into a magnitude-only basin and kills
+#     phase). Removing mel fixes phase but exposes complex_l1's magnitude
+#     pathology (rewards "right direction, smaller scale" -> quiet output).
+#   - v13's FM-only-disc fix put the discriminator on magnitude, which is the
+#     wrong factoring. Direct losses should handle the *easy* signal (magnitude:
+#     local, smooth, well-behaved) and the discriminator should handle the
+#     *hard* signal (phase realism: non-local, structured, what GANs are good
+#     at).
+#
+# v14 follows DAC's published recipe verbatim:
+#   - Direct: log-mel L1 (15.0) + MR-STFT mag L1 (1.0) for magnitude.
+#   - Adversarial + FM (1.0 + 2.0) via the existing MS-STFT discriminator for
+#     phase realism.
+#   - No complex_l1, no wave_l1: removed for the recurring failure modes above.
+#
+# Architecture (decoder, single dilated CNN — see models/decoder.py):
+#   [B, S=29, D=96] -> Conv1d(96->256, k=1)
+#                  -> 4x ResDilatedBlock(k=3, dil=1/2/4/8) + GroupNorm + GELU
+#                  -> Conv1d(256->fpt*2*F, k=1) zero-init
+#                  -> reshape -> iSTFT
+#   ~3.2M decoder params (vs v12's 19.85M); receptive field 31 tokens (full
+#   chunk in both directions). Output zero-init -> model starts producing
+#   silence; mel + MR-STFT pull it to the right scale within ~hundreds of
+#   steps with no careful bias init.
+#
+# Discriminator schedule: ON from epoch 5 (5-epoch warm-up so the generator
+# climbs out of the zero-init basin first under the direct losses alone).
+
+data:
+  chunk_seconds: 3.0
+  sample_rate: 22050
+  chunks_dir: ./musdb-chunks-22k-3s
+  use_stem_pairs: false
+
+stft:
+  n_fft: 1024
+  hop_length: 256
+  win_length: 1024
+
+model:
+  num_segments: 29
+  d_model: 96
+  n_heads: 4
+  n_layers: 6
+
+  # Encoder: identical to v7..v13 (proven adequate at 24x compression)
+  encoder_channels: [48, 96, 96, 96, 96]
+  freq_strides: [3, 3, 3, 3, 3]
+  time_strides: [1, 3, 3, 1, 1]   # product = 9 = frames_per_token
+
+  # Dilated CNN decoder
+  decoder_hidden_dim: 256
+  decoder_dilations: [1, 2, 4, 8]
+
+  # v14 recon recipe (DAC defaults + wave_l1 phase prior)
+  mel_l1_weight: 15.0
+  mrstft_mag_l1_weight: 1.0
+  wave_l1_weight: 5.0       # phase prior. Pure DAC drops this and lets the
+                            # disc handle phase, but our v14 runs showed the
+                            # disc finds a magnitude-statistics shortcut and
+                            # never moves phase off 90 deg. wave_l1 is the
+                            # phase signal we know works for this
+                            # encoder+decoder pair (overfit hits +20dB / 6 deg).
+                            # Bumped 1.0 -> 5.0: at 1.0 the WL1 gradient was
+                            # ~0.5% of the loss budget (drowned by mel*15);
+                            # at 5.0 it sits comparable to FM*2.
+  latent_l2_weight: 0.001
+
+  # Legacy losses OFF
+  complex_l1_weight: 0.0
+
+  # Mixing OFF (phase 2 — only after v14 phase 1 reaches usable reconstruction)
+  latent_mix_weight: 0.0
+  decode_mix_weight: 0.0
+
+  # Discriminator: MS-STFT, ON from step 0. The 5-epoch warmup in v14's first
+  # run let the gen settle deep into a magnitude-only basin (mel_l1*15 has no
+  # competition), and the later disc gradient couldn't dislodge it. DAC also
+  # starts adversarial from step 0 for this exact reason.
+  use_discriminator: true
+  disc_start_epoch: 0
+  disc_channels: 32         # DAC default. v13 bumped to 64 for FM-only mode;
+                            # v14 has full adversarial + FM so 32 is enough,
+                            # and 64 was activation-bound at ~25 GB extra VRAM.
+  disc_lr: 0.0001
+  disc_weight: 1.0          # standard adversarial weight
+  feat_match_weight: 2.0    # DAC default
+
+train:
+  batch_size: 16
+  num_epochs: 100
+  learning_rate: 0.0001     # DAC generator LR
+  weight_decay: 0.01
+  scheduler: cosine
+  warmup_epochs: 5
+  save_interval: 10
+  num_test_samples: 5
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 6

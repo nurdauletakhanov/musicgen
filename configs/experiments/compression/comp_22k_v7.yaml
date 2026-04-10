@@ -1,0 +1,83 @@
+name: comp-22k-v7
+
+# v7: phase 1 recon-only training for the cleaned-up v6 recipe.
+#
+# Changes vs comp-24x-v6 (see runs.md for the diagnostic trail):
+#   - Data: 22 kHz, 3 s chunks (was 44.1 kHz, 5 s) — ~6x less memory, same compression
+#   - Decoder: wider channels [96,192,160,128,96,64] + 10 refine blocks (was [96,96,64,48,32,32] + 6)
+#     → 2.5M → 6.4M params. Overfit sweep proved capacity was the bottleneck:
+#     baseline decoder plateaued at 0 dB SI-SDR, wider decoder reached +7.9 dB and still climbing.
+#   - Recipe: waveform_l1_weight=10, consistency_weight=1.0 (was 0, 0).
+#     v6 had only magnitude losses → phase head got no time-domain gradient → stuck at -6 dB.
+#   - MR-STFT trimmed to 3 scales (dropped 2048, 4096) to save memory for the wider decoder.
+#   - Mixing losses OFF (latent_mix, decode_mix = 0) — phase 1 isolates recon.
+#     Phase 2 will turn them on and re-run the λ_mix sweep.
+#   - Discriminator OFF for phase 1 — reduce number of moving parts while we validate the recipe.
+#     Phase 2 or 3 may add it back.
+#
+# Architecture: 5 encoder blocks, freq strides [3,3,3,3,3], time strides [1,3,3,1,1]
+#   → 513 freq bins → 513/243 ≈ 3 freq, 261 time frames → 261/9 = 29 segments
+#   → latent [29, 96] = 2784 floats per chunk
+#   → waveform 66150 samples, compression 66150/2784 ≈ 23.8x ≈ 24x
+
+data:
+  chunk_seconds: 3.0
+  sample_rate: 22050
+  chunks_dir: ./musdb-chunks-22k-3s
+  use_stem_pairs: false
+
+stft:
+  n_fft: 1024
+  hop_length: 256
+  win_length: 1024
+
+model:
+  num_segments: 29
+  d_model: 96
+  n_heads: 4
+  n_layers: 6
+
+  # Encoder: identical to v6 (5 blocks, stride-3 freq, channels flat at 96 after block 1)
+  encoder_channels: [48, 96, 96, 96, 96]
+  freq_strides: [3, 3, 3, 3, 3]
+  time_strides: [1, 3, 3, 1, 1]
+
+  # Decoder: wider (6.4M total params, up from 2.5M in v6). 6 stages = 5 encoder blocks + final full-res.
+  channels: [96, 192, 160, 128, 96, 64]
+  num_refine_blocks: 10
+
+  # Recon recipe — path A: bumped WL1 weight 10 → 30 to force phase fitting.
+  # Previous run (wl1=10) plateaued at WL1=0.16, Phase=89.4°, SI-SDR=-39.84
+  # for 4 epochs with Cons collapsed to 0.087 — model picked the magnitude-only
+  # minimum. WL1 contribution was only ~36% of total loss; magnitude losses
+  # dominated and the phase head got no effective gradient signal. At wl1=30,
+  # WL1 contributes ~63% of total loss so phase has to fit.
+  mrstft_weight: 1.0
+  mel_weight: 1.0
+  waveform_l1_weight: 30.0   # was 10. Phase head needs dominant time-domain gradient.
+  consistency_weight: 1.0    # STFT(iSTFT(x))=x for the predicted STFT
+
+  # MR-STFT trimmed to 3 scales (v6 used 5 up to FFT=4096 — huge memory cost in backward)
+  mrstft_ffts: [256, 512, 1024]
+  mrstft_hops: [64,  128,  256]
+  mrstft_wins: [256, 512, 1024]
+
+  # Phase 1: mixing OFF, discriminator OFF.
+  latent_mix_weight: 0.0
+  decode_mix_weight: 0.0
+  latent_l2_weight: 0.001
+
+  use_discriminator: false
+
+train:
+  # Stability over scale: match the working overfit recipe exactly.
+  # fp32 (AMP and grad accumulation removed from trainer entirely).
+  # Overfit converged to +7.9 dB on 8 chunks with batch 8, fp32, no accum.
+  batch_size: 12
+  num_epochs: 150
+  learning_rate: 0.0003
+  weight_decay: 0.01
+  scheduler: cosine
+  warmup_epochs: 5
+  save_interval: 10
+  num_test_samples: 5

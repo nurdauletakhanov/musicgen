@@ -1,0 +1,71 @@
+name: comp-22k-v15-mix-recon
+
+# v15 + decode-mix + mix-recon.
+#
+# Hypothesis (2026-04-10): the decode-mix-only run (comp-22k-v15-nodisc-mix)
+# got stuck because the decoder has never been trained to reconstruct mixes.
+# Single-stem recon teaches it to produce stems; decode-mix asks it to
+# produce mixes at alpha-interpolated latents, but with no target for what
+# "a mix" should even sound like spectrally, the decoder collapses to
+# silence at interp latents (DecodeMix/L1 stuck at ~0.15, Phase stuck at
+# 90deg, DecodeMix loss frozen through 34 epochs).
+#
+# Fix: add a recon loss (mel + MRSTFT) on the encode+decode round-trip of
+# the real mix. Mixes become in-distribution training targets alongside
+# single stems. Decode-mix then has a phase-coherent spectral baseline to
+# build on.
+#
+# This is a 2x2 ablation cell: {mix-recon on, decode-mix on}.
+#
+# Compute cost vs decode-mix-only baseline: +1 encoder pass + 1 decoder
+# pass + 1 mel + 1 MRSTFT per step on half-batch. ~30% step slowdown,
+# ~3-5 GB extra VRAM. May need to drop batch size if 64 was tight.
+
+data:
+  chunk_seconds: 3.0
+  sample_rate: 22050
+  chunks_dir: ./musdb-chunks-22k-3s
+  use_stem_pairs: false  # random-pair mixing uses the single-stem batch directly
+
+stft:
+  n_fft: 1024
+  hop_length: 256
+  win_length: 1024
+
+model:
+  num_segments: 22
+  d_model: 128
+  n_heads: 4
+  n_layers: 6
+
+  encoder_strides: [6, 8, 8, 8]
+  encoder_channels: [64, 96, 128, 128]
+  encoder_initial_channels: 32
+
+  decoder_strides: [8, 8, 8, 6]
+  decoder_channels: [128, 96, 64, 32]
+
+  mel_l1_weight: 1.0
+  mrstft_mag_l1_weight: 1.0
+  latent_l2_weight: 0.001
+
+  # Both mixing paths on from epoch 0.
+  decode_mix_weight: 1.0
+  mix_recon_weight: 1.0
+
+  # Discriminator OFF.
+  use_discriminator: false
+
+train:
+  batch_size: 48                # dropped from 64 to leave headroom for the extra encoder+decoder pass
+  num_epochs: 300
+  learning_rate: 0.0003         # linear scaling from v15 default (1e-4 @ B=16 -> 3e-4 @ B=48)
+  weight_decay: 0.01
+  scheduler: cosine
+  warmup_epochs: 5
+  save_interval: 10
+  num_test_samples: 5
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 6

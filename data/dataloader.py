@@ -277,7 +277,7 @@ class SingleStemDataset(Dataset):
         # File cache: {path: tensor_dict}
         self._cache: Dict[str, Dict[str, torch.Tensor]] = {}
         self._cache_keys: List[str] = []
-        self._max_cache = 4  # LRU cache size per worker (kept small for Windows spawn)
+        self._max_cache = 16  # LRU cache size per worker (kept small for Windows spawn)
 
     def __len__(self):
         return self.total_chunks

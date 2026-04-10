@@ -22,7 +22,6 @@ def run_alpha_sweep(
     alphas: List[float],
     num_samples: int = 100,
     device: torch.device = None,
-    use_amp: bool = True,
 ) -> Dict[float, Dict[str, float]]:
     """
     Run fixed alpha sweep evaluation.
@@ -36,7 +35,6 @@ def run_alpha_sweep(
         alphas: List of fixed alpha values (e.g., [0.1, 0.3, 0.5, 0.7, 0.9])
         num_samples: Number of sample pairs to evaluate
         device: Device for inference
-        use_amp: Whether to use automatic mixed precision
 
     Returns:
         Dict mapping alpha -> metrics dict with:
@@ -76,8 +74,7 @@ def run_alpha_sweep(
     with torch.no_grad():
         for alpha in alphas:
             results[alpha] = evaluate_alpha_on_pairs(
-                model=model, pairs=pairs, alpha=alpha,
-                device=device, use_amp=use_amp,
+                model=model, pairs=pairs, alpha=alpha, device=device,
             )
 
     return results

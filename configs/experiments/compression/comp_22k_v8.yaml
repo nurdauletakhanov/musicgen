@@ -1,0 +1,88 @@
+name: comp-22k-v8
+
+# v8: v7 architecture + DAC-style MSSTFTD discriminator on phase 1.
+#
+# Why v8 exists: v7 plateaued at SI-SDR -39 dB across two runs (wl1=10 and
+# wl1=30). Tripling WL1 weight changed WL1 itself by 0.003 in 3 epochs and
+# Phase by 0.1°. That's mechanistically conclusive — magnitude losses (Mel,
+# MR-STFT) are phase-blind, so the encoder has no incentive to encode phase
+# into the latent. No amount of WL1 reweighting can fix this; we need a
+# phase-sensitive supervision signal flowing back through the encoder.
+#
+# Discriminator config (DAC defaults):
+#   - MSSTFTD over complex STFT [real, imag] at 3 FFT sizes (2048, 1024, 512)
+#   - 5 conv layers per scale, stride (2,1) — preserves time, downsamples freq
+#   - weight_norm, leaky_relu(0.1), single channel multiplier (32)
+#   - 283k discriminator params (was ~5M with the old MPD-bundled version)
+#   - Hinge loss (disc + gen), L1 feature matching across all scales/layers
+#
+# Schedule:
+#   - Epochs 0-4: recon-only (same as v7). Lets the generator settle into a
+#     reasonable magnitude solution before the disc joins. Starting disc at
+#     epoch 0 collapses the GAN: disc wins instantly against pure noise, the
+#     gradient saturates, and the generator gets no useful signal afterward.
+#     Starting too late (epoch 20+) lets the generator harden into the
+#     magnitude-only basin and the disc can't dig it out. Epoch 5 is the
+#     DAC/EnCodec sweet spot.
+#   - Epoch 5+: disc + feature matching active. recon losses unchanged.
+#
+# WL1 dropped 30 → 1: with the disc providing phase signal we don't need WL1
+# to dominate the loss anymore. v6's λ_mix sweep used wl1=0 successfully —
+# wl1=1 here is conservative, mainly to keep amplitude under control while
+# the disc handles phase/transients. If amplitude drifts, raise to 5.
+
+data:
+  chunk_seconds: 3.0
+  sample_rate: 22050
+  chunks_dir: ./musdb-chunks-22k-3s
+  use_stem_pairs: false
+
+stft:
+  n_fft: 1024
+  hop_length: 256
+  win_length: 1024
+
+model:
+  # Architecture identical to v7
+  num_segments: 29
+  d_model: 96
+  n_heads: 4
+  n_layers: 6
+
+  encoder_channels: [48, 96, 96, 96, 96]
+  freq_strides: [3, 3, 3, 3, 3]
+  time_strides: [1, 3, 3, 1, 1]
+
+  channels: [96, 192, 160, 128, 96, 64]
+  num_refine_blocks: 10
+
+  # Recon recipe: WL1 dropped from v7's 30 → 1. Disc carries phase signal now.
+  mrstft_weight: 1.0
+  mel_weight: 1.0
+  waveform_l1_weight: 1.0
+  consistency_weight: 1.0
+
+  mrstft_ffts: [256, 512, 1024]
+  mrstft_hops: [64,  128,  256]
+  mrstft_wins: [256, 512, 1024]
+
+  # Mixing OFF (phase 2 of v8 will turn it on after recon+disc converges)
+  latent_mix_weight: 0.0
+  decode_mix_weight: 0.0
+  latent_l2_weight: 0.001
+
+  # Discriminator ON: DAC-style MSSTFTD, starts at epoch 5
+  use_discriminator: true
+  disc_start_epoch: 5
+  disc_weight: 1.0           # adversarial loss weight in generator total
+  feat_match_weight: 2.0     # DAC default
+
+train:
+  batch_size: 8
+  num_epochs: 150
+  learning_rate: 0.0003
+  weight_decay: 0.01
+  scheduler: cosine
+  warmup_epochs: 5
+  save_interval: 10
+  num_test_samples: 5

@@ -9,7 +9,6 @@ from typing import Dict, List
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.amp import autocast
 
 from models.autoencoder import Autoencoder
 
@@ -173,7 +172,6 @@ def evaluate_alpha_on_pairs(
     pairs: List[Dict],
     alpha: float,
     device: torch.device,
-    use_amp: bool = True,
     per_sample_stats: bool = False,
 ) -> Dict[str, float]:
     """Core alpha evaluation: encode, interpolate, compare to oracle.
@@ -185,7 +183,6 @@ def evaluate_alpha_on_pairs(
         pairs: List of sample pair dicts.
         alpha: Mixing coefficient (beta = 1 - alpha).
         device: Inference device.
-        use_amp: Use automatic mixed precision.
         per_sample_stats: If True, return std/median/p90 in addition to means.
 
     Returns:
@@ -214,23 +211,22 @@ def evaluate_alpha_on_pairs(
             x1_wave = x1_wave[..., :tgt]
             x2_wave = x2_wave[..., :tgt]
 
-        with autocast("cuda", enabled=use_amp):
-            z1 = model.encoder(x1_stft)
-            z2 = model.encoder(x2_stft)
+        z1 = model.encoder(x1_stft)
+        z2 = model.encoder(x2_stft)
 
-            x_mix_wave = alpha * x1_wave + beta * x2_wave
+        x_mix_wave = alpha * x1_wave + beta * x2_wave
 
-            x_mix_stft = model._compute_stft_from_wave(x_mix_wave)
-            z_real = model.encoder(x_mix_stft)
-            x_real_recon, _ = model.decoder(z_real)
+        x_mix_stft = model._compute_stft_from_wave(x_mix_wave)
+        z_real = model.encoder(x_mix_stft)
+        x_real_recon, _ = model.decoder(z_real)
 
-            z_interp = alpha * z1 + beta * z2
-            x_interp, _ = model.decoder(z_interp)
+        z_interp = alpha * z1 + beta * z2
+        x_interp, _ = model.decoder(z_interp)
 
-            l1_real = F.l1_loss(x_real_recon, x_mix_wave).item()
-            mr_real = model.mrstft_loss(x_real_recon, x_mix_wave).item()
-            l1_interp = F.l1_loss(x_interp, x_mix_wave).item()
-            mr_interp = model.mrstft_loss(x_interp, x_mix_wave).item()
+        l1_real = F.l1_loss(x_real_recon, x_mix_wave).item()
+        mr_real = model.mrstft_loss(x_real_recon, x_mix_wave).item()
+        l1_interp = F.l1_loss(x_interp, x_mix_wave).item()
+        mr_interp = model.mrstft_loss(x_interp, x_mix_wave).item()
 
         interp_l1_list.append(l1_interp)
         interp_mr_list.append(mr_interp)

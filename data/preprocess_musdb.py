@@ -33,7 +33,7 @@ import numpy as np
 import yaml
 from tqdm import tqdm
 
-from utils.audio import compute_stft, rms_normalize
+from utils.audio import compute_stft, peak_normalize
 
 
 STEM_NAMES = {
@@ -90,12 +90,12 @@ def preprocess_musdb(
     frames_per_segment: int = 6,
 ):
     """
-    Convert MUSDB18 .stem.mp4 files into RMS-normalized STFT chunks.
+    Convert MUSDB18 .stem.mp4 files into peak-normalized STFT chunks.
 
     Each stem of each track becomes one .pt file with:
     - x_stft: [num_chunks, 2, n_freq_bins, n_frames] in float16
-    - x_wave: [num_chunks, chunk_samples] in float16 (RMS-normalized)
-    - rms: [num_chunks] in float32
+    - x_wave: [num_chunks, chunk_samples] in float16 (peak-normalized to [-1, 1])
+    - peak: [num_chunks] in float32  (original peak value, for inverse normalization)
 
     The index.json groups stems by track for aligned pair loading.
 
@@ -241,15 +241,15 @@ def preprocess_musdb(
 
                 stft_chunks = []
                 wave_chunks = []
-                rms_values = []
+                peak_values = []
 
                 for ci in valid_chunks:
                     start = chunk_starts[ci]
                     chunk_np = all_stems_mono[stem_idx, start:start + chunk_samples]
                     chunk_tensor = torch.from_numpy(chunk_np.copy()).float()
 
-                    # RMS normalize
-                    chunk_norm, rms = rms_normalize(chunk_tensor)
+                    # Peak normalize so every sample stays in [-1, 1]
+                    chunk_norm, peak = peak_normalize(chunk_tensor)
                     # Pad for clean STFT frame count (padding only for STFT)
                     if len(chunk_norm) < padded_samples:
                         chunk_padded = torch.nn.functional.pad(chunk_norm, (0, padded_samples - len(chunk_norm)))
@@ -259,17 +259,17 @@ def preprocess_musdb(
 
                     stft_chunks.append(stft_ri)
                     wave_chunks.append(chunk_norm)  # Save unpadded waveform
-                    rms_values.append(rms)
+                    peak_values.append(peak)
 
                 # Stack and save
                 stft_stacked = torch.stack(stft_chunks, dim=0).half()
                 wave_stacked = torch.stack(wave_chunks, dim=0).half()
-                rms_tensor = torch.tensor(rms_values, dtype=torch.float32)
+                peak_tensor = torch.tensor(peak_values, dtype=torch.float32)
 
                 save_data = {
                     "x_stft": stft_stacked,
                     "x_wave": wave_stacked,
-                    "rms": rms_tensor,
+                    "peak": peak_tensor,
                 }
 
                 try:

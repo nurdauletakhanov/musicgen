@@ -16,7 +16,6 @@ def save_checkpoint(
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler.LRScheduler,
-    scaler: torch.cuda.amp.GradScaler,
     model_config: dict,
     val_loss: float,
     best_val_loss: float,
@@ -34,13 +33,12 @@ def save_checkpoint(
 ):
     """
     Save model checkpoint to disk and optionally upload to HuggingFace Hub.
-    
+
     Args:
         epoch: Current epoch number (0-indexed)
         model: Model to save
         optimizer: Optimizer state to save
         scheduler: Scheduler state to save
-        scaler: AMP scaler state to save
         model_config: Model configuration dictionary
         val_loss: Current validation loss
         best_val_loss: Best validation loss so far
@@ -60,7 +58,6 @@ def save_checkpoint(
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'scheduler_state_dict': scheduler.state_dict(),
-        'scaler_state_dict': scaler.state_dict(),
         'val_loss': val_loss,
         'best_val_loss': best_val_loss,
     }
@@ -115,7 +112,6 @@ def load_checkpoint(
     model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler.LRScheduler,
-    scaler: torch.cuda.amp.GradScaler,
     device: torch.device,
     reset_scheduler: bool = False,
     logger: Optional[object] = None,
@@ -124,17 +120,16 @@ def load_checkpoint(
 ) -> tuple:
     """
     Load checkpoint to resume training.
-    
+
     Args:
         checkpoint_path: Path to checkpoint or HuggingFace Hub ID
         model: Model to load state into
         optimizer: Optimizer to load state into
         scheduler: Scheduler to load state into
-        scaler: AMP scaler to load state into
         device: Device to load checkpoint to
         reset_scheduler: Whether to reset scheduler state
         logger: Optional logger for info messages
-    
+
     Returns:
         (start_epoch, best_val_loss): Tuple of starting epoch and best validation loss
     """
@@ -169,9 +164,6 @@ def load_checkpoint(
     else:
         scheduler.load_state_dict(ckpt['scheduler_state_dict'])
     
-    if 'scaler_state_dict' in ckpt:
-        scaler.load_state_dict(ckpt['scaler_state_dict'])
-
     if discriminator is not None and 'discriminator_state_dict' in ckpt:
         discriminator.load_state_dict(ckpt['discriminator_state_dict'])
         if logger:
