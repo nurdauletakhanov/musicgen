@@ -60,7 +60,7 @@ wandb/
 # MUSDB18 dataset
 musdb18/
 musdb18.zip
-musdb-chunks-stft/
+musdb-chunks-*/
 
 # Slakh dataset
 slakh2100_flac_redux.tar.gz
