@@ -191,8 +191,8 @@ class Decoder(nn.Module):
             ResBlock2D(last_ch, kernel_size=(3, 3), dilation=d, dropout=dropout)
             for d in dilations
         ])
-        # Direct real/imag output (2 channels)
-        self.out_conv = nn.Conv2d(last_ch, 2, kernel_size=(3, 3), padding=(1, 1))
+        # Vocos-style output: magnitude + unit-circle phase (3 channels)
+        self.out_conv = nn.Conv2d(last_ch, 3, kernel_size=(3, 3), padding=(1, 1))
 
         # iSTFT window (registered buffer → moves with .to(device))
         self.register_buffer('istft_window', torch.hann_window(win_length))
@@ -225,11 +225,24 @@ class Decoder(nn.Module):
         else:
             x = self.out_refine(x)
 
-        stft_pred = self.out_conv(x)  # [B, 2, F, T]
+        out = self.out_conv(x)  # [B, 3, F, T]
+
+        # Vocos-style: magnitude + unit-circle phase → valid complex STFT
+        mag = F.softplus(out[:, 0])                        # [B, F, T] always positive
+        cos_phi = out[:, 1]                                # [B, F, T]
+        sin_phi = out[:, 2]                                # [B, F, T]
+        # Normalize to unit circle (guarantees valid phase)
+        norm = torch.sqrt(cos_phi ** 2 + sin_phi ** 2 + 1e-8)
+        cos_phi = cos_phi / norm
+        sin_phi = sin_phi / norm
+
+        # Build real/imag for iSTFT and return as stft_pred
+        real = mag * cos_phi
+        imag = mag * sin_phi
+        stft_pred = torch.stack([real, imag], dim=1)       # [B, 2, F, T]
 
         # iSTFT: cuFFT requires float32
-        x_f = stft_pred.float()
-        X = torch.complex(x_f[:, 0], x_f[:, 1])           # [B, F, T]
+        X = torch.complex(real.float(), imag.float())      # [B, F, T]
 
         wav = torch.istft(
             X,

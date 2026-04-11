@@ -108,11 +108,8 @@ def build_model_config(cfg: dict) -> dict:
         'num_segments': num_segments,
         'n_freq_bins': n_freq_bins,
         'target_length': target_length,
-        'latent_mix_weight': model_cfg.get('latent_mix_weight', 0.0),
         'decode_mix_weight': model_cfg.get('decode_mix_weight', 0.0),
         'mrstft_weight': model_cfg.get('mrstft_weight', 1.0),
-        'mix_l1_weight': model_cfg.get('mix_l1_weight', 1.0),
-        'mix_mrstft_weight': model_cfg.get('mix_mrstft_weight', 1.0),
         'mel_weight': model_cfg.get('mel_weight', 0.0),
         'sample_rate': sample_rate,
         'dropout': model_cfg.get('dropout', 0.1),
@@ -125,8 +122,6 @@ def build_model_config(cfg: dict) -> dict:
         'freq_strides': model_cfg.get('freq_strides', None),
         'time_strides': model_cfg.get('time_strides', None),
         'latent_l2_weight': model_cfg.get('latent_l2_weight', 0.0),
-        'consistency_weight': model_cfg.get('consistency_weight', 0.0),
-        'waveform_l1_weight': model_cfg.get('waveform_l1_weight', 0.0),
     }
 
     # MR-STFT resolution config (optional override from model config)

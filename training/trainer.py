@@ -4,10 +4,11 @@ import os
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.amp import autocast, GradScaler
 from tqdm import tqdm
 
-from data.dataloader import build_stem_pair_dataloaders, build_single_stem_dataloaders
+from data.dataloader import build_single_stem_dataloaders, build_stem_pair_dataloaders
 from evaluation.samples import save_test_samples
 from evaluation.utils import si_sdr
 from models.autoencoder import Autoencoder
@@ -57,7 +58,6 @@ class Trainer:
         self.scheduler_warmup_epochs = train_cfg.get('scheduler_warmup_epochs', 0)
         self.grad_accum_steps = train_cfg.get('gradient_accumulation_steps', 1)
         self.warmup_epochs = train_cfg.get('warmup_epochs', 0)
-        self.mix_every_n = train_cfg.get('mix_every_n', 1)  # Run mixing loss every N batches
         
         # Save path
         name = cfg.get('name', 'default')
@@ -80,15 +80,13 @@ class Trainer:
         # Build model config
         self.model_config = build_model_config(cfg)
 
-        # Data loaders (single stems)
+        # Stem-pair mixing (Option β)
+        self.use_stem_pairs = data_cfg.get('use_stem_pairs', False)
+        self.stem_mix_weight = cfg['model'].get('stem_mix_weight', 0.0)
+
+        # Data loaders
         chunks_dir = data_cfg.get('chunks_dir') or data_cfg.get('musdb_chunks_dir')
-        (
-            self.train_loader,
-            self.val_loader,
-            self.train_dataset,
-            self.val_dataset,
-            self.train_sampler,
-        ) = build_single_stem_dataloaders(
+        loader_kwargs = dict(
             chunks_dir=chunks_dir,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
@@ -98,6 +96,23 @@ class Trainer:
             persistent_workers=self.persistent_workers,
             prefetch_factor=self.prefetch_factor,
         )
+        if self.use_stem_pairs:
+            (
+                self.train_loader,
+                self.val_loader,
+                self.train_dataset,
+                self.val_dataset,
+                self.train_sampler,
+            ) = build_stem_pair_dataloaders(**loader_kwargs)
+            self.logs.info(f"Stem-pair mixing enabled, weight={self.stem_mix_weight}")
+        else:
+            (
+                self.train_loader,
+                self.val_loader,
+                self.train_dataset,
+                self.val_dataset,
+                self.train_sampler,
+            ) = build_single_stem_dataloaders(**loader_kwargs)
 
         effective_bs = self.batch_size * self.grad_accum_steps
         self.logs.info(
@@ -110,31 +125,6 @@ class Trainer:
             f"persistent_workers={self.persistent_workers}"
         )
 
-        # Stem pair loaders (optional, for mixing loss)
-        self.use_stem_pairs = data_cfg.get('use_stem_pairs', False)
-        self.pair_train_loader = None
-        self.pair_val_loader = None
-        self.pair_train_sampler = None
-
-        if self.use_stem_pairs and chunks_dir:
-            (
-                self.pair_train_loader,
-                self.pair_val_loader,
-                self.pair_train_dataset,
-                self.pair_val_dataset,
-                self.pair_train_sampler,
-            ) = build_stem_pair_dataloaders(
-                chunks_dir=chunks_dir,
-                batch_size=self.batch_size,
-                num_workers=self.num_workers,
-                device=self.device,
-                logger=self.logs,
-                pin_memory=self.pin_memory,
-                persistent_workers=self.persistent_workers,
-                prefetch_factor=self.prefetch_factor,
-            )
-            self.logs.info(f"Stem pair mixing: enabled (every {self.mix_every_n} batches)")
-        
         # Discriminator config
         model_cfg = cfg['model']
         self.use_discriminator = model_cfg.get('use_discriminator', False)
@@ -307,15 +297,13 @@ class Trainer:
         start = torch.randint(0, L - crop + 1, (1,)).item()
         return x_real[:, :, start:start + crop], x_hat[:, :, start:start + crop]
 
-    def _run_epoch(self, loader, training: bool = True, musdb_loader=None,
-                   epoch: int = 0) -> dict:
+    def _run_epoch(self, loader, training: bool = True, epoch: int = 0) -> dict:
         """
         Run one epoch of training or validation.
 
         Args:
-            loader: Primary data loader
+            loader: Data loader (single-stem)
             training: Whether this is a training epoch
-            musdb_loader: Optional MUSDB18 stem pair loader for mixing loss
             epoch: Current epoch number (for discriminator warmup)
 
         Returns dict with:
@@ -336,40 +324,30 @@ class Trainer:
         # Metric collectors
         metric_keys = [
             'loss',
-            # ReconSingle
-            'ReconSingle/Total', 'ReconSingle/MRSTFT', 'ReconSingle/Mel', 'ReconSingle/WavL1',
-            'Consistency',
-            # MixReconInterp
-            'MixReconInterp/Total', 'MixReconInterp/WavL1', 'MixReconInterp/MRSTFT',
-            # MixReconReal
-            'MixReconReal/Total', 'MixReconReal/WavL1', 'MixReconReal/MRSTFT',
-            # Key metrics
-            'MixRate', 'MixGap', 'LatentMixError',
+            # Reconstruction
+            'ReconSingle/Total', 'ReconSingle/MRSTFT', 'ReconSingle/Mel',
+            # Mixing (Option α: cross-batch)
+            'DecodeMix/L1', 'MixRate',
+            # Mixing (Option β: stem-pair)
+            'StemMix/Loss',
             # Latent space stats
             'Latent/mean', 'Latent/std', 'Latent/absmax', 'Latent/l2',
             # Gradient norm (train only)
             'grad_norm',
-            # Stem mixing metrics
-            'StemMix/Total', 'StemMix/Rate', 'StemMix/Gap',
             # Discriminator metrics
             'Disc/loss', 'Disc/gen_adv', 'Disc/feat_match',
             # Perceptual
             'SI-SDR',
             # Audio quality diagnostics (val only)
             'Diag/RMSRatio', 'Diag/STFTConsistency', 'Diag/PhaseErr_deg',
-            # Legacy
-            'latent_mix',
         ]
         metrics = {k: [] for k in metric_keys}
 
-        # Collect raw MixRate values for distribution stats
+        # Collect raw MixRate values for distribution stats (validation only)
         mix_rate_values = []
 
         desc = "Train" if training else "Val"
         context = torch.enable_grad() if training else torch.no_grad()
-
-        # Set up musdb iterator if available
-        musdb_iter = iter(musdb_loader) if musdb_loader is not None else None
 
         with context:
             for batch_idx, batch in enumerate(tqdm(loader, desc=desc, leave=False)):
@@ -412,7 +390,9 @@ class Trainer:
 
                 # --- Generator step ---
                 with autocast("cuda", dtype=self.amp_dtype, enabled=self.use_amp):
-                    total, components, x_hat, stft_pred = self.model(x_stft, x_wave)
+                    total, components, x_hat, stft_pred = self.model(
+                        x_stft, x_wave, compute_mix_rate=(not training)
+                    )
 
                     # Adversarial + feature matching loss (reuse x_hat from forward)
                     if disc_active and training:
@@ -431,42 +411,40 @@ class Trainer:
                         components['Disc/gen_adv'] = gen_adv.item()
                         components['Disc/feat_match'] = feat_match.item()
 
+                    # --- Stem-pair mixing loss (Option β) ---
+                    if self.use_stem_pairs and self.stem_mix_weight > 0.0 and 'x_stft2' in batch:
+                        x_stft2 = batch['x_stft2'].to(self.device, non_blocking=True)
+                        x_wave2 = batch['x_wave2'].to(self.device, non_blocking=True)
+                        if x_wave2.dim() == 2:
+                            x_wave2 = x_wave2.unsqueeze(1)
+
+                        B = x_stft.size(0)
+                        z1 = self.model.encoder(x_stft)
+                        z2 = self.model.encoder(x_stft2)
+
+                        alpha = torch.rand(B, 1, 1, device=x_stft.device)
+                        beta = 1.0 - alpha
+
+                        tgt = self.model.decoder.target_length
+                        w1 = x_wave[:, :, :tgt]
+                        w2 = x_wave2[:, :, :tgt]
+
+                        z_interp = alpha * z1 + beta * z2
+                        x_mix_wave = alpha * w1 + beta * w2
+
+                        x_interp, _ = self.model.decoder(z_interp)
+
+                        mix_mr = self.model.mrstft_loss(x_interp, x_mix_wave)
+                        mix_mel = self.model.mel_loss(x_interp, x_mix_wave) if self.model.mel_weight > 0.0 else x_interp.new_tensor(0.0)
+                        mix_wav = F.l1_loss(x_interp, x_mix_wave)
+                        stem_mix_loss = self.model.mrstft_weight * mix_mr + self.model.mel_weight * mix_mel + mix_wav
+
+                        total = total + self.stem_mix_weight * stem_mix_loss
+                        components['StemMix/Loss'] = stem_mix_loss.item()
+
                 if training:
                     scaled_loss = total / self.grad_accum_steps
                     scaled_loss.backward()
-
-                # Stem pair mixing loss — separate backward pass so recon+disc
-                # activations are freed before mixing forward pass (saves ~6-9GB VRAM)
-                do_mix = (musdb_iter is not None and self.model.decode_mix_weight > 0
-                          and batch_idx % self.mix_every_n == 0)
-                if do_mix:
-                    try:
-                        musdb_batch = next(musdb_iter)
-                    except StopIteration:
-                        musdb_iter = iter(musdb_loader)
-                        musdb_batch = next(musdb_iter)
-
-                    m_stft1 = musdb_batch['x_stft'].to(self.device, non_blocking=True)
-                    m_wave1 = musdb_batch['x_wave'].to(self.device, non_blocking=True)
-                    m_stft2 = musdb_batch['x_stft2'].to(self.device, non_blocking=True)
-                    m_wave2 = musdb_batch['x_wave2'].to(self.device, non_blocking=True)
-
-                    with autocast("cuda", dtype=self.amp_dtype, enabled=self.use_amp):
-                        stem_mix_dict = self.model.compute_stem_mixing_loss(
-                            m_stft1, m_wave1, m_stft2, m_wave2
-                        )
-                        stem_mix_loss = stem_mix_dict['total']
-                        mix_loss_weighted = self.model.decode_mix_weight * stem_mix_loss
-
-                    if training:
-                        mix_scaled = mix_loss_weighted / self.grad_accum_steps
-                        mix_scaled.backward()
-
-                    components['StemMix/Total'] = stem_mix_loss.detach().item()
-                    components['StemMix/Rate'] = stem_mix_dict.get('rate', 0.0)
-                    components['StemMix/Gap'] = stem_mix_dict.get('gap', 0.0)
-                    # Include mixing loss in logged total
-                    total = total + mix_loss_weighted.detach()
 
                 if training and (batch_idx + 1) % self.grad_accum_steps == 0:
                     grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
@@ -590,27 +568,19 @@ class Trainer:
         recon_total = metrics.get('ReconSingle/Total', 0.0)
         recon_mrstft = metrics.get('ReconSingle/MRSTFT', 0.0)
         recon_mel = metrics.get('ReconSingle/Mel', 0.0)
-        mix_interp = metrics.get('MixReconInterp/Total', 0.0)
-        mix_real = metrics.get('MixReconReal/Total', 0.0)
+        decode_mix = metrics.get('DecodeMix/L1', 0.0)
         mix_rate = metrics.get('MixRate', 0.0)
-        mix_gap = metrics.get('MixGap', 0.0)
-        latent_err = metrics.get('LatentMixError', 0.0)
 
-        recon_wavl1 = metrics.get('ReconSingle/WavL1', 0.0)
-        consistency = metrics.get('Consistency', 0.0)
+        stem_mix = metrics.get('StemMix/Loss', 0.0)
 
         mel_str = f", Mel: {recon_mel:.4f}" if recon_mel > 0.0 else ""
-        wavl1_str = f", WL1: {recon_wavl1:.4f}" if recon_wavl1 > 0.0 else ""
         line = (
             f"{prefix} - Loss: {metrics['loss']:.6f} | "
-            f"Recon: {recon_total:.4f} (MR: {recon_mrstft:.4f}{mel_str}{wavl1_str}) | "
-            f"MixInterp: {mix_interp:.4f}, MixReal: {mix_real:.4f} | "
-            f"Rate: {mix_rate:.4f}, Gap: {mix_gap:.4f} | "
-            f"LatErr: {latent_err:.6f}"
+            f"Recon: {recon_total:.4f} (MR: {recon_mrstft:.4f}{mel_str}) | "
+            f"DecodeMix: {decode_mix:.4f} | Rate: {mix_rate:.4f}"
         )
-
-        if consistency > 0.0:
-            line += f" | Consist: {consistency:.4f}"
+        if stem_mix > 0.0:
+            line += f" | StemMix: {stem_mix:.4f}"
 
         sisdr = metrics.get('SI-SDR', 0.0)
         if sisdr != 0.0:
@@ -644,22 +614,16 @@ class Trainer:
             self.logs.info(f"=== Epoch {epoch+1}/{self.num_epochs} ===")
             
             self.train_sampler.set_epoch(epoch)
-            if self.pair_train_sampler is not None:
-                self.pair_train_sampler.set_epoch(epoch)
 
             train_metrics = self._run_epoch(
-                self.train_loader, training=True,
-                musdb_loader=self.pair_train_loader,
-                epoch=epoch,
+                self.train_loader, training=True, epoch=epoch,
             )
             # Free fragmented CUDA memory before validation
             if self.device.type == "cuda":
                 torch.cuda.empty_cache()
 
             val_metrics = self._run_epoch(
-                self.val_loader, training=False,
-                musdb_loader=self.pair_val_loader,
-                epoch=epoch,
+                self.val_loader, training=False, epoch=epoch,
             )
             
             # Update scheduler
