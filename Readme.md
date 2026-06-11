@@ -1,553 +1,257 @@
-# Mixing-Equivariant STFT Autoencoder
+# Music Autoencoder — v1 clean baseline
 
-A research prototype for learning 1-second audio representations whose latent space preserves **linear mixing** relationships.
+A wave-to-wave continuous-latent autoencoder for 44.1 kHz music, trained on a ~950-hour
+mix of FMA-large, MAESTRO, and MUSDB18-HQ. Step-based training with an MSSTFTD + MPD
+discriminator and multi-resolution STFT + mel reconstruction losses.
 
-This project implements an **STFT-based autoencoder** that compresses a 1-second audio chunk into a compact latent representation, while enforcing the property:
+**v1 is a recon-only baseline.** No mixing losses, no stem-pair training, no alpha
+sweeps — just clean reconstruction quality on a larger, more diverse training set than
+prior iterations. Mixing-equivariance experiments become v2+, once the baseline FAD is
+strong enough to afford the perceptual-quality cost of the extra supervision.
 
-$$
-\text{enc}(\lambda x_{1} + (1-\lambda) x_{2}) \approx \lambda \cdot \text{enc}(x_{1}) + (1-\lambda) \cdot \text{enc}(x_{2})
-$$
-
-This *mixing-equivariance constraint* improves controllability, interpolation, and downstream generative modeling by aligning the latent space with the linear structure of the audio domain (which is physically linear for sound pressure).
-
----
-
-## **Project Goals**
-
-### 1. Build an autoencoder for 1-second audio chunks
-
-* STFT input (44.1 kHz sample rate, 1024-point FFT)
-* Conv2D segment encoder → Transformer → latent tokens → Conv1D decoder → waveform
-
-### 2. Enforce **mixing linearity**
-
-Given audio chunks `x1`, `x2`, and mixture $x_{\lambda} = \lambda x_{1} + (1-\lambda)x_{2}$, the autoencoder should satisfy:
-
-**Latent linearity:**
-
-$$
-f(x_{\lambda}) \approx \lambda f(x_{1}) + (1 - \lambda) f(x_{2})
-$$
-
-**Decode mixing** (recommended):
-
-$$
-D(\lambda z_{1} + (1-\lambda) z_{2}) \approx \lambda x_{1} + (1-\lambda) x_{2}
-$$
-
-### 3. Provide a clean benchmark for comparing audio autoencoders
-
-* Reconstruction metrics: MR-STFT, log-magnitude loss, L1 waveform
-* Latent space metrics: linearity error, decode mixing rate
-* Ablations: segment lengths, d_model sizes, loss weight combinations
+The pre-v1 lineage (STFT autoencoder, mixing/decode-mix experiments, M2L fine-tuning,
+diffusion decoder) is preserved under `archive/pre-v1/` and its former configs under
+`archive/pre-v1/configs-*/`.
 
 ---
 
-## **Architecture Overview**
+## Architecture
 
-### **1. STFT Preprocessing**
-
-Each 1-second waveform is converted to a complex STFT:
+33.5M parameters total, wave-to-wave, no transformer.
 
 ```
-waveform [B, 1, L] → STFT [B, 2, F, T]
-- F = n_fft // 2 + 1 = 513 frequency bins
-- T = L // hop_length = 172 frames (at 44.1kHz, hop=256)
-- 2 channels: real and imaginary parts
+waveform [B, 1, 44100]  ── 1 s at 44.1 kHz ──>
+  encoder (DAC-style)                    ──>  latent [B, 45, 128]   (5,760 floats, ~7.66× compression)
+    4 stages, strides [4, 5, 7, 7] = 980
+    channels       [64, 128, 256, 512, 512]
+    dilated resblocks (1, 3, 9) per stage
+    weight-norm Conv1d
+  decoder (HiFi-GAN)                     ──>  waveform [B, 1, 44100]
+    reversed strides [7, 7, 5, 4]
+    channels       [512, 512, 256, 128, 64]
+    ConvTranspose1d + MRF blocks (k=3,7 with dilations [1,3])
+    weight-norm Conv1d
 ```
 
-### **2. Segment Encoder (Conv2D)**
+**Encoder** (`models/encoder.py`): strided 1-D convs downsample the waveform; each stage
+is followed by a residual block with three parallel dilated Conv1d branches. The product
+of encoder strides equals `44100 / num_segments = 980`, so the latent sequence is exactly
+45 tokens of 128 dims.
 
-The STFT is divided into `num_segments` temporal segments. Each segment is encoded using Conv2D layers that treat frequency and time as spatial dimensions:
+**Decoder** (`models/decoder.py`): HiFi-GAN V1 recipe — ConvTranspose1d upsampling stages
+interleaved with Multi-Receptive-Field (MRF) fusion blocks that average parallel
+dilated-kernel residual stacks.
 
-```
-[B, num_segments, 2, F, T_seg] → Conv2D stack → [B, num_segments, d_model]
-```
+**Discriminator** (`models/discriminator.py`):
+- **MSSTFTD** — Multi-Scale STFT discriminator at three FFT sizes
+- **MPD** — Multi-Period discriminator at HiFi-GAN's default periods (2, 3, 5, 7, 11)
+- `CombinedDiscriminator` runs both and concatenates their outputs
 
-This architecture respects frequency locality (harmonics are adjacent bins) and uses GroupNorm for training stability.
+Adversarial + feature-matching losses are applied only after `disc_start_step = 10,000`
+so the generator can first learn coarse reconstruction without disc pressure.
 
-### **3. Global Encoder (Transformer)**
+### Losses
 
-A Transformer with positional embeddings models the sequence of segment embeddings:
+Training loss is a weighted sum:
 
-```
-input:  [token_1, token_2, ... token_S]  (S = num_segments)
-output: z in R^(S × d_model)
-```
+| Term | Weight | Description |
+|---|---|---|
+| Multi-resolution STFT | 1.0 | Magnitude log-L1 + spectral convergence at FFTs [256, 512, 1024, 2048] |
+| Mel reconstruction | 1.0 | L1 on log-mel spectrogram |
+| Latent L2 | 0.001 | Keeps latent magnitudes bounded |
+| Adversarial (disc) | 0.5 | MSSTFTD + MPD, enabled after step 10,000 |
+| Feature matching | 2.0 | L1 on intermediate disc activations |
 
-This produces **S latent tokens** representing the 1-second chunk.
-
-### **4. Decoder (Conv1D Upsampling)**
-
-Maps the latent tokens back into a waveform using progressive upsampling:
-
-```
-z [B, S, d_model] → project → [B, C, S] → UpsampleBlocks → [B, 1, L]
-```
-
-Each UpsampleBlock uses interpolation + Conv1D + dilated ResBlocks for high-quality waveform synthesis.
-
-## **Loss Functions**
-
-### **1. Reconstruction Loss**
-
-Combination of MR-STFT + L1 waveform:
-
-$$
-\mathcal{L}_{\text{recon}}(x, \hat{x}) = \alpha \cdot \text{MRSTFT}(x, \hat{x}) + \beta \cdot |x - \hat{x}|_{1}
-$$
-
-MR-STFT uses multiple FFT sizes (512, 1024, 2048) for spectral convergence and log-magnitude losses.
-
-### **2. Latent Mixing Loss** (optional)
-
-For randomly sampled `(x1, x2)` and $\lambda \sim \text{Uniform}(0,1)$:
-
-$$
-\mathcal{L}_{\text{latent-mix}} = \big\| E(x_{\lambda}) - [\lambda E(x_{1}) + (1-\lambda) E(x_{2})] \big\|_{2}^{2}
-$$
-
-where $x_{\lambda} = \lambda x_{1} + (1-\lambda) x_{2}$.
-
-### **3. Decode Mixing Loss** (recommended)
-
-Compares latent interpolation vs. real autoencoder on mixed input:
-
-$$
-\mathcal{L}_{\text{decode-mix}} = \text{MRSTFT}(D(\lambda z_{1} + (1-\lambda) z_{2}), x_{\lambda}) + |D(\lambda z_{1} + (1-\lambda) z_{2}) - x_{\lambda}|_{1}
-$$
-
-A "rate" metric tracks how close interpolation is to real encoding (ideal = 1.0).
-
-### **Total Loss**
-
-$$
-\mathcal{L} = \mathcal{L}_{\text{recon}} + \gamma \mathcal{L}_{\text{latent-mix}} + \delta \mathcal{L}_{\text{decode-mix}}
-$$
+No mixing loss, no decode-mix supervision, no stem-pair reconstruction for v1.
 
 ---
 
-## **Why This Project is Interesting**
+## Data
 
-### **Most existing audio autoencoders:**
+All three sources land in one unified chunks directory (`chunks-44k-1s/`) with a shared
+`index.json`. The `source` tag on every entry (`fma`, `maestro`, `musdb`) is what lets
+validation report per-domain SI-SDR without re-running on different directories.
 
-* Work with 10–40 ms windows (Encodec, DAC, SoundStream).
-* Produce long sequences of tokens.
-* Are not designed to preserve the linear structure of audio.
-* Are optimized mainly for perceptual quality and compression.
+**Chunks** are 1 s at 44.1 kHz = 44,100 samples, stored as `fp16` with the per-chunk peak
+(for recovering absolute loudness) also saved. Peak-normalized to 0.95 on write so the
+model always sees audio in [-0.95, 0.95]. Non-overlapping on a fixed grid.
 
-### **This project attempts something new:**
+**Train (96,264 tracks / 950.8 h total):**
 
-1. **A 1-second representation** (much more compressed than typical neural codecs).
-2. **Mixing-equivariance as a core constraint** (latent space respects physical mixing).
-3. **STFT-based encoding with waveform output** (efficient frequency representation, direct audio synthesis).
-4. **Compatibility with simple latent generative models** (AR, diffusion).
-5. **New metrics** for evaluating linearity in audio embeddings (decode mixing rate).
+| Source | Tracks | Chunks | Hours |
+|---|---|---|---|
+| FMA-large (training + validation splits) | 95,065 | 2,767,005 | 768.6 |
+| MAESTRO v3 (training + validation) | 1,099 | 633,858 | 176.1 |
+| MUSDB18-HQ train | 100 | 22,096 | 6.1 |
 
-This could open new avenues for:
+**Test (11,466 tracks / 113.7 h total):**
 
-* Audio interpolation and morphing
-* Style transfer
-* Layered music creation (blending stems)
-* Generative models that obey physical mixing rules
-* Compact representations for downstream music models
+| Source | Tracks | Chunks | Hours |
+|---|---|---|---|
+| FMA-large (official test split) | 11,239 | 325,954 | 90.5 |
+| MAESTRO test | 177 | 71,214 | 19.8 |
+| MUSDB18-HQ test | 50 | 12,055 | 3.3 |
 
----
+Test covers three distinct domains (real production / clean piano / diverse indie) so
+SI-SDR, FAD, or any other eval can be reported both aggregate and per-source.
 
-## **Repository Structure**
+### Sources
 
-```
-musicgen/
-│
-├── configs/                      # Configuration files
-│   ├── base.yaml                 # Shared defaults (model arch, STFT params)
-│   └── experiments/              # Experiment-specific overrides
-│       └── current.yaml          # Active experiment config
-│
-├── models/
-│   ├── autoencoder.py            # Main autoencoder with loss computation
-│   ├── encoder.py                # Conv2D segment encoder + Transformer
-│   └── decoder.py                # Conv1D upsampling decoder
-│
-├── data/
-│   ├── dataloader.py             # STFTChunkDataset + ShardedSampler
-│   └── preprocess.py             # STFT preprocessing for MAESTRO
-│
-├── training/
-│   ├── train.py                  # Training loop and Trainer class
-│   ├── utils.py                  # Logging, checkpointing utilities
-│   └── hub_utils.py              # HuggingFace Hub integration
-│
-├── evaluation/
-│   └── reconstruct.py            # Audio reconstruction evaluation
-│
-├── scripts/
-│   ├── upload_to_hub.py          # Upload checkpoints to HuggingFace
-│   └── check_normalization.py    # Check data normalization statistics
-│
-├── checkpoints/                  # Saved model checkpoints (git-ignored)
-│   ├── experiments.yaml          # Registry of all experiments (tracked)
-│   └── <experiment-name>/        # Per-experiment checkpoints
-│       ├── config.yaml           # Config used for this run
-│       ├── best_model.pth
-│       └── checkpoint_*.pth
-│
-├── .gitignore
-├── requirements.txt
-└── README.md
-```
+- **FMA-large** (`dataset/fma_large/`, 93 GB MP3) — 106,574 Creative-Commons indie tracks,
+  30 s each. Official 80/10/10 splits via `fma_metadata/tracks.csv`. 270 tracks skipped
+  (0.25%) for known-bad data in the FMA archive (truncated stubs, silent files, corrupt
+  frames). Loaded directly via `soundfile`/`libsndfile` 1.2+ native MP3 support (no
+  ffmpeg dependency).
+- **MAESTRO v3** (`dataset/maestro-v3.0.0/`) — 1,276 solo classical piano recordings.
+  Source splits `{training, validation}` → our `train`, source `test` → our `test`.
+- **MUSDB18-HQ** (`dataset/musdb18/`) — 150 rock/pop tracks with separate WAV stems.
+  v1 uses only `mixture.wav`. Stem files remain on disk for v2+ mixing experiments.
 
 ---
 
-## **Example Usage**
+## Training
 
-### **Forward pass**
+Step-based schedule — robust to dataset size changes.
 
-```python
-from models.autoencoder import Autoencoder
+| Knob | Value |
+|---|---|
+| `max_steps` | 250,000 |
+| `warmup_steps` | 3,000 (linear LR from 1e-3 × peak to peak) |
+| LR schedule | Cosine to 10% of peak over remaining 247,000 steps |
+| `batch_size` | 64 |
+| Effective batch | 64 (no grad accum) |
+| Optimizer | AdamW, betas (0.8, 0.99), wd 1e-3 |
+| `learning_rate` (gen) | 3e-4 |
+| `disc_lr` | 2e-4, betas (0.5, 0.9), wd 0 |
+| `grad_clip` | 1.0 |
+| `disc_start_step` | 10,000 |
+| Precision | fp32 (bf16 AMP caused a step-4700 regression on the original v1 run) |
+| `save_every_steps` | 10,000 |
+| `log_every_steps` | 100 |
 
-model = Autoencoder(
-    d_model=256,
-    n_heads=8,
-    n_layers=6,
-    num_segments=25,
-    n_freq_bins=513,           # n_fft // 2 + 1
-    channels=[512, 512, 256, 128, 64],
-    upsampling_factors=[6, 6, 7, 7],
-    target_length=44100,       # 1 second at 44.1kHz
-)
+Total training examples seen: 64 × 250,000 = 16M, ≈ **4.7 passes** over the 3.42M unique
+training chunks. At batch 64 fp32, per-step cost is roughly equivalent to the original
+bf16 batch 128 plan, so wall-clock stays around **~35 hours**.
 
-# Input: STFT [B, 2, F, T] and waveform [B, 1, L]
-x_stft = torch.randn(8, 2, 513, 172)
-x_wave = torch.randn(8, 1, 44100)
+### Output layout
 
-loss, components = model(x_stft, x_wave)
-print(components)  # {'total': ..., 'recon': ..., 'wav_l1': ..., 'mrstft': ..., ...}
+```
+checkpoints/v1.1/
+  config.yaml           # copy of the YAML used for this run
+  train.log             # console tee (human-readable)
+  train_log.jsonl       # one line per log-interval; machine-readable
+  val_log.jsonl         # one line per val checkpoint (loss, MR-STFT, Mel, SI-SDR total + per-source)
+  latest.pth            # most recent checkpoint (atomic-rename, safe to resume)
+  best.pth              # lowest val loss so far
+  step_250000.pth       # final checkpoint at end of training
+  samples/
+    step_0000010000/    # at each val checkpoint: listenable ref/recon .wav pairs
+      00_musdb_ref.wav
+      00_musdb_hat.wav
+      01_maestro_ref.wav
+      01_maestro_hat.wav
+      ...
 ```
 
-### **Latent mixing**
-
-```python
-# Encode two different audio chunks
-z1 = model.encoder(x_stft_1)  # [B, num_segments, d_model]
-z2 = model.encoder(x_stft_2)
-
-# Interpolate in latent space
-lam = 0.5
-z_mix = lam * z1 + (1 - lam) * z2
-
-# Decode the interpolated latent
-x_mix = model.decoder(z_mix)  # [B, 1, target_length]
-```
+No TensorBoard, no HuggingFace Hub — the JSONL files are sufficient for plotting and
+offline analysis, and `.wav` dumps let you audit reconstructions without running
+additional inference.
 
 ---
 
-## **Research Experiments**
+## Quickstart
 
-### **Phase A: Baseline** ✓
+### 1. One-time preprocessing
 
-* Train the autoencoder without mixing loss.
-* Evaluate reconstruction quality (MR-STFT, L1).
+```
+python -m data.preprocess musdb
+python -m data.preprocess maestro
+python -m data.preprocess fma --workers 8
+python -m scripts.reshuffle_fma_splits       # moves FMA's official test split into test/
+```
 
-### **Phase B: Add mixing-equivariant loss** ✓
+Each preprocessor is resumable (checks existing `.pt` files). `--force` before the
+subcommand (e.g. `python -m data.preprocess --force fma`) regenerates everything.
 
-* Add decode mixing loss for latent space linearity.
-* Measure linearity error across $\lambda \in [0, 1]$.
-* Track decode mixing rate (ideal = 1.0).
+Outputs to `./chunks-44k-1s/{train,test}/` with a shared `index.json`.
 
-### **Phase C: Architecture tuning**
+### 2. Train
 
-* Ablate num_segments, d_model, loss weights.
-* Optimize for reconstruction + linearity tradeoff.
+```
+python -m training.train --config configs/experiments/v1/v1.1.yaml
+```
 
-### **Phase D: Generation**
+Resume from any checkpoint:
 
-* Train a small AR or diffusion model over latent tokens.
-* Evaluate interpolation and style blending.
+```
+python -m training.train --config configs/experiments/v1/v1.1.yaml \
+    --resume ./checkpoints/v1.1/latest.pth
+```
+
+### 3. Listen
+
+While the run is alive, the most recent `.wav` dump lives at the highest-numbered
+`checkpoints/v1.1/samples/step_<N>/` directory. Open `00_musdb_ref.wav` and
+`00_musdb_hat.wav` side-by-side to audit how the reconstruction sounds on MUSDB; same
+for `maestro` and `fma` prefixes.
 
 ---
 
-## **Installation**
+## Project layout
 
 ```
-pip install -r requirements.txt
+dataset/                       # raw data (all .gitignored)
+  musdb18/{train,test}/<TrackName>/{mixture,drums,bass,other,vocals}.wav
+  maestro-v3.0.0/<year>/<piece>.wav
+  fma_large/<xxx>/<trackid>.mp3
+  fma_metadata/tracks.csv      # provides official 80/10/10 split
+
+chunks-44k-1s/                 # preprocessed (.gitignored)
+  index.json                   # {"train": {key: entry}, "test": {key: entry}}
+  train/<key>.pt               # {"x_wave": fp16 [N, 44100], "peak": fp32 [N]}
+  test/<key>.pt
+
+data/
+  dataset.py                   # WaveformDataset + FileGroupedSampler + build_dataloaders
+  preprocess.py                # unified CLI: musdb | maestro | fma
+
+models/
+  encoder.py                   # WaveEncoder
+  decoder.py                   # WaveDecoder
+  autoencoder.py               # glues encoder + decoder + reconstruction losses
+  discriminator.py             # MSSTFTD + MPD + combined
+
+training/
+  trainer.py                   # Trainer class (step-based), ~400 lines
+  train.py                     # CLI entry point
+  config.py                    # YAML loader + build_model_config
+
+configs/
+  base.yaml                    # slim v1-compatible defaults
+  experiments/v1/v1.1.yaml # this run
+
+scripts/
+  reshuffle_fma_splits.py      # one-time: move FMA test split from train/ to test/
+
+archive/pre-v1/                # pre-v1 lineage, kept for reference
+  code/{data,training,evaluation,scripts,utils}/...
+  configs-{compression,compression-21x,diffusion,mixing}/
 ```
 
 ---
 
-## **HuggingFace Hub Integration**
-
-This project supports uploading and downloading model checkpoints to/from HuggingFace Hub for easy sharing, versioning, and remote storage.
-
-### **Authentication**
-
-First, authenticate with HuggingFace Hub:
-
-```bash
-# Option 1: Using CLI (recommended)
-huggingface-cli login
-
-# Option 2: Set environment variable
-export HUGGINGFACE_HUB_TOKEN=your_token_here
-
-# Option 3: Programmatically (in Python)
-from training.hub_utils import authenticate
-authenticate(token="your_token_here")
-```
-
-Get your token from: https://huggingface.co/settings/tokens
-
-### **Configuration**
-
-Enable HuggingFace Hub integration in your experiment config (`configs/experiments/current.yaml`):
-
-```yaml
-huggingface:
-  enabled: true                    # Toggle Hub integration
-  repo_id: "username/model-name"   # Repository ID (or auto-generated from config name)
-  push_best: true                  # Upload best_model.pth automatically
-  push_checkpoints: false          # Upload regular checkpoints (can be expensive)
-  push_interval: 5                 # Upload every N epochs if push_checkpoints=True
-  private: false                   # Create private repository if it doesn't exist
-```
-
-If `repo_id` is not specified, it will be auto-generated from the config name as `{username}/{name}-autoencoder`.
-
-### **Automatic Upload During Training**
-
-When enabled, checkpoints are automatically uploaded to the Hub during training:
-
-- `best_model.pth` is uploaded automatically when a new best model is saved (if `push_best: true`)
-- Regular checkpoints are uploaded according to `push_interval` (if `push_checkpoints: true`)
-
-The training config file is also uploaded once at initialization.
-
-### **Loading Models from Hub**
-
-You can load checkpoints directly from HuggingFace Hub using repository IDs:
-
-```python
-from training.train import Trainer
-
-# Load checkpoint from Hub (uses configs/experiments/current.yaml by default)
-trainer = Trainer("configs/experiments/current.yaml")
-trainer.build_model()
-start_epoch, best_val_loss = trainer.load_checkpoint("username/model-name")
-```
-
-Or in evaluation scripts:
-
-```bash
-# In evaluation/reconstruct.py
-# Use Hub ID directly as checkpoint path
-python evaluation/reconstruct.py --checkpoint username/model-name
-# The script will automatically download from Hub if not found locally
-```
-
-Supported checkpoint path formats:
-- Local path: `checkpoints/stft-vocoder/best_model.pth`
-- Hub ID: `username/model-name` (loads `best_model.pth` from repo)
-- Hub path: `username/model-name/checkpoints/checkpoint_10.pth` (specific file)
-- Hub prefix: `hub://username/model-name` (explicit Hub identifier)
-
-### **Uploading Existing Checkpoints**
-
-Upload checkpoints that were trained before Hub integration:
-
-```bash
-# Upload a single checkpoint
-python scripts/upload_to_hub.py \
-    --checkpoint checkpoints/stft-vocoder/best_model.pth \
-    --repo-id username/model-name
-
-# Upload all checkpoints from a directory
-python scripts/upload_to_hub.py \
-    --checkpoint-dir checkpoints/stft-vocoder \
-    --repo-id username/model-name \
-    --upload-all
-
-# Upload config file as well
-python scripts/upload_to_hub.py \
-    --checkpoint checkpoints/stft-vocoder/best_model.pth \
-    --repo-id username/model-name \
-    --config configs/experiments/current.yaml
-```
-
-### **Repository Structure on Hub**
-
-Uploaded repositories follow this structure:
-
-```
-username/model-name/
-├── README.md                    # Model card (auto-generated)
-├── config.yaml                  # Training configuration
-├── best_model.pth              # Best checkpoint
-└── checkpoints/                 # Regular checkpoints (if enabled)
-    ├── checkpoint_10.pth
-    ├── checkpoint_20.pth
-    └── ...
-```
-
-### **Listing Available Checkpoints**
-
-List all checkpoints available in a Hub repository:
-
-```python
-from training.hub_utils import list_hub_checkpoints
-
-checkpoints = list_hub_checkpoints("username/model-name")
-print(checkpoints)
-# ['best_model.pth', 'checkpoints/checkpoint_10.pth', ...]
-```
-
-### **Troubleshooting**
-
-**Authentication errors:**
-- Make sure you've run `huggingface-cli login` or set `HUGGINGFACE_HUB_TOKEN`
-- Verify your token has write permissions at https://huggingface.co/settings/tokens
-
-**Upload failures:**
-- Check your internet connection
-- Verify repository exists and you have write access
-- Check file size limits (free tier has 10GB limit per repository)
-
-**Download failures:**
-- Verify the repository ID and filename are correct
-- Check if the repository is private and you have access
-- Ensure you have sufficient disk space
-
----
-
-## **TensorBoard Integration**
-
-This project includes comprehensive TensorBoard logging for monitoring training progress, visualizing metrics, and analyzing model performance. TensorBoard logs are automatically generated during training and provide detailed insights into model behavior.
-
-### **Configuration**
-
-TensorBoard logging is configured in your experiment config file (`configs/base.yaml` or `configs/experiments/current.yaml`):
-
-```yaml
-tensorboard:
-  enabled: true                    # Enable/disable TensorBoard logging
-  log_audio: true                  # Log audio samples to TensorBoard
-  alpha_sweep_alphas: [0.1, 0.3, 0.5, 0.7, 0.9]  # Alpha values for linearity evaluation
-  alpha_sweep_samples: 100         # Number of sample pairs for alpha sweep
-```
-
-### **Log Location**
-
-TensorBoard logs are saved to:
-```
-<checkpoint_dir>/tensorboard/
-```
-
-For example, if your experiment name is `stft-vocoder`, logs will be in:
-```
-checkpoints/stft-vocoder/tensorboard/
-```
-
-### **Viewing Logs**
-
-Start TensorBoard server:
-
-```bash
-# Navigate to your checkpoint directory or specify the log directory
-tensorboard --logdir checkpoints/stft-vocoder/tensorboard
-
-# Or from the project root
-tensorboard --logdir checkpoints
-```
-
-Then open your browser to `http://localhost:6006` (or the URL shown in terminal).
-
-### **Logged Metrics**
-
-#### **Training and Validation Metrics**
-
-All metrics are logged separately for training (`train/`) and validation (`val/`) phases:
-
-- **Loss Components:**
-  - `loss` - Total training/validation loss
-  - `ReconSingle/Total`, `ReconSingle/WavL1`, `ReconSingle/MRSTFT` - Single-sample reconstruction metrics
-  - `MixReconInterp/Total`, `MixReconInterp/WavL1`, `MixReconInterp/MRSTFT` - Interpolated latent reconstruction
-  - `MixReconReal/Total`, `MixReconReal/WavL1`, `MixReconReal/MRSTFT` - Real mixed input reconstruction
-
-- **Mixing Linearity Metrics:**
-  - `MixRate` - Decode mixing rate (ideal = 1.0, measures how well interpolation matches real encoding)
-  - `MixGap` - Difference between interpolated and real reconstructions
-  - `LatentMixError` - Latent space linearity error (L2 distance)
-
-- **Learning Rate:**
-  - `lr` - Current learning rate (logged every epoch)
-
-#### **Distribution Statistics**
-
-For metrics like `MixRate`, distribution statistics are logged to track variability:
-- `MixRate/mean` - Mean value across validation samples
-- `MixRate/median` - Median value
-- `MixRate/p90` - 90th percentile
-- `MixRate/max` - Maximum value
-
-#### **Audio Samples**
-
-When `log_audio: true` is enabled, audio samples are logged when a new best model is saved:
-
-- Original audio samples from validation set
-- Reconstructed audio from the autoencoder
-- These can be played directly in TensorBoard's audio tab
-
-#### **Hyperparameters**
-
-At training start, all hyperparameters are logged to the "HPARAMS" tab, including:
-- Model architecture parameters (d_model, n_heads, n_layers, etc.)
-- Training hyperparameters (batch_size, learning_rate, num_epochs, etc.)
-- Loss weights (mrstft_weight, l1_weight, decode_mix_weight, etc.)
-- Dataset configuration (sample_rate, chunk_seconds, etc.)
-
-This enables easy comparison of different experiments using TensorBoard's hyperparameter comparison view.
-
-### **Alpha Sweep Evaluation**
-
-The system automatically runs alpha sweep evaluations at key epochs (1/3, 2/3, and final epoch) to measure linearity across different mixing coefficients. Results are logged under `AlphaSweep/` with metrics for each alpha value:
-
-- `AlphaSweep/alpha_0.1/MixReconInterp` - Interpolated reconstruction quality at α=0.1
-- `AlphaSweep/alpha_0.1/MixRate` - Decode mixing rate at α=0.1
-- ... (similar for all configured alpha values)
-
-This helps track how well the model preserves linear mixing relationships across the full range of mixing coefficients.
-
-### **Usage Tips**
-
-1. **Compare Experiments:** TensorBoard can load multiple log directories simultaneously:
-   ```bash
-   tensorboard --logdir checkpoints --port 6006
-   ```
-   This allows comparing different experiment runs side-by-side.
-
-2. **Filter Metrics:** Use the regex filter in TensorBoard's scalar dashboard to focus on specific metrics (e.g., `MixRate` to see only mixing-related metrics).
-
-3. **Monitor Training:** Watch the `val/loss` curve to identify overfitting or convergence. The `val/MixRate/mean` metric should approach 1.0 for good mixing-equivariance.
-
-4. **Debug Audio Quality:** Check the audio tab periodically to ensure reconstructions sound reasonable. Poor audio quality in TensorBoard often correlates with high reconstruction losses.
-
-5. **Hyperparameter Search:** Use the HPARAMS tab to compare different hyperparameter configurations and identify optimal settings.
-
-### **Disabling TensorBoard**
-
-To disable TensorBoard logging (e.g., to reduce I/O overhead or disk usage):
-
-```yaml
-tensorboard:
-  enabled: false
-```
-
-This will skip all TensorBoard operations during training, but training will continue normally.
-
----
-
-## **Status: Research Prototype**
-
-This repository is not yet optimized for production.
-Training stability, decoder design, and mixing-equivariance are active research topics.
-
-Contributions and discussions are welcome.
+## Notes on the v1 → v2 boundary
+
+The file `archive/pre-v1/` preserves everything from the v5–v17 experiments: old STFT
+autoencoder, stempeg-based MUSDB preprocessing, `StemPairDataset`, decode-mix and
+latent-mix losses, alpha-sweep evaluation, TensorBoard and HF Hub integration, M2L
+fine-tuning, the Vocos decoder, and the diffusion training pipeline. None of that is
+imported by v1 code — v1 only shares the architecture classes
+(`models/{encoder,decoder,autoencoder,discriminator}.py`).
+
+v2's plan is:
+1. Demonstrate v1 achieves solid reconstruction on the test set (FAD and SI-SDR).
+2. Re-introduce mixing supervision as an **addition** on top of the clean v1 recipe,
+   not as a replacement for it.
+3. Evaluate whether mixing-equivariance can be learned without degrading the FAD ceiling
+   the v1 baseline establishes.

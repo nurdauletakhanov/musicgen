@@ -1,689 +1,672 @@
-"""Core Trainer class for STFT Autoencoder training."""
+"""
+v1 lean trainer: step-based wave-to-wave autoencoder + discriminator.
 
+No stem-pair logic, no mixing losses, no alpha sweeps, no HF hub, no legacy
+epoch paths. Just: load config, build model + disc, iterate the train loader
+step-by-step, periodically validate and checkpoint, log to console + TB.
+"""
+
+import json
 import os
+import time
+from typing import Dict, Optional
 
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.amp import autocast, GradScaler
+from torch.amp import autocast
 from tqdm import tqdm
 
-from data.dataloader import build_single_stem_dataloaders, build_stem_pair_dataloaders
-from evaluation.samples import save_test_samples
-from evaluation.utils import si_sdr
+from data.dataset import build_dataloaders
 from models.autoencoder import Autoencoder
 from models.discriminator import (
-    MultiScaleSTFTDiscriminator,
-    MultiPeriodDiscriminator,
     CombinedDiscriminator,
+    MultiPeriodDiscriminator,
+    MultiScaleSTFTDiscriminator,
     discriminator_loss,
-    generator_loss,
     feature_matching_loss,
+    generator_loss,
 )
-from training.checkpoint import save_checkpoint, load_checkpoint
-from training.config import get_device, load_config, build_model_config
-from training.hub_utils import setup_hub_integration
-from training.tb_logger import TBLogger, get_alpha_sweep_epochs
-from training.utils import print_logger
+from training.config import build_model_config, get_device, load_config
+
+
+def _si_sdr(x_hat: torch.Tensor, x: torch.Tensor, eps: float = 1e-8) -> float:
+    """Scale-invariant SDR (dB), per-batch mean."""
+    x_hat = x_hat.float().reshape(x_hat.size(0), -1)
+    x = x.float().reshape(x.size(0), -1)
+    x = x - x.mean(dim=1, keepdim=True)
+    x_hat = x_hat - x_hat.mean(dim=1, keepdim=True)
+    alpha = (x_hat * x).sum(dim=1, keepdim=True) / (x.pow(2).sum(dim=1, keepdim=True) + eps)
+    s_target = alpha * x
+    e_noise = x_hat - s_target
+    sisdr = 10.0 * torch.log10(
+        (s_target.pow(2).sum(dim=1) + eps) / (e_noise.pow(2).sum(dim=1) + eps)
+    )
+    return float(sisdr.mean().item())
+
+
+class Logger:
+    """Tees messages to console and to a per-run text log."""
+
+    def __init__(self, save_dir: str):
+        os.makedirs(save_dir, exist_ok=True)
+        self._path = os.path.join(save_dir, "train.log")
+        self._f = open(self._path, "a", encoding="utf-8")
+
+    def info(self, msg: str):
+        print(msg)
+        self._f.write(msg + "\n")
+        self._f.flush()
+
+    def close(self):
+        self._f.close()
 
 
 class Trainer:
-    """Training orchestrator for STFT Autoencoder models."""
-
-    def __init__(self, config_path: str, base_config_path: str = None):
+    def __init__(self, config_path: str, base_config_path: Optional[str] = None):
         cfg = load_config(config_path, base_config_path)
-        
         self.cfg = cfg
         self.config_path = config_path
-        train_cfg = cfg['train']
-        data_cfg = cfg['data']
-        hf_cfg = cfg.get('huggingface', {})
-        
-        # Device setup
-        self.device = get_device(train_cfg.get('gpu_index', 0))
+
+        data_cfg = cfg["data"]
+        train_cfg = cfg["train"]
+        model_cfg = cfg["model"]
+
+        # Device
+        self.device = get_device(train_cfg.get("gpu_index", 0))
         if self.device.type == "cuda":
             torch.backends.cudnn.benchmark = True
-        
-        # Training params
-        self.batch_size = train_cfg['batch_size']
-        self.num_epochs = train_cfg['num_epochs']
-        self.learning_rate = train_cfg['learning_rate']
-        self.weight_decay = train_cfg['weight_decay']
-        self.save_interval = train_cfg.get('save_interval', 10)
-        self.num_workers = train_cfg.get('num_workers', 4)  
-        self.pin_memory = train_cfg.get('pin_memory', None)
-        self.persistent_workers = train_cfg.get('persistent_workers', None)
-        self.prefetch_factor = train_cfg.get('prefetch_factor', 2)
-        self.reset_scheduler_on_resume = train_cfg.get('reset_scheduler_on_resume', False)
-        self.scheduler_warmup_epochs = train_cfg.get('scheduler_warmup_epochs', 0)
-        self.grad_accum_steps = train_cfg.get('gradient_accumulation_steps', 1)
-        self.warmup_epochs = train_cfg.get('warmup_epochs', 0)
-        
-        # Save path
-        name = cfg.get('name', 'default')
-        base_path = train_cfg.get('save_path', './checkpoints')
-        self.save_path = os.path.join(base_path, name)
-        os.makedirs(self.save_path, exist_ok=True)
-        
-        # Logger
-        self.logs = print_logger(self.save_path)
-        self.logs.info(f"Device: {self.device}")
+
+        # Run dir
+        name = cfg.get("name", "run")
+        self.save_dir = os.path.join(train_cfg.get("save_path", "./checkpoints"), name)
+        os.makedirs(self.save_dir, exist_ok=True)
+        self.logs = Logger(self.save_dir)
+        self.logs.info(f"== {name} on {self.device} ==")
         if self.device.type == "cuda":
             self.logs.info(f"GPU: {torch.cuda.get_device_name(self.device)}")
 
-        # Audio params for sample saving
-        self.sample_rate = data_cfg.get('sample_rate', 44100)
-        chunk_seconds = data_cfg.get('chunk_seconds', 1.0)
-        self.chunk_samples = int(self.sample_rate * chunk_seconds)
-        self.num_test_samples = train_cfg.get('num_test_samples', 5)
-        
-        # Build model config
-        self.model_config = build_model_config(cfg)
+        # Audio
+        self.sample_rate = int(data_cfg["sample_rate"])
+        self.chunk_seconds = float(data_cfg["chunk_seconds"])
+        self.chunk_samples = int(self.sample_rate * self.chunk_seconds)
 
-        # Stem-pair mixing (Option β)
-        self.use_stem_pairs = data_cfg.get('use_stem_pairs', False)
-        self.stem_mix_weight = cfg['model'].get('stem_mix_weight', 0.0)
+        # Model config (via shared builder)
+        self.model_config = build_model_config(cfg)
+        self.architecture = model_cfg.get("architecture", "wave")
+        assert self.architecture == "wave", "v1 only supports wave-to-wave"
 
         # Data loaders
-        chunks_dir = data_cfg.get('chunks_dir') or data_cfg.get('musdb_chunks_dir')
-        loader_kwargs = dict(
-            chunks_dir=chunks_dir,
+        self.batch_size = int(train_cfg["batch_size"])
+        num_workers = int(train_cfg.get("num_workers", 4))
+        (
+            self.train_loader,
+            self.val_loader,
+            self.train_dataset,
+            self.val_dataset,
+            self.train_sampler,
+        ) = build_dataloaders(
+            chunks_dir=data_cfg["chunks_dir"],
             batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            device=self.device,
-            logger=self.logs,
-            pin_memory=self.pin_memory,
-            persistent_workers=self.persistent_workers,
-            prefetch_factor=self.prefetch_factor,
-        )
-        if self.use_stem_pairs:
-            (
-                self.train_loader,
-                self.val_loader,
-                self.train_dataset,
-                self.val_dataset,
-                self.train_sampler,
-            ) = build_stem_pair_dataloaders(**loader_kwargs)
-            self.logs.info(f"Stem-pair mixing enabled, weight={self.stem_mix_weight}")
-        else:
-            (
-                self.train_loader,
-                self.val_loader,
-                self.train_dataset,
-                self.val_dataset,
-                self.train_sampler,
-            ) = build_single_stem_dataloaders(**loader_kwargs)
-
-        effective_bs = self.batch_size * self.grad_accum_steps
-        self.logs.info(
-            f"Batch size: {self.batch_size} x {self.grad_accum_steps} accum = {effective_bs} effective"
+            num_workers=num_workers,
+            pin_memory=(self.device.type == "cuda"),
+            persistent_workers=(num_workers > 0),
+            prefetch_factor=train_cfg.get("prefetch_factor", 2) if num_workers > 0 else None,
+            cache_size=int(train_cfg.get("dataset_cache_size", 8)),
         )
         self.logs.info(
-            f"Data loading: num_workers={self.num_workers}, "
-            f"prefetch_factor={self.prefetch_factor}, "
-            f"pin_memory={self.pin_memory}, "
-            f"persistent_workers={self.persistent_workers}"
+            f"train: {len(self.train_dataset):,} chunks across "
+            f"{len(self.train_dataset.files):,} files"
+        )
+        self.logs.info(
+            f"val:   {len(self.val_dataset):,} chunks across "
+            f"{len(self.val_dataset.files):,} files"
         )
 
-        # Discriminator config
-        model_cfg = cfg['model']
-        self.use_discriminator = model_cfg.get('use_discriminator', False)
-        self.use_mpd = model_cfg.get('use_mpd', True)
-        self.disc_weight = model_cfg.get('disc_weight', 1.0)
-        self.feat_match_weight = model_cfg.get('feat_match_weight', 2.0)
-        self.disc_start_epoch = model_cfg.get('disc_start_epoch', 5)
-        self.disc_lr = train_cfg.get('disc_lr', 0.0002)
-        # Random crop for discriminator — avoids huge MPD tensors on 5s audio (1s = 44100 samples)
-        disc_crop_seconds = train_cfg.get('disc_crop_seconds', 1.0)
-        self.disc_crop_samples = int(disc_crop_seconds * data_cfg.get('sample_rate', 44100))
+        # Loss weights (read at loop time so live-reloads are possible)
+        self.mrstft_weight = float(model_cfg.get("mrstft_weight", 1.0))
+        self.mel_weight = float(model_cfg.get("mel_weight", 1.0))
+        self.latent_l2_weight = float(model_cfg.get("latent_l2_weight", 0.0))
 
-        # AMP setup — use bf16 (wider dynamic range, no GradScaler needed)
-        self.use_amp = self.device.type == "cuda"
-        self.amp_dtype = torch.bfloat16
-        self.scaler = GradScaler("cuda", enabled=False)  # disabled for bf16
-        self.logs.info(f"Mixed precision (AMP): {'bf16' if self.use_amp else 'disabled'}")
-        
-        # HuggingFace Hub setup
-        hub = setup_hub_integration(
-            hf_cfg, cfg.get('name', 'default'), config_path, logger=self.logs
-        )
-        self.hf_enabled = hub['enabled']
-        self.hf_repo_id = hub['repo_id']
-        self.hf_push_best = hub['push_best']
-        self.hf_push_checkpoints = hub['push_checkpoints']
-        self.hf_push_interval = hub['push_interval']
-        self.hf_private = hub['private']
-        
-        # TensorBoard setup
-        tb_cfg = cfg.get('tensorboard', {})
-        self.tb_enabled = tb_cfg.get('enabled', True)
-        self.tb_log_audio = tb_cfg.get('log_audio', True)
-        self.tb_alpha_sweep_alphas = tb_cfg.get('alpha_sweep_alphas', [0.1, 0.3, 0.5, 0.7, 0.9])
-        self.tb_alpha_sweep_samples = tb_cfg.get('alpha_sweep_samples', 100)
-        self.tb_logger = TBLogger(self.save_path, enabled=self.tb_enabled)
-        
-        if self.tb_enabled:
-            self.logs.info("TensorBoard logging enabled")
+        # Discriminator
+        self.use_disc = bool(model_cfg.get("use_discriminator", True))
+        self.use_mpd = bool(model_cfg.get("use_mpd", True))
+        self.disc_weight = float(model_cfg.get("disc_weight", 0.5))
+        self.feat_match_weight = float(model_cfg.get("feat_match_weight", 2.0))
+        self.disc_start_step = int(model_cfg.get("disc_start_step", 0))
+        # v2: when true and decode_mix_weight > 0, the gen step also pushes
+        # g(z̄) (the mixed-decode output) through the discriminator, adding
+        # adversarial + feature-matching loss on the mixing path. Disc training
+        # itself is unchanged — disc only sees (x_real, x_hat) updates.
+        self.disc_on_mix = bool(model_cfg.get("disc_on_mix", False))
+
+        # Optimizer / schedule (step-based)
+        self.lr = float(train_cfg["learning_rate"])
+        self.disc_lr = float(train_cfg.get("disc_lr", 2e-4))
+        self.weight_decay = float(train_cfg.get("weight_decay", 1e-3))
+        self.betas = tuple(train_cfg.get("optimizer_betas", [0.8, 0.99]))
+        self.max_steps = int(train_cfg["max_steps"])
+        self.warmup_steps = int(train_cfg.get("warmup_steps", 0))
+        self.save_every_steps = int(train_cfg.get("save_every_steps", 10000))
+        self.log_every_steps = int(train_cfg.get("log_every_steps", 100))
+        self.grad_clip = float(train_cfg.get("grad_clip", 1.0))
+        self.num_val_batches = train_cfg.get("num_val_batches", None)  # None -> all
+        # Gradient accumulation: effective_batch = batch_size * grad_accum_steps.
+        # Keeps optimizer stepping at the "logical" batch while halving peak
+        # memory per forward/backward — required once disc activates if the
+        # combined gen+disc memory exceeds GPU capacity at the logical batch.
+        self.grad_accum_steps = int(train_cfg.get("grad_accum_steps", 1))
+        self._accum_counter = 0  # how many micro-batches we've accumulated in the current window
+
+        # v2: optionally freeze encoder (mechanism-isolation ablation —
+        # tests whether L_dec works via decoder smoothness or via encoder
+        # gradients flowing through z̄). Set in train config.
+        self.freeze_encoder_flag = bool(train_cfg.get("freeze_encoder", False))
+
+        # AMP precision. v1 defaults to fp32 for stability; "bf16" restores
+        # the mixed-precision path that caused the single-step regression at
+        # step 4700 in the first bf16 run. No GradScaler needed either way —
+        # bf16 has a wide enough dynamic range that fp16-style scaling isn't
+        # required.
+        precision = str(train_cfg.get("precision", "fp32")).lower()
+        self.use_amp = (precision == "bf16") and (self.device.type == "cuda")
+        self.amp_dtype = torch.bfloat16 if self.use_amp else torch.float32
+        self.logs.info(f"precision: {precision} (amp={'on' if self.use_amp else 'off'})")
+
+        # Val sample dump (writes .wav files to <save_dir>/samples/step_<N>/)
+        self.log_audio = bool(train_cfg.get("log_val_audio", True))
+        self.num_test_samples = int(train_cfg.get("num_test_samples", 4))
+
+        self.model: Optional[Autoencoder] = None
+        self.disc: Optional[torch.nn.Module] = None
+        self.optimizer: Optional[torch.optim.Optimizer] = None
+        self.disc_optimizer: Optional[torch.optim.Optimizer] = None
+        self.scheduler = None
+
+    # ----------------------------------------------------------------------
 
     def build_model(self):
-        """Build model, optimizer, scheduler, and optional discriminator."""
-        self.logs.info(f"Model config: {self.model_config}")
         self.model = Autoencoder(**self.model_config).to(self.device)
 
+        # Optional encoder freeze (v2 mechanism-isolation ablation).
+        if self.freeze_encoder_flag:
+            for p in self.model.encoder.parameters():
+                p.requires_grad = False
+            n_frozen = sum(p.numel() for p in self.model.encoder.parameters())
+            n_trainable = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+            self.logs.info(
+                f"freeze_encoder=True: frozen {n_frozen:,} encoder params; "
+                f"{n_trainable:,} params remain trainable"
+            )
+
         self.optimizer = torch.optim.AdamW(
-            self.model.parameters(),
-            lr=self.learning_rate,
+            [p for p in self.model.parameters() if p.requires_grad],
+            lr=self.lr,
+            betas=self.betas,
             weight_decay=self.weight_decay,
         )
 
-        if self.warmup_epochs > 0:
+        # Cosine decay to 10% of peak over max_steps, with linear warmup.
+        if self.warmup_steps > 0:
             warmup = torch.optim.lr_scheduler.LinearLR(
                 self.optimizer,
-                start_factor=1e-3,
-                end_factor=1.0,
-                total_iters=self.warmup_epochs,
+                start_factor=1e-3, end_factor=1.0,
+                total_iters=self.warmup_steps,
             )
             cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
                 self.optimizer,
-                T_max=self.num_epochs - self.warmup_epochs,
-                eta_min=1e-6,
+                T_max=max(1, self.max_steps - self.warmup_steps),
+                eta_min=self.lr * 0.1,
             )
             self.scheduler = torch.optim.lr_scheduler.SequentialLR(
                 self.optimizer,
                 schedulers=[warmup, cosine],
-                milestones=[self.warmup_epochs],
+                milestones=[self.warmup_steps],
             )
         else:
             self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                self.optimizer,
-                T_max=self.num_epochs,
-                eta_min=1e-6,
+                self.optimizer, T_max=max(1, self.max_steps), eta_min=self.lr * 0.1,
             )
 
-        # Discriminator (optional) — MSSTFTD (spectral) + optional MPD (periodic)
-        self.discriminator = None
-        self.disc_optimizer = None
-        if self.use_discriminator:
+        total = sum(p.numel() for p in self.model.parameters())
+        self.logs.info(f"model params: {total:,}")
+
+        if self.use_disc:
             msstftd = MultiScaleSTFTDiscriminator().to(self.device)
             if self.use_mpd:
                 mpd = MultiPeriodDiscriminator().to(self.device)
-                self.discriminator = CombinedDiscriminator(msstftd, mpd).to(self.device)
+                self.disc = CombinedDiscriminator(msstftd, mpd).to(self.device)
             else:
-                self.discriminator = msstftd
-                self.logs.info("Discriminator: MSSTFTD only (MPD disabled)")
+                self.disc = msstftd
             self.disc_optimizer = torch.optim.AdamW(
-                self.discriminator.parameters(),
+                self.disc.parameters(),
                 lr=self.disc_lr,
                 betas=(0.5, 0.9),
                 weight_decay=0.0,
             )
+            disc_params = self.disc.num_parameters() if hasattr(self.disc, "num_parameters") \
+                else sum(p.numel() for p in self.disc.parameters())
+            self.logs.info(f"disc params: {disc_params:,} (starts at step {self.disc_start_step})")
 
-        # Log parameters
-        total = sum(p.numel() for p in self.model.parameters())
-        encoder_params = self.model.encoder.num_parameters()
-        decoder_params = self.model.decoder.num_parameters()
+    # ----------------------------------------------------------------------
 
-        if isinstance(encoder_params, dict):
-            encoder_total = encoder_params.get('total', encoder_params)
-        else:
-            encoder_total = encoder_params
+    def fit(self, start_step: int = 0, best_val_loss: float = float("inf")):
+        assert self.model is not None, "call build_model() first"
 
-        self.logs.info("=== Parameters ===")
-        self.logs.info(f"Total: {total:,}")
-        self.logs.info(f"Encoder: {encoder_total:,}")
-        self.logs.info(f"Decoder: {decoder_params:,}")
-        if self.discriminator is not None:
-            disc_params = self.discriminator.num_parameters()
-            self.logs.info(f"Discriminator: {disc_params:,}")
-            self.logs.info(f"Disc starts at epoch {self.disc_start_epoch}")
+        # Persist config next to checkpoints for reproducibility
+        import shutil
+        dst = os.path.join(self.save_dir, "config.yaml")
+        if not os.path.exists(dst):
+            shutil.copy2(self.config_path, dst)
 
-    def load_checkpoint(self, checkpoint_path: str) -> tuple:
-        """Load checkpoint to resume training."""
-        start_epoch, best_val_loss = load_checkpoint(
-            checkpoint_path=checkpoint_path,
-            model=self.model,
-            optimizer=self.optimizer,
-            scheduler=self.scheduler,
-            scaler=self.scaler,
-            device=self.device,
-            reset_scheduler=self.reset_scheduler_on_resume,
-            logger=self.logs,
-            discriminator=self.discriminator,
-            disc_optimizer=self.disc_optimizer,
+        self.logs.info(
+            f"fit: max_steps={self.max_steps}, warmup={self.warmup_steps}, "
+            f"save_every={self.save_every_steps}, log_every={self.log_every_steps}, "
+            f"batch={self.batch_size}, lr={self.lr:.2e}"
         )
-        # Recreate cosine scheduler with correct T_max for remaining epochs
-        if self.reset_scheduler_on_resume:
-            remaining = self.num_epochs - start_epoch
-            if self.warmup_epochs > 0:
-                warmup = torch.optim.lr_scheduler.LinearLR(
-                    self.optimizer,
-                    start_factor=1e-3,
-                    end_factor=1.0,
-                    total_iters=self.warmup_epochs,
-                )
-                cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
-                    self.optimizer,
-                    T_max=remaining - self.warmup_epochs,
-                    eta_min=1e-6,
-                )
-                self.scheduler = torch.optim.lr_scheduler.SequentialLR(
-                    self.optimizer,
-                    schedulers=[warmup, cosine],
-                    milestones=[self.warmup_epochs],
-                )
-            else:
-                self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                    self.optimizer,
-                    T_max=remaining,
-                    eta_min=1e-6,
-                )
-            self.logs.info(
-                f"Cosine scheduler: T_max={remaining - self.warmup_epochs}, "
-                f"warmup={self.warmup_epochs} epochs"
-            )
-        if self.scheduler_warmup_epochs > 0:
-            self.logs.info(
-                f"Scheduler warmup enabled: LR reduction disabled for "
-                f"{self.scheduler_warmup_epochs} epochs after resume"
-            )
-        return start_epoch, best_val_loss
 
-    def _disc_crop(self, x_real, x_hat):
-        """Random crop both tensors to disc_crop_samples length for discriminator input."""
-        L = x_real.size(2)
-        crop = self.disc_crop_samples
-        if L <= crop:
-            return x_real, x_hat
-        start = torch.randint(0, L - crop + 1, (1,)).item()
-        return x_real[:, :, start:start + crop], x_hat[:, :, start:start + crop]
+        self.model.train()
+        if self.disc is not None:
+            self.disc.train()
 
-    def _run_epoch(self, loader, training: bool = True, epoch: int = 0) -> dict:
-        """
-        Run one epoch of training or validation.
+        global_step = start_step
+        epoch_ctr = 0
+        running: Dict[str, list] = {}
 
-        Args:
-            loader: Data loader (single-stem)
-            training: Whether this is a training epoch
-            epoch: Current epoch number (for discriminator warmup)
+        pbar = tqdm(total=self.max_steps, initial=start_step, desc="steps")
+        t0 = time.time()
 
-        Returns dict with:
-        - Mean values for all metrics
-        - Raw MixRate values for distribution stats (validation only)
-        """
-        if training:
-            self.model.train()
-            if self.discriminator is not None:
-                self.discriminator.train()
-        else:
-            self.model.eval()
-            if self.discriminator is not None:
-                self.discriminator.eval()
+        while global_step < self.max_steps:
+            self.train_sampler.set_epoch(epoch_ctr)
 
-        disc_active = (self.discriminator is not None and epoch >= self.disc_start_epoch)
+            for batch in self.train_loader:
+                if global_step >= self.max_steps:
+                    break
 
-        # Metric collectors
-        metric_keys = [
-            'loss',
-            # Reconstruction
-            'ReconSingle/Total', 'ReconSingle/MRSTFT', 'ReconSingle/Mel',
-            # Mixing (Option α: cross-batch)
-            'DecodeMix/L1', 'MixRate',
-            # Mixing (Option β: stem-pair)
-            'StemMix/Loss',
-            # Latent space stats
-            'Latent/mean', 'Latent/std', 'Latent/absmax', 'Latent/l2',
-            # Gradient norm (train only)
-            'grad_norm',
-            # Discriminator metrics
-            'Disc/loss', 'Disc/gen_adv', 'Disc/feat_match',
-            # Perceptual
-            'SI-SDR',
-            # Audio quality diagnostics (val only)
-            'Diag/RMSRatio', 'Diag/STFTConsistency', 'Diag/PhaseErr_deg',
-        ]
-        metrics = {k: [] for k in metric_keys}
+                metrics = self._train_step(batch, global_step)
 
-        # Collect raw MixRate values for distribution stats (validation only)
-        mix_rate_values = []
+                # Non-boundary micro-batches return None; skip logging/global_step
+                # until we complete the accumulation window.
+                if metrics is None:
+                    continue
 
-        desc = "Train" if training else "Val"
-        context = torch.enable_grad() if training else torch.no_grad()
+                for k, v in metrics.items():
+                    running.setdefault(k, []).append(v)
 
-        with context:
-            for batch_idx, batch in enumerate(tqdm(loader, desc=desc, leave=False)):
-                x_stft = batch['x_stft'].to(self.device, non_blocking=True)
-                x_wave = batch['x_wave'].to(self.device, non_blocking=True)
+                global_step += 1
+                pbar.update(1)
 
-                if x_wave.dim() == 2:
-                    x_wave = x_wave.unsqueeze(1)
+                # Console / TB summary
+                if global_step % self.log_every_steps == 0:
+                    self._flush_running(running, global_step, t0)
+                    running = {}
+                    t0 = time.time()
 
-                # --- Discriminator step (train only, after warmup) ---
-                # Only update disc on generator step boundaries to match update frequency
-                # (without this, disc updates 12x more often than gen with grad_accum=12)
-                is_gen_step = (batch_idx + 1) % self.grad_accum_steps == 0
-                if training and disc_active and is_gen_step:
-                    self.discriminator.requires_grad_(True)
-                    self.disc_optimizer.zero_grad()
+                # Validate + checkpoint
+                if global_step % self.save_every_steps == 0:
+                    val_metrics = self._validate(global_step)
+                    best_val_loss = self._maybe_save(global_step, val_metrics, best_val_loss)
+                    self.model.train()
+                    if self.disc is not None:
+                        self.disc.train()
 
-                    torch.cuda.empty_cache()
-                    with torch.no_grad():
-                        with autocast("cuda", dtype=self.amp_dtype, enabled=self.use_amp):
-                            z = self.model.encoder(x_stft)
-                            x_hat, _ = self.model.decoder(z)
+            epoch_ctr += 1
 
-                    with autocast("cuda", dtype=self.amp_dtype, enabled=self.use_amp):
-                        # Truncate x_wave to match decoder output length
-                        tgt = self.model.decoder.target_length
-                        x_real = x_wave[:, :, :tgt] if x_wave.size(2) > tgt else x_wave
-                        # Random crop for discriminator — avoids huge MPD tensors on 5s audio
-                        x_real_d, x_hat_d = self._disc_crop(x_real, x_hat.detach())
-                        real_logits, _ = self.discriminator(x_real_d)
-                        fake_logits, _ = self.discriminator(x_hat_d)
-                        disc_loss = discriminator_loss(real_logits, fake_logits)
+        pbar.close()
+        # Final validation + checkpoint at end of training
+        val_metrics = self._validate(global_step)
+        best_val_loss = self._maybe_save(global_step, val_metrics, best_val_loss, force_final=True)
 
-                    disc_loss.backward()
-                    self.disc_optimizer.step()
-                    metrics['Disc/loss'].append(disc_loss.item())
-                    del disc_loss, real_logits, fake_logits, x_real_d, x_hat_d, x_hat, z
+        self.logs.info(f"done. final step {global_step}, best_val {best_val_loss:.4f}")
+        self.logs.close()
+        return best_val_loss
 
-                    self.discriminator.requires_grad_(False)
+    # ----------------------------------------------------------------------
 
-                # --- Generator step ---
+    def _train_step(self, batch: Dict, global_step: int) -> Optional[Dict[str, float]]:
+        """Run one micro-batch of training. Returns metrics dict on an
+        accumulation boundary (so the outer loop should treat that as a
+        completed optimizer step), or None while still accumulating."""
+        x_wave = batch["x_wave"].to(self.device, non_blocking=True)
+        if x_wave.dim() == 2:
+            x_wave = x_wave.unsqueeze(1)
+
+        disc_active = self.disc is not None and global_step >= self.disc_start_step
+        is_first = (self._accum_counter == 0)
+        is_boundary = (self._accum_counter + 1 >= self.grad_accum_steps)
+        scale = 1.0 / self.grad_accum_steps
+        out: Dict[str, float] = {}
+
+        # --- Discriminator micro-step ---
+        if disc_active:
+            if is_first:
+                self.disc_optimizer.zero_grad(set_to_none=True)
+            self.disc.requires_grad_(True)
+            tgt = self.model.decoder.target_length
+            x_real = x_wave[:, :, :tgt] if x_wave.size(2) > tgt else x_wave
+
+            # Generate fake samples without tracking generator gradients.
+            # When disc_on_mix is on AND L_dec is active, also generate the
+            # mixing-path samples so the disc trains symmetrically with what
+            # the gen step asks of it (otherwise disc has bias: gen step's
+            # gen_adv_mix targets a "real" the disc never had as a positive).
+            do_mix_d = (self.disc_on_mix
+                        and self.model.decode_mix_weight > 0.0
+                        and x_wave.size(0) >= 2)
+            with torch.no_grad():
                 with autocast("cuda", dtype=self.amp_dtype, enabled=self.use_amp):
-                    total, components, x_hat, stft_pred = self.model(
-                        x_stft, x_wave, compute_mix_rate=(not training)
+                    z = self.model.encoder(x_wave)
+                    x_hat_d, _ = self.model.decoder(z)
+                    if do_mix_d:
+                        B = x_wave.size(0)
+                        perm_d = self.model._random_pair_perm(B, x_wave.device)
+                        a_d = torch.rand(B, 1, 1, device=x_wave.device)
+                        x_mix_real_d = (a_d * x_wave + (1 - a_d) * x_wave[perm_d])
+                        if x_mix_real_d.size(2) > tgt:
+                            x_mix_real_d = x_mix_real_d[:, :, :tgt]
+                        z_interp_d = a_d * z + (1 - a_d) * z[perm_d]
+                        x_interp_d, _ = self.model.decoder(z_interp_d)
+
+            with autocast("cuda", dtype=self.amp_dtype, enabled=self.use_amp):
+                real_logits, _ = self.disc(x_real)
+                fake_logits, _ = self.disc(x_hat_d.detach())
+                d_loss = discriminator_loss(real_logits, fake_logits)
+                d_total = d_loss
+                if do_mix_d:
+                    real_mix_logits, _ = self.disc(x_mix_real_d)
+                    fake_mix_logits, _ = self.disc(x_interp_d.detach())
+                    d_loss_mix = discriminator_loss(real_mix_logits, fake_mix_logits)
+                    d_total = d_total + d_loss_mix
+
+            (d_total * scale).backward()
+            if is_boundary:
+                self.disc_optimizer.step()
+            out["disc/loss"] = float(d_loss.item())
+            if do_mix_d:
+                out["disc/loss_mix"] = float(d_loss_mix.item())
+                del z_interp_d, x_interp_d, x_mix_real_d, real_mix_logits, fake_mix_logits, d_loss_mix
+            del z, x_hat_d, real_logits, fake_logits, d_loss, d_total
+            self.disc.requires_grad_(False)
+
+        # --- Generator micro-step ---
+        if is_first:
+            self.optimizer.zero_grad(set_to_none=True)
+        with autocast("cuda", dtype=self.amp_dtype, enabled=self.use_amp):
+            total, comps, x_hat, mix_aux = self.model(x_wave)
+
+            if disc_active:
+                tgt = self.model.decoder.target_length
+                x_real = x_wave[:, :, :tgt] if x_wave.size(2) > tgt else x_wave
+                fake_logits, fake_feats = self.disc(x_hat)
+                with torch.no_grad():
+                    _, real_feats = self.disc(x_real)
+                gen_adv = generator_loss(fake_logits)
+                fm = feature_matching_loss(real_feats, fake_feats)
+                total = total + self.disc_weight * gen_adv + self.feat_match_weight * fm
+                out["disc/gen_adv"] = float(gen_adv.item())
+                out["disc/feat_match"] = float(fm.item())
+
+                # v2: optional adversarial supervision on the mixed-decode
+                # path g(z̄). Same disc weights as the regular recon path; the
+                # disc isn't retrained on mix-specific data, it just judges
+                # any audio coming out of the generator.
+                if self.disc_on_mix and mix_aux is not None:
+                    x_interp = mix_aux["x_interp"]
+                    x_mix_real = mix_aux["x_mix_wave"]
+                    if x_mix_real.size(2) > tgt:
+                        x_mix_real = x_mix_real[:, :, :tgt]
+                    fake_logits_m, fake_feats_m = self.disc(x_interp)
+                    with torch.no_grad():
+                        _, real_feats_m = self.disc(x_mix_real)
+                    gen_adv_m = generator_loss(fake_logits_m)
+                    fm_m = feature_matching_loss(real_feats_m, fake_feats_m)
+                    total = (total
+                             + self.disc_weight * gen_adv_m
+                             + self.feat_match_weight * fm_m)
+                    out["disc/gen_adv_mix"] = float(gen_adv_m.item())
+                    out["disc/feat_match_mix"] = float(fm_m.item())
+
+        (total * scale).backward()
+
+        if not is_boundary:
+            self._accum_counter += 1
+            return None
+
+        # Accumulation boundary — clip, step, advance scheduler.
+        grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip)
+        self.optimizer.step()
+        self.scheduler.step()
+        self._accum_counter = 0
+
+        out["loss"] = float(total.item())
+        out["recon/mrstft"] = float(comps.get("ReconSingle/MRSTFT", 0.0))
+        out["recon/mel"] = float(comps.get("ReconSingle/Mel", 0.0))
+        # v2: surface mixing-loss components so the train log shows whether
+        # L_dec / L_enc are firing without manually decomposing total.
+        out["mix/decode"] = float(comps.get("DecodeMix/L1", 0.0))
+        out["mix/latent"] = float(comps.get("LatentMix/MSE", 0.0))
+        out["latent/std"] = float(comps.get("Latent/std", 0.0))
+        out["latent/absmax"] = float(comps.get("Latent/absmax", 0.0))
+        out["grad_norm"] = float(grad_norm.item())
+        out["lr"] = float(self.optimizer.param_groups[0]["lr"])
+        return out
+
+    # ----------------------------------------------------------------------
+
+    @torch.no_grad()
+    def _validate(self, global_step: int) -> Dict[str, float]:
+        self.model.eval()
+        if self.disc is not None:
+            self.disc.eval()
+
+        agg: Dict[str, list] = {}
+        by_source: Dict[str, list] = {}
+
+        for i, batch in enumerate(tqdm(self.val_loader, desc=f"val@{global_step}", leave=False)):
+            if self.num_val_batches is not None and i >= self.num_val_batches:
+                break
+            x_wave = batch["x_wave"].to(self.device, non_blocking=True)
+            if x_wave.dim() == 2:
+                x_wave = x_wave.unsqueeze(1)
+
+            with autocast("cuda", dtype=self.amp_dtype, enabled=self.use_amp):
+                total, comps, x_hat, _ = self.model(x_wave)
+
+            tgt = self.model.decoder.target_length
+            x_ref = x_wave[:, :, :tgt] if x_wave.size(2) > tgt else x_wave
+            sisdr = _si_sdr(x_hat, x_ref)
+
+            agg.setdefault("loss", []).append(float(total.item()))
+            agg.setdefault("recon/mrstft", []).append(float(comps.get("ReconSingle/MRSTFT", 0.0)))
+            agg.setdefault("recon/mel", []).append(float(comps.get("ReconSingle/Mel", 0.0)))
+            agg.setdefault("si_sdr", []).append(sisdr)
+
+            # Per-source breakdown uses the "source" field in the batch (list of strings).
+            sources = batch.get("source", None)
+            if sources is not None:
+                # Default collate turns list-of-str into a list. We want per-sample.
+                for s_i, src in enumerate(sources):
+                    by_source.setdefault(f"si_sdr/{src}", []).append(
+                        _si_sdr(x_hat[s_i:s_i+1], x_ref[s_i:s_i+1])
                     )
 
-                    # Adversarial + feature matching loss (reuse x_hat from forward)
-                    if disc_active and training:
-                        tgt = self.model.decoder.target_length
-                        x_real = x_wave[:, :, :tgt] if x_wave.size(2) > tgt else x_wave
-                        # Random crop (independent from disc step — extra augmentation)
-                        x_real_d, x_hat_d = self._disc_crop(x_real, x_hat)
-                        fake_logits, fake_features = self.discriminator(x_hat_d)
-                        with torch.no_grad():
-                            _, real_features = self.discriminator(x_real_d)
+        means = {k: float(np.mean(v)) for k, v in agg.items() if v}
+        for k, v in by_source.items():
+            means[k] = float(np.mean(v))
 
-                        gen_adv = generator_loss(fake_logits)
-                        feat_match = feature_matching_loss(real_features, fake_features)
-                        total = total + self.disc_weight * gen_adv + self.feat_match_weight * feat_match
-
-                        components['Disc/gen_adv'] = gen_adv.item()
-                        components['Disc/feat_match'] = feat_match.item()
-
-                    # --- Stem-pair mixing loss (Option β) ---
-                    if self.use_stem_pairs and self.stem_mix_weight > 0.0 and 'x_stft2' in batch:
-                        x_stft2 = batch['x_stft2'].to(self.device, non_blocking=True)
-                        x_wave2 = batch['x_wave2'].to(self.device, non_blocking=True)
-                        if x_wave2.dim() == 2:
-                            x_wave2 = x_wave2.unsqueeze(1)
-
-                        B = x_stft.size(0)
-                        z1 = self.model.encoder(x_stft)
-                        z2 = self.model.encoder(x_stft2)
-
-                        alpha = torch.rand(B, 1, 1, device=x_stft.device)
-                        beta = 1.0 - alpha
-
-                        tgt = self.model.decoder.target_length
-                        w1 = x_wave[:, :, :tgt]
-                        w2 = x_wave2[:, :, :tgt]
-
-                        z_interp = alpha * z1 + beta * z2
-                        x_mix_wave = alpha * w1 + beta * w2
-
-                        x_interp, _ = self.model.decoder(z_interp)
-
-                        mix_mr = self.model.mrstft_loss(x_interp, x_mix_wave)
-                        mix_mel = self.model.mel_loss(x_interp, x_mix_wave) if self.model.mel_weight > 0.0 else x_interp.new_tensor(0.0)
-                        mix_wav = F.l1_loss(x_interp, x_mix_wave)
-                        stem_mix_loss = self.model.mrstft_weight * mix_mr + self.model.mel_weight * mix_mel + mix_wav
-
-                        total = total + self.stem_mix_weight * stem_mix_loss
-                        components['StemMix/Loss'] = stem_mix_loss.item()
-
-                if training:
-                    scaled_loss = total / self.grad_accum_steps
-                    scaled_loss.backward()
-
-                if training and (batch_idx + 1) % self.grad_accum_steps == 0:
-                    grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                    metrics['grad_norm'].append(grad_norm.item())
-                    self.optimizer.step()
-                    self.optimizer.zero_grad()
-
-                # Audio quality diagnostics (validation only)
-                if not training and x_hat is not None:
-                    tgt = self.model.decoder.target_length
-                    x_ref = x_wave[:, :, :tgt] if x_wave.size(2) > tgt else x_wave
-                    sisdr_val = si_sdr(x_hat.detach().float(), x_ref.float())
-                    metrics['SI-SDR'].append(sisdr_val)
-
-                    with torch.no_grad():
-                        hat_f = x_hat.detach().float()
-                        ref_f = x_ref.float()
-
-                        # RMS ratio: energy preservation (1.0 = perfect)
-                        rms_hat = hat_f.pow(2).mean(dim=-1).sqrt()
-                        rms_ref = ref_f.pow(2).mean(dim=-1).sqrt()
-                        metrics['Diag/RMSRatio'].append((rms_hat / rms_ref.clamp(min=1e-8)).mean().item())
-
-                        # STFT consistency: use stft_pred from forward() (no extra encode+decode)
-                        sp = stft_pred.detach().float()
-                        pred_c = torch.complex(sp[:, 0], sp[:, 1])
-                        wav_rt = torch.istft(
-                            pred_c, n_fft=self.model.n_fft,
-                            hop_length=self.model.hop_length,
-                            win_length=self.model.win_length,
-                            window=self.model.stft_window,
-                            center=True, length=tgt,
-                        )
-                        stft_rt = torch.stft(
-                            wav_rt, n_fft=self.model.n_fft,
-                            hop_length=self.model.hop_length,
-                            win_length=self.model.win_length,
-                            window=self.model.stft_window,
-                            center=True, return_complex=True,
-                        )
-                        rt_ri = torch.stack([stft_rt.real, stft_rt.imag], dim=1)
-                        T_min = min(sp.shape[-1], rt_ri.shape[-1])
-                        diff = (sp[..., :T_min] - rt_ri[..., :T_min]).reshape(sp.shape[0], -1)
-                        orig = sp[..., :T_min].reshape(sp.shape[0], -1)
-                        metrics['Diag/STFTConsistency'].append(
-                            (torch.linalg.norm(diff, dim=1) / torch.linalg.norm(orig, dim=1).clamp(min=1e-8)).mean().item()
-                        )
-
-                        # Phase error (magnitude-weighted, in degrees)
-                        hat_stft = torch.stft(
-                            hat_f.squeeze(1), n_fft=self.model.n_fft,
-                            hop_length=self.model.hop_length,
-                            win_length=self.model.win_length,
-                            window=self.model.stft_window,
-                            center=True, return_complex=True,
-                        )
-                        ref_stft = torch.stft(
-                            ref_f.squeeze(1), n_fft=self.model.n_fft,
-                            hop_length=self.model.hop_length,
-                            win_length=self.model.win_length,
-                            window=self.model.stft_window,
-                            center=True, return_complex=True,
-                        )
-                        phase_diff = torch.abs(hat_stft.angle() - ref_stft.angle())
-                        phase_diff = torch.min(phase_diff, 2 * 3.14159265 - phase_diff)
-                        ref_mag = ref_stft.abs()
-                        metrics['Diag/PhaseErr_deg'].append(
-                            float((phase_diff * ref_mag).sum() / ref_mag.sum().clamp(min=1e-8) * 180 / 3.14159265)
-                        )
-
-                # Collect metrics
-                metrics['loss'].append(total.item())
-                for key in metrics.keys():
-                    if key != 'loss' and key in components:
-                        metrics[key].append(components[key])
-
-                # Collect raw MixRate for distribution stats
-                mix_rate = components.get('MixRate', 0.0)
-                if mix_rate > 0:  # Only collect non-zero rates (mixing enabled)
-                    mix_rate_values.append(mix_rate)
-
-        # Flush any remaining accumulated gradients at end of epoch
-        if training and self.grad_accum_steps > 1:
-            num_batches = batch_idx + 1
-            if num_batches % self.grad_accum_steps != 0:
-                grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-                metrics['grad_norm'].append(grad_norm.item())
-                self.optimizer.step()
-                self.optimizer.zero_grad()
-
-        result = {k: np.mean(v) if v else 0.0 for k, v in metrics.items()}
-        result['_mix_rate_values'] = mix_rate_values  # Raw values for distribution
-        return result
-
-    def _save_checkpoint(self, epoch: int, val_loss: float, best_val_loss: float, is_best: bool = False):
-        """Save checkpoint wrapper."""
-        save_checkpoint(
-            epoch=epoch,
-            model=self.model,
-            optimizer=self.optimizer,
-            scheduler=self.scheduler,
-            scaler=self.scaler,
-            model_config=self.model_config,
-            val_loss=val_loss,
-            best_val_loss=best_val_loss,
-            save_path=self.save_path,
-            is_best=is_best,
-            logger=self.logs,
-            hf_enabled=self.hf_enabled,
-            hf_repo_id=self.hf_repo_id,
-            hf_push_best=self.hf_push_best,
-            hf_push_checkpoints=self.hf_push_checkpoints,
-            hf_push_interval=self.hf_push_interval,
-            hf_private=self.hf_private,
-            discriminator=self.discriminator,
-            disc_optimizer=self.disc_optimizer,
+        self.logs.info(
+            f"VAL  step {global_step}: loss={means.get('loss', 0):.4f}  "
+            f"MR-STFT={means.get('recon/mrstft', 0):.4f}  "
+            f"Mel={means.get('recon/mel', 0):.4f}  "
+            f"SI-SDR={means.get('si_sdr', 0):.2f} dB"
         )
+        src_lines = [f"{k.split('/')[-1]}={v:.2f}" for k, v in means.items() if k.startswith("si_sdr/")]
+        if src_lines:
+            self.logs.info("VAL  per-source SI-SDR: " + ", ".join(src_lines))
 
-    def _log_metrics(self, prefix: str, metrics: dict):
-        """Log training/validation metrics to console."""
-        recon_total = metrics.get('ReconSingle/Total', 0.0)
-        recon_mrstft = metrics.get('ReconSingle/MRSTFT', 0.0)
-        recon_mel = metrics.get('ReconSingle/Mel', 0.0)
-        decode_mix = metrics.get('DecodeMix/L1', 0.0)
-        mix_rate = metrics.get('MixRate', 0.0)
+        if self.log_audio and self.num_test_samples > 0:
+            self._save_val_samples(global_step)
 
-        stem_mix = metrics.get('StemMix/Loss', 0.0)
+        return means
 
-        mel_str = f", Mel: {recon_mel:.4f}" if recon_mel > 0.0 else ""
-        line = (
-            f"{prefix} - Loss: {metrics['loss']:.6f} | "
-            f"Recon: {recon_total:.4f} (MR: {recon_mrstft:.4f}{mel_str}) | "
-            f"DecodeMix: {decode_mix:.4f} | Rate: {mix_rate:.4f}"
-        )
-        if stem_mix > 0.0:
-            line += f" | StemMix: {stem_mix:.4f}"
+    # ----------------------------------------------------------------------
 
-        sisdr = metrics.get('SI-SDR', 0.0)
-        if sisdr != 0.0:
-            line += f" | SI-SDR: {sisdr:.2f} dB"
+    @torch.no_grad()
+    def _save_val_samples(self, global_step: int):
+        """Write ref.wav and hat.wav pairs to <save_dir>/samples/step_<N>/.
 
-        rms_ratio = metrics.get('Diag/RMSRatio', 0.0)
-        if rms_ratio > 0.0:
-            stft_consist = metrics.get('Diag/STFTConsistency', 0.0)
-            phase_err = metrics.get('Diag/PhaseErr_deg', 0.0)
-            line += f" | RMS: {rms_ratio:.3f}, Consist: {stft_consist:.3f}, Phase: {phase_err:.1f}deg"
+        Selects samples spanning every source in the val set so a given dump
+        covers musdb / maestro / fma rather than only the alphabetically-first
+        source. Indices are deterministic, so the same tracks are dumped at
+        every checkpoint — A/B comparison across training is possible by
+        playing the same filename from different step_<N>/ folders.
+        """
+        try:
+            import soundfile as sf
+        except ImportError:
+            self.logs.info("WARN: soundfile not installed; skipping val audio dump")
+            return
 
-        disc_loss = metrics.get('Disc/loss', 0.0)
-        if disc_loss > 0:
-            gen_adv = metrics.get('Disc/gen_adv', 0.0)
-            feat_match = metrics.get('Disc/feat_match', 0.0)
-            line += f" | Disc: {disc_loss:.4f}, Adv: {gen_adv:.4f}, FM: {feat_match:.4f}"
+        out_dir = os.path.join(self.save_dir, "samples", f"step_{global_step:07d}")
+        os.makedirs(out_dir, exist_ok=True)
 
-        self.logs.info(line)
+        # Group val files by source, pick deterministic representatives.
+        files_by_src: Dict[str, list] = {}
+        for f in self.val_dataset.files:
+            files_by_src.setdefault(f["source"], []).append(f)
 
-    def fit(self, start_epoch: int = 0, best_val_loss: float = float('inf')):
-        """Main training loop."""
-        scheduler_warmup_end = start_epoch + self.scheduler_warmup_epochs if start_epoch > 0 else 0
-        
-        # Log hyperparameters once at start
-        self.tb_logger.log_training_config(self.cfg, self.model_config)
-        
-        # Calculate alpha sweep epochs (1/3, 2/3, final)
-        alpha_sweep_epochs = get_alpha_sweep_epochs(self.num_epochs)
-        
-        for epoch in range(start_epoch, self.num_epochs):
-            self.logs.info(f"=== Epoch {epoch+1}/{self.num_epochs} ===")
-            
-            self.train_sampler.set_epoch(epoch)
+        sources = sorted(files_by_src.keys())
+        per_source = max(1, self.num_test_samples // max(1, len(sources)))
+        leftover = max(0, self.num_test_samples - per_source * len(sources))
 
-            train_metrics = self._run_epoch(
-                self.train_loader, training=True, epoch=epoch,
-            )
-            # Free fragmented CUDA memory before validation
-            if self.device.type == "cuda":
-                torch.cuda.empty_cache()
+        # Build the list of (chunk_idx, source) to dump.
+        picks: List[tuple] = []
+        for s_i, source in enumerate(sources):
+            n_for_this = per_source + (1 if s_i < leftover else 0)
+            files = files_by_src[source]
+            # Spread picks across the source's files (first, mid, last, ...).
+            for k in range(min(n_for_this, len(files))):
+                f = files[k * (len(files) // max(1, n_for_this))]
+                picks.append((f["start"], source))  # first chunk of that file
 
-            val_metrics = self._run_epoch(
-                self.val_loader, training=False, epoch=epoch,
-            )
-            
-            # Update scheduler
-            if epoch < scheduler_warmup_end:
-                self.logs.info(
-                    f"Scheduler warmup: skipping LR step (epoch {epoch+1}/{scheduler_warmup_end})"
-                )
-            else:
-                self.scheduler.step()
-            
-            # Log peak VRAM usage after first epoch
-            if epoch == start_epoch and self.device.type == "cuda":
-                peak_mb = torch.cuda.max_memory_allocated(self.device) / (1024 ** 2)
-                self.logs.info(f"Peak VRAM usage: {peak_mb:.0f} MB")
+        for idx, src in picks:
+            item = self.val_dataset[idx]
+            x = item["x_wave"].unsqueeze(0).to(self.device)
+            with autocast("cuda", dtype=self.amp_dtype, enabled=self.use_amp):
+                _, _, x_hat, _ = self.model(x)
+            tgt = self.model.decoder.target_length
+            ref = x[:, :, :tgt].float().cpu().squeeze().numpy()
+            hat = x_hat.float().cpu().squeeze().numpy()
+            sf.write(os.path.join(out_dir, f"{src}_{idx:08d}_ref.wav"), ref, self.sample_rate)
+            sf.write(os.path.join(out_dir, f"{src}_{idx:08d}_hat.wav"), hat, self.sample_rate)
 
-            self._log_metrics("Train", train_metrics)
-            self._log_metrics("Val  ", val_metrics)
-            
-            lr = self.optimizer.param_groups[0]['lr']
-            self.logs.info(f"LR: {lr:.2e}")
-            
-            # TensorBoard logging
-            self.tb_logger.log_epoch(epoch, train_metrics, val_metrics, lr)
-            
-            # Save best model (track recon loss only — total loss jumps when disc activates)
-            val_recon = val_metrics.get('ReconSingle/Total') or val_metrics['loss']
-            is_best = val_recon < best_val_loss
-            if is_best:
-                best_val_loss = val_recon
-                self._save_checkpoint(epoch, val_metrics['loss'], best_val_loss, is_best=True)
-                save_test_samples(
-                    model=self.model,
-                    dataset=self.val_dataset,
-                    save_dir=self.save_path,
-                    epoch=epoch,
-                    sample_rate=self.sample_rate,
-                    chunk_samples=self.chunk_samples,
-                    num_samples=self.num_test_samples,
-                    device=self.device,
-                    use_amp=self.use_amp,
-                    logger=self.logs,
-                    tb_logger=self.tb_logger if self.tb_log_audio else None,
-                )
-            
-            # Periodic checkpoint
-            if (epoch + 1) % self.save_interval == 0:
-                self._save_checkpoint(epoch, val_metrics['loss'], best_val_loss)
-            
-            # Alpha sweep at designated epochs
-            if epoch in alpha_sweep_epochs:
-                self.tb_logger.run_and_log_alpha_sweep(
-                    model=self.model,
-                    dataset=self.val_dataset,
-                    alphas=self.tb_alpha_sweep_alphas,
-                    num_samples=self.tb_alpha_sweep_samples,
-                    epoch=epoch,
-                    device=self.device,
-                    use_amp=self.use_amp,
-                    logger=self.logs,
-                )
+    # ----------------------------------------------------------------------
 
-        self.logs.info(f"Training complete. Best val loss: {best_val_loss:.6f}")
-        self.tb_logger.close()
+    def _flush_running(self, running: Dict[str, list], step: int, t0: float):
+        if not running:
+            return
+        dt = max(1e-6, time.time() - t0)
+        steps_per_s = self.log_every_steps / dt
+
+        means = {k: float(np.mean(v)) for k, v in running.items() if v}
+        lr = means.get("lr", self.optimizer.param_groups[0]["lr"])
+
+        line_parts = [
+            f"step {step:>7d}",
+            f"loss={means.get('loss', 0):.4f}",
+            f"MR={means.get('recon/mrstft', 0):.4f}",
+            f"Mel={means.get('recon/mel', 0):.4f}",
+            f"z|std|={means.get('latent/std', 0):.3f}",
+            f"gnorm={means.get('grad_norm', 0):.2f}",
+            f"lr={lr:.2e}",
+            f"sps={steps_per_s:.2f}",
+        ]
+        # Surface mixing-loss components (only when actually firing)
+        if means.get("mix/decode", 0.0) > 0.0:
+            line_parts.append(f"L_dec={means['mix/decode']:.3f}")
+        if means.get("mix/latent", 0.0) > 0.0:
+            line_parts.append(f"L_enc={means['mix/latent']:.4f}")
+        if "disc/loss" in means:
+            line_parts += [
+                f"D={means['disc/loss']:.3f}",
+                f"Gadv={means.get('disc/gen_adv', 0):.3f}",
+                f"FM={means.get('disc/feat_match', 0):.3f}",
+            ]
+        if "disc/gen_adv_mix" in means:
+            line_parts += [
+                f"Gadv_m={means['disc/gen_adv_mix']:.3f}",
+                f"FM_m={means.get('disc/feat_match_mix', 0):.3f}",
+            ]
+        self.logs.info("  ".join(line_parts))
+
+        # Append training-step metrics to JSONL (one line per flush) so runs
+        # are plottable without TB.
+        with open(os.path.join(self.save_dir, "train_log.jsonl"), "a") as f:
+            f.write(json.dumps({"step": step, "steps_per_sec": steps_per_s, **means}) + "\n")
+
+    # ----------------------------------------------------------------------
+
+    def _maybe_save(
+        self, step: int, val_metrics: Dict[str, float],
+        best_val_loss: float, force_final: bool = False,
+    ) -> float:
+        val_loss = val_metrics.get("loss", float("inf"))
+
+        ckpt = {
+            "global_step": step,
+            "best_val_loss": best_val_loss,
+            "model": self.model.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
+            "scheduler": self.scheduler.state_dict(),
+            "model_config": self.model_config,
+            "val_metrics": val_metrics,
+            "config": self.cfg,
+        }
+        if self.disc is not None:
+            ckpt["disc"] = self.disc.state_dict()
+            ckpt["disc_optimizer"] = self.disc_optimizer.state_dict()
+
+        def _write(path: str):
+            tmp = path + ".tmp"
+            torch.save(ckpt, tmp)
+            if os.path.exists(path):
+                os.remove(path)
+            os.rename(tmp, path)
+
+        # Update best_val_loss FIRST so latest.pth records the fresh value.
+        # (Earlier versions wrote latest.pth before this check, causing
+        # best_val_loss in latest.pth to lag by one val cycle and read as inf
+        # on the first save. Resumes from latest then kept overwriting best.pth.)
+        is_best = val_loss < best_val_loss
+        if is_best:
+            best_val_loss = val_loss
+        ckpt["best_val_loss"] = best_val_loss
+
+        _write(os.path.join(self.save_dir, "latest.pth"))
+        if is_best:
+            _write(os.path.join(self.save_dir, "best.pth"))
+            self.logs.info(f"     new best (val_loss={val_loss:.4f}) -> saved best.pth")
+
+        if force_final:
+            _write(os.path.join(self.save_dir, f"step_{step}.pth"))
+
+        # Dump val metrics as JSON for quick inspection / plotting
+        with open(os.path.join(self.save_dir, "val_log.jsonl"), "a") as f:
+            f.write(json.dumps({"step": step, "best": is_best, **val_metrics}) + "\n")
+
+        return best_val_loss
+
+    # ----------------------------------------------------------------------
+
+    def load_checkpoint(self, path: str) -> int:
+        ckpt = torch.load(path, map_location=self.device, weights_only=False)
+        self.model.load_state_dict(ckpt["model"])
+        self.optimizer.load_state_dict(ckpt["optimizer"])
+        self.scheduler.load_state_dict(ckpt["scheduler"])
+        if self.disc is not None and "disc" in ckpt:
+            self.disc.load_state_dict(ckpt["disc"])
+            self.disc_optimizer.load_state_dict(ckpt["disc_optimizer"])
+        step = int(ckpt.get("global_step", 0))
+        best = float(ckpt.get("best_val_loss", float("inf")))
+        self.logs.info(f"resumed from {path}: step={step}, best_val={best:.4f}")
+        return step, best

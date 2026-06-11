@@ -1,0 +1,83 @@
+name: v3.0-baseline-d64
+
+# v3.0 — from-scratch baseline at higher compression.
+#
+# Mirrors v1.1's recipe exactly except for the latent bottleneck:
+#   d_model: 128 -> 64
+#
+# Compression: 44100 / (45 * 64) = 15.31x  (was 7.66x in v1.1)
+#
+# Purpose: control for v3.1 (the v2.2-sym recipe trained from scratch at the
+# same compression). Without this, we can't tell whether v3.1's gain is from
+# mixing supervision or from the smaller bottleneck.
+#
+# No mixing losses, no encoder freezing — exactly v1.1 with d_model halved.
+
+data:
+  sample_rate: 44100
+  chunk_seconds: 1.0
+  chunks_dir: ./chunks-44k-1s
+
+stft:
+  n_fft: 1024
+  hop_length: 256
+  win_length: 1024
+
+model:
+  architecture: wave
+
+  num_segments: 45
+  d_model: 64                  # <-- v3 change
+  n_heads: 4
+  n_layers: 0
+
+  encoder_strides: [4, 5, 7, 7]
+  encoder_channels: [64, 128, 256, 512, 512]
+  encoder_dilations: [1, 3, 9]
+  encoder_kernel_scale: 2
+
+  decoder_channels: [512, 512, 256, 128, 64]
+  decoder_resblock_kernel_sizes: [3, 7]
+  decoder_resblock_dilations: [[1, 3], [1, 3]]
+
+  mrstft_weight: 1.0
+  mel_weight: 1.0
+  mrstft_ffts: [256, 512, 1024, 2048]
+  mrstft_hops: [64, 128, 256, 512]
+  mrstft_wins: [256, 512, 1024, 2048]
+
+  decode_mix_weight: 0.0
+  latent_mix_weight: 0.0
+
+  latent_l2_weight: 0.001
+
+  use_discriminator: true
+  use_mpd: true
+  disc_weight: 0.5
+  feat_match_weight: 2.0
+  disc_start_step: 10000
+
+  dropout: 0.0
+
+train:
+  max_steps: 250000
+  warmup_steps: 3000
+  save_every_steps: 10000
+  log_every_steps: 100
+
+  precision: fp32
+  batch_size: 64
+  learning_rate: 0.0003
+  disc_lr: 0.0002
+  weight_decay: 0.001
+  optimizer_betas: [0.8, 0.99]
+  grad_clip: 1.0
+
+  num_workers: 6
+  prefetch_factor: 2
+  dataset_cache_size: 8
+  num_test_samples: 4
+  num_val_batches: null
+  log_val_audio: true
+
+  save_path: ./checkpoints

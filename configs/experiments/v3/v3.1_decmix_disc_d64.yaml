@@ -1,0 +1,91 @@
+name: v3.1-decmix-disc-d64
+
+# v3.1 — v2.2-sym recipe trained from scratch at higher compression.
+#
+# Addresses two reviewer-level concerns:
+#   1. v2.x ran at 7.66x compression. At that rate the latent has lots of
+#      headroom and "linear in latent space" is partly free. v3.1 runs at
+#      15.31x (d_model=64) so the bottleneck actually bites.
+#   2. v2.x were 25k-step fine-tunes off v1.1, which was trained without any
+#      mixing supervision. v3.1 trains from scratch with L_dec + sym disc-
+#      on-mix from step 0, so the result isn't priming-dependent.
+#
+# Diff vs v3.0-baseline-d64:
+#   decode_mix_weight: 0.0 -> 0.5    (L_dec on)
+#   disc_on_mix:       false -> true (symmetric disc-on-mix when disc active)
+#
+# disc_start_step stays at 10000 (same as v1.1). Until then disc isn't
+# active, so disc-on-mix is silently skipped and only L_dec waveform
+# supervision contributes. After step 10k, both fire.
+
+data:
+  sample_rate: 44100
+  chunk_seconds: 1.0
+  chunks_dir: ./chunks-44k-1s
+
+stft:
+  n_fft: 1024
+  hop_length: 256
+  win_length: 1024
+
+model:
+  architecture: wave
+
+  num_segments: 45
+  d_model: 64                  # <-- v3 change (compression 15.31x)
+  n_heads: 4
+  n_layers: 0
+
+  encoder_strides: [4, 5, 7, 7]
+  encoder_channels: [64, 128, 256, 512, 512]
+  encoder_dilations: [1, 3, 9]
+  encoder_kernel_scale: 2
+
+  decoder_channels: [512, 512, 256, 128, 64]
+  decoder_resblock_kernel_sizes: [3, 7]
+  decoder_resblock_dilations: [[1, 3], [1, 3]]
+
+  mrstft_weight: 1.0
+  mel_weight: 1.0
+  mrstft_ffts: [256, 512, 1024, 2048]
+  mrstft_hops: [64, 128, 256, 512]
+  mrstft_wins: [256, 512, 1024, 2048]
+
+  decode_mix_weight: 0.5       # <-- v2.2-sym recipe: L_dec on
+  latent_mix_weight: 0.0
+  disc_on_mix: true            # <-- v2.2-sym recipe: symmetric disc-on-mix
+
+  latent_l2_weight: 0.001
+
+  use_discriminator: true
+  use_mpd: true
+  disc_weight: 0.5
+  feat_match_weight: 2.0
+  disc_start_step: 10000
+
+  dropout: 0.0
+
+train:
+  max_steps: 250000
+  warmup_steps: 3000
+  save_every_steps: 10000
+  log_every_steps: 100
+
+  precision: fp32
+  batch_size: 32              # halved vs v3.0 — disc-on-mix adds 2 extra
+  grad_accum_steps: 2         # disc forwards at step 10k that OOM at batch 64.
+                              # Effective batch stays 64; matches v2.2-sym.
+  learning_rate: 0.0003
+  disc_lr: 0.0002
+  weight_decay: 0.001
+  optimizer_betas: [0.8, 0.99]
+  grad_clip: 1.0
+
+  num_workers: 6
+  prefetch_factor: 2
+  dataset_cache_size: 8
+  num_test_samples: 4
+  num_val_batches: null
+  log_val_audio: true
+
+  save_path: ./checkpoints

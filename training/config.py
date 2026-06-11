@@ -71,60 +71,84 @@ def copy_config_to_checkpoint(config_path: str, save_path: str):
 def build_model_config(cfg: dict) -> dict:
     """
     Build model configuration dictionary from full config.
-    
-    Computes derived parameters like n_freq_bins and target_length from
-    STFT and data config sections.
-    
-    Args:
-        cfg: Full configuration dictionary with 'model', 'data', and 'stft' sections
-    
-    Returns:
-        Model configuration dictionary ready for Autoencoder initialization
-    
-    Raises:
-        ValueError: If upsampling_factors is missing or has wrong length
+
+    Supports two architectures:
+      - 'wave': 1D waveform encoder + HiFi-GAN decoder (v15+)
+      - 'stft': 2D STFT encoder + 2D decoder with iSTFT (v6-v14, legacy)
+
+    The architecture is selected by model.architecture in config (default: 'stft').
     """
     model_cfg = cfg['model']
     data_cfg = cfg['data']
     stft_cfg = cfg.get('stft', {})
-    
-    # Compute STFT-derived params
+
+    sample_rate = data_cfg.get('sample_rate', 44100)
+    chunk_seconds = data_cfg.get('chunk_seconds', 1.0)
+    target_length = int(sample_rate * chunk_seconds)
+
+    architecture = model_cfg.get('architecture', 'stft')
+
+    # STFT params (used by losses even in wave mode)
     n_fft = stft_cfg.get('n_fft', 1024)
     win_length = stft_cfg.get('win_length', n_fft)
     hop_length = stft_cfg.get('hop_length', 256)
-    sample_rate = data_cfg.get('sample_rate', 44100)
-    chunk_seconds = data_cfg.get('chunk_seconds', 1.0)
-    
-    n_freq_bins = n_fft // 2 + 1
-    chunk_samples = int(sample_rate * chunk_seconds)
-    target_length = chunk_samples
-    
-    num_segments = model_cfg['num_segments']
 
-    config = {
-        'd_model': model_cfg['d_model'],
-        'n_heads': model_cfg['n_heads'],
-        'n_layers': model_cfg['n_layers'],
-        'num_segments': num_segments,
-        'n_freq_bins': n_freq_bins,
-        'target_length': target_length,
-        'decode_mix_weight': model_cfg.get('decode_mix_weight', 0.0),
-        'mrstft_weight': model_cfg.get('mrstft_weight', 1.0),
-        'mel_weight': model_cfg.get('mel_weight', 0.0),
-        'sample_rate': sample_rate,
-        'dropout': model_cfg.get('dropout', 0.1),
-        'n_fft': n_fft,
-        'hop_length': hop_length,
-        'win_length': win_length,
-        'num_refine_blocks': model_cfg.get('num_refine_blocks', 1),
-        'channels': model_cfg.get('channels', None),
-        'encoder_channels': model_cfg.get('encoder_channels', None),
-        'freq_strides': model_cfg.get('freq_strides', None),
-        'time_strides': model_cfg.get('time_strides', None),
-        'latent_l2_weight': model_cfg.get('latent_l2_weight', 0.0),
-    }
+    if architecture == 'wave':
+        config = {
+            'd_model': model_cfg['d_model'],
+            'num_segments': model_cfg['num_segments'],
+            'target_length': target_length,
+            'sample_rate': sample_rate,
+            'n_heads': model_cfg.get('n_heads', 4),
+            'n_layers': model_cfg.get('n_layers', 0),
+            'dropout': model_cfg.get('dropout', 0.0),
+            # Encoder
+            'encoder_strides': model_cfg['encoder_strides'],
+            'encoder_channels': model_cfg['encoder_channels'],
+            'encoder_dilations': model_cfg.get('encoder_dilations', [1, 3, 9]),
+            'encoder_kernel_scale': model_cfg.get('encoder_kernel_scale', 2),
+            # Decoder
+            'decoder_channels': model_cfg['decoder_channels'],
+            'decoder_resblock_kernel_sizes': model_cfg.get('decoder_resblock_kernel_sizes', [3, 7]),
+            'decoder_resblock_dilations': model_cfg.get('decoder_resblock_dilations', [[1, 3], [1, 3]]),
+            # Losses
+            'decode_mix_weight': model_cfg.get('decode_mix_weight', 0.0),
+            'latent_mix_weight': model_cfg.get('latent_mix_weight', 0.0),
+            'mrstft_weight': model_cfg.get('mrstft_weight', 1.0),
+            'mel_weight': model_cfg.get('mel_weight', 0.0),
+            'latent_l2_weight': model_cfg.get('latent_l2_weight', 0.0),
+            # Mel/loss STFT params
+            'n_fft': n_fft,
+            'hop_length': hop_length,
+            'win_length': win_length,
+        }
+    else:
+        # Legacy STFT architecture (v6-v14)
+        n_freq_bins = n_fft // 2 + 1
+        config = {
+            'd_model': model_cfg['d_model'],
+            'n_heads': model_cfg['n_heads'],
+            'n_layers': model_cfg['n_layers'],
+            'num_segments': model_cfg['num_segments'],
+            'n_freq_bins': n_freq_bins,
+            'target_length': target_length,
+            'decode_mix_weight': model_cfg.get('decode_mix_weight', 0.0),
+            'mrstft_weight': model_cfg.get('mrstft_weight', 1.0),
+            'mel_weight': model_cfg.get('mel_weight', 0.0),
+            'sample_rate': sample_rate,
+            'dropout': model_cfg.get('dropout', 0.1),
+            'n_fft': n_fft,
+            'hop_length': hop_length,
+            'win_length': win_length,
+            'num_refine_blocks': model_cfg.get('num_refine_blocks', 1),
+            'channels': model_cfg.get('channels', None),
+            'encoder_channels': model_cfg.get('encoder_channels', None),
+            'freq_strides': model_cfg.get('freq_strides', None),
+            'time_strides': model_cfg.get('time_strides', None),
+            'latent_l2_weight': model_cfg.get('latent_l2_weight', 0.0),
+        }
 
-    # MR-STFT resolution config (optional override from model config)
+    # MR-STFT resolution config
     if 'mrstft_ffts' in model_cfg:
         config['mrstft_ffts'] = tuple(model_cfg['mrstft_ffts'])
         config['mrstft_hops'] = tuple(model_cfg['mrstft_hops'])

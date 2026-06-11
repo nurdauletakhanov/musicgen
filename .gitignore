@@ -40,10 +40,22 @@ ENV/
 Thumbs.db
 *.log
 
-# Project-specific: Large data files
-maestro-v3.0.0/
-maestro-v3.0.0.zip
+# Raw datasets (MUSDB, MAESTRO, FMA, slakh, ...) live under dataset/
+dataset/
+
+# Preprocessed chunk dirs
+musdb-chunks-*/
 maestro-chunks-*/
+chunks-*/
+
+# Smoke-test data and audio dumps (local only)
+musdb_smoke/
+evaluation/audit_v1.1/
+evaluation/v2_metrics/smoke_audio/
+scripts/_m2l_recon_samples/
+
+# Keep the protocol-diagnosis log (referenced from v2_metrics/RESULTS.md)
+!evaluation/v2_metrics/_diag_old_vs_new_eval.log
 
 # Project-specific: Model checkpoints and outputs
 checkpoints/
@@ -57,18 +69,20 @@ wandb/
 .ipynb_checkpoints/
 *.ipynb
 
-# MUSDB18 dataset
-musdb18/
+# Source archives (kept at repo root or under dataset/)
 musdb18.zip
-musdb-chunks-*/
-
-# Slakh dataset
+musdb18hq.zip
+maestro-v3.0.0.zip
 slakh2100_flac_redux.tar.gz
+fma_large.zip
+fma_metadata.zip
 
 # Generated outputs
 results/
-presentation/
 generate_presentation_pdf.py
+
+# Research / paper drafts (kept local, not pushed)
+research/
 
 # Windows artifacts
 nul

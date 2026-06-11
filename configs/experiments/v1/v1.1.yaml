@@ -1,0 +1,94 @@
+name: v1.1
+
+# v1.1 — fp32 + batch 64.
+#
+# Differences from the original v1 attempt:
+#   - precision: fp32 (was bf16 AMP). bf16 caused a single-step loss spike
+#     at step 4700 that never recovered; fp32 eliminates that class of issue.
+#   - batch_size: 64 (was 128). Matches DAC/EnCodec per-GPU convention.
+#
+# Everything else (architecture, data, losses, LR, warmup, disc timing) is
+# unchanged from v1.
+#
+# Data: MUSDB + MAESTRO + FMA-large preprocessed into a single unified
+# chunks dir (see data/preprocess.py). Eval is test-split only; per-source
+# SI-SDR is reported so MUSDB-only numbers are still directly comparable
+# to prior work.
+#
+# Explicitly excludes: mixing losses, stem-pair training, alpha sweeps,
+# HF hub uploads. Those come back in v2+ once baseline FAD is strong.
+
+data:
+  sample_rate: 44100
+  chunk_seconds: 1.0
+  chunks_dir: ./chunks-44k-1s
+
+stft:
+  n_fft: 1024
+  hop_length: 256
+  win_length: 1024
+
+model:
+  architecture: wave
+
+  # 44100 / (4*5*7*7 = 980) = 45 segments.  Latent = 45 * 128 = 5,760 floats
+  # per 1s input -> compression ~7.66x.
+  num_segments: 45
+  d_model: 128
+  n_heads: 4
+  n_layers: 0
+
+  encoder_strides: [4, 5, 7, 7]
+  encoder_channels: [64, 128, 256, 512, 512]
+  encoder_dilations: [1, 3, 9]
+  encoder_kernel_scale: 2
+
+  decoder_channels: [512, 512, 256, 128, 64]
+  decoder_resblock_kernel_sizes: [3, 7]
+  decoder_resblock_dilations: [[1, 3], [1, 3]]
+
+  # Reconstruction losses
+  mrstft_weight: 1.0
+  mel_weight: 1.0
+  mrstft_ffts: [256, 512, 1024, 2048]
+  mrstft_hops: [64, 128, 256, 512]
+  mrstft_wins: [256, 512, 1024, 2048]
+
+  # No mixing for v1
+  decode_mix_weight: 0.0
+  latent_mix_weight: 0.0
+
+  latent_l2_weight: 0.001
+
+  # Discriminator — MSSTFTD + MPD, delayed start.
+  use_discriminator: true
+  use_mpd: true
+  disc_weight: 0.5
+  feat_match_weight: 2.0
+  disc_start_step: 10000
+
+  dropout: 0.0
+
+train:
+  max_steps: 250000
+  warmup_steps: 3000
+  save_every_steps: 10000
+  log_every_steps: 100
+
+  precision: fp32             # disable bf16 AMP (fixed step-4700 regression cause)
+  batch_size: 32              # halved from 64 — disc activation at step 10k pushed past 32 GB VRAM
+  grad_accum_steps: 2         # effective batch = 32 * 2 = 64, preserving LR/schedule calibration
+  learning_rate: 0.0003
+  disc_lr: 0.0002
+  weight_decay: 0.001
+  optimizer_betas: [0.8, 0.99]
+  grad_clip: 1.0
+
+  num_workers: 6
+  prefetch_factor: 2
+  dataset_cache_size: 8
+  num_test_samples: 4
+  num_val_batches: null       # null -> full val loop each checkpoint
+  log_val_audio: true         # writes .wav files to <save_dir>/samples/step_<N>/
+
+  save_path: ./checkpoints

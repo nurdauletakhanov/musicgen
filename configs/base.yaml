@@ -1,61 +1,22 @@
-# Base configuration - Shared defaults for all experiments
-# Override these values in experiment-specific configs
-
-model:
-  # Encoder/Decoder architecture
-  num_segments: 29     # Number of time segments (= number of latent tokens); 29*2*3=174 STFT frames
-  d_model: 384         # Latent dimension
-  n_heads: 8           # Transformer attention heads
-  n_layers: 6          # Transformer layers
-  channels: [256, 192, 128, 64, 32]    # Decoder channel counts for 5 upsample stages
-  dropout: 0.0         # Regularization to prevent overfitting
-  num_refine_blocks: 1 # Post-stitch refinement ResBlocks in decoder
-
-  # Discriminator (adversarial training)
-  use_discriminator: false
-  disc_weight: 1.0
-  feat_match_weight: 2.0
-  disc_start_epoch: 5
+# Shared defaults for v1+ experiments. Experiment configs override what they
+# need. Historical fields (num_epochs, stem pairs, alpha_sweep, HF hub, TB)
+# were archived with the pre-v1 lineage.
 
 stft:
-  n_fft: 1024          # FFT size -> 513 frequency bins
-  hop_length: 256      # Hop between frames
-  win_length: 1024     # Window length (same as n_fft)
+  n_fft: 1024
+  hop_length: 256
+  win_length: 1024
 
 data:
-  chunks_dir: ./musdb-chunks-stft-v2
   chunk_seconds: 1.0
   sample_rate: 44100
-  use_stem_pairs: false
 
 train:
-  batch_size: 32
-  num_epochs: 40
-  learning_rate: 0.0001
-  weight_decay: 0.0001
-  save_interval: 2
-  save_path: ./checkpoints
-  num_workers: 8
-  prefetch_factor: 4
+  num_workers: 6
+  prefetch_factor: 2
   pin_memory: true
   persistent_workers: true
-  scheduler: cosine
-  warmup_epochs: 0            # linear warmup epochs
-  reset_scheduler_on_resume: true
-  scheduler_warmup_epochs: 2
-  gradient_accumulation_steps: 1
-
-huggingface:
-  enabled: false
-  repo_id: null
-  push_best: true
-  push_checkpoints: false
-  push_interval: 5
-  private: false
-
-tensorboard:
-  enabled: true
-  log_audio: true
-  alpha_sweep_alphas: [0.1, 0.3, 0.5, 0.7, 0.9]
-  alpha_sweep_samples: 100
-
+  save_path: ./checkpoints
+  grad_clip: 1.0
+  optimizer_betas: [0.8, 0.99]
+  weight_decay: 0.001
