@@ -123,7 +123,12 @@ def _process_track(model, stems: Dict[str, np.ndarray], chunk_starts: List[int],
                    seed: int) -> Dict[str, Dict[str, List[float]]]:
     """For one track, run the subtraction + ceiling ops for every chunk and stem.
 
-    Returns {stem: {"sub": [sdr_per_chunk], "ceil": [sdr_per_chunk]}}.
+    Returns {stem: {"sub": [...], "ceil": [...], "dd": [...]}} (SI-SDR per chunk).
+
+    "dd" is the decode-vs-decode variant SI-SDR(x_sub, x_ceil): both args are
+    decodes sharing the same init noise, so for consistency-model decoders
+    (M2L) the phase nuisance cancels and the number isolates the latent-
+    arithmetic error from the model's phase incoherence vs raw waveforms.
 
     Re-seeds the global RNG before each encoder / decoder call so that M2L's
     consistency-model decoder uses the same starting noise for the two decodes
@@ -138,7 +143,7 @@ def _process_track(model, stems: Dict[str, np.ndarray], chunk_starts: List[int],
     x_stem_all = {st: torch.from_numpy(stem_arr[st]).to(device)
                   for st in STEMS}
 
-    out = {st: {"sub": [], "ceil": []} for st in STEMS}
+    out = {st: {"sub": [], "ceil": [], "dd": []} for st in STEMS}
 
     for st in STEMS:
         for i in range(0, n, batch_size):
@@ -164,8 +169,10 @@ def _process_track(model, stems: Dict[str, np.ndarray], chunk_starts: List[int],
             L = min(x_sub.size(1), tg.size(1), x_ceil.size(1))
             sub_sdr = _si_sdr_batch(x_sub[:, :L], tg[:, :L]).cpu().tolist()
             ceil_sdr = _si_sdr_batch(x_ceil[:, :L], tg[:, :L]).cpu().tolist()
+            dd_sdr = _si_sdr_batch(x_sub[:, :L], x_ceil[:, :L]).cpu().tolist()
             out[st]["sub"].extend(sub_sdr)
             out[st]["ceil"].extend(ceil_sdr)
+            out[st]["dd"].extend(dd_sdr)
 
     return out
 
@@ -177,7 +184,7 @@ def run_eval(model, musdb_dir: str, chunks_per_track: int, batch_size: int,
     """Iterate MUSDB tracks, aggregate per-stem SI-SDR.
 
     Returns (summary_dict, n_chunks_seen, skipped_tracks).
-    summary_dict[stem] = {"sdr_sub", "sdr_ceil", "gap", "n"}; plus "all" entry.
+    summary_dict[stem] = {"sdr_sub", "sdr_ceil", "sdr_dd", "gap", "n"}; plus "all" entry.
     """
     rng = random.Random(seed)
     root = Path(musdb_dir)
@@ -189,7 +196,7 @@ def run_eval(model, musdb_dir: str, chunks_per_track: int, batch_size: int,
         tracks = tracks[:max_tracks]
     print(f"eval over {len(tracks)} tracks under {root}")
 
-    aggregates = {st: {"sub": [], "ceil": []} for st in STEMS}
+    aggregates = {st: {"sub": [], "ceil": [], "dd": []} for st in STEMS}
     skipped: List[Dict] = []
     n_chunks_seen = 0
 
@@ -214,6 +221,7 @@ def run_eval(model, musdb_dir: str, chunks_per_track: int, batch_size: int,
         for st in STEMS:
             aggregates[st]["sub"].extend(per_stem[st]["sub"])
             aggregates[st]["ceil"].extend(per_stem[st]["ceil"])
+            aggregates[st]["dd"].extend(per_stem[st]["dd"])
         n_chunks_seen += len(chunk_starts)
         # Free track audio before next
         del stems
@@ -222,31 +230,37 @@ def run_eval(model, musdb_dir: str, chunks_per_track: int, batch_size: int,
     for st in STEMS:
         sub_vals = aggregates[st]["sub"]
         ceil_vals = aggregates[st]["ceil"]
+        dd_vals = aggregates[st]["dd"]
         if not sub_vals:
-            summary[st] = {"sdr_sub": 0.0, "sdr_ceil": 0.0, "gap": 0.0, "n": 0}
+            summary[st] = {"sdr_sub": 0.0, "sdr_ceil": 0.0, "sdr_dd": 0.0,
+                           "gap": 0.0, "n": 0}
             continue
         s_sub = float(np.mean(sub_vals))
         s_ceil = float(np.mean(ceil_vals))
         summary[st] = {
             "sdr_sub": s_sub,
             "sdr_ceil": s_ceil,
+            "sdr_dd": float(np.mean(dd_vals)),
             "gap": s_ceil - s_sub,
             "n": len(sub_vals),
         }
 
     all_sub = [v for st in STEMS for v in aggregates[st]["sub"]]
     all_ceil = [v for st in STEMS for v in aggregates[st]["ceil"]]
+    all_dd = [v for st in STEMS for v in aggregates[st]["dd"]]
     if all_sub:
         a_sub = float(np.mean(all_sub))
         a_ceil = float(np.mean(all_ceil))
         summary["all"] = {
             "sdr_sub": a_sub,
             "sdr_ceil": a_ceil,
+            "sdr_dd": float(np.mean(all_dd)),
             "gap": a_ceil - a_sub,
             "n": len(all_sub),
         }
     else:
-        summary["all"] = {"sdr_sub": 0.0, "sdr_ceil": 0.0, "gap": 0.0, "n": 0}
+        summary["all"] = {"sdr_sub": 0.0, "sdr_ceil": 0.0, "sdr_dd": 0.0,
+                          "gap": 0.0, "n": 0}
 
     return summary, n_chunks_seen, skipped
 
@@ -254,11 +268,12 @@ def run_eval(model, musdb_dir: str, chunks_per_track: int, batch_size: int,
 def print_summary(summary: Dict, n_seen: int, skipped: List[Dict]):
     print(f"\n=== subtraction summary (n_chunks_seen={n_seen}, "
           f"{len(skipped)} tracks skipped) ===")
-    print(f"{'stem':9s}  {'sdr_sub':>10s}  {'sdr_ceil':>10s}  {'gap':>7s}  {'n':>6s}")
+    print(f"{'stem':9s}  {'sdr_sub':>10s}  {'sdr_ceil':>10s}  {'sdr_dd':>10s}  "
+          f"{'gap':>7s}  {'n':>6s}")
     for st in STEMS + ["all"]:
         s = summary[st]
         print(f"{st:9s}  {s['sdr_sub']:>+10.3f}  {s['sdr_ceil']:>+10.3f}  "
-              f"{s['gap']:>+7.3f}  {s['n']:>6d}")
+              f"{s.get('sdr_dd', 0.0):>+10.3f}  {s['gap']:>+7.3f}  {s['n']:>6d}")
 
 
 def main():

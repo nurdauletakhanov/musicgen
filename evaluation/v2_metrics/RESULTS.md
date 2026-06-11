@@ -9,7 +9,8 @@ Eval set sizes: FMA 26859 / Maestro 7044 / MUSDB 1181 / all 35084 embeddings for
 From `evaluation/compute_mixing_metrics.py` and `evaluation/compute_fad.py`:
 
 - **sdr_rec** — standard reconstruction SI-SDR (encode → decode), dB. Higher is better.
-- **sdr_lin** — latent-arithmetic SI-SDR. Encode pair (x₁, x₂), form z̄ = α·z₁ + (1−α)·z₂, decode g(z̄), compare to ground-truth mix x̄ = α·x₁ + (1−α)·x₂. dB. Higher is better. **This is the latent-arithmetic / mixing-equivariance metric.**
+- **sdr_lin** — latent-arithmetic SI-SDR, **decode-vs-decode**. Encode pair (x₁, x₂), form z̄ = α·z₁ + (1−α)·z₂, then SI-SDR(g(z̄), g(f(x̄))) where x̄ = α·x₁ + (1−α)·x₂ — i.e. the decoded interpolation is compared to the model's *own reconstruction of the true mix*, NOT to x̄ itself (`compute_mixing_metrics.py` `_process_batch`). dB, higher is better. Measures mixing-equivariance relative to the model's reconstruction ceiling; it is NOT comparable to papers that report SI-SDR vs the ground-truth mix (Torres et al., Music2Latent Table 3). Caveat: a decoder that grows less sensitive to its latent inflates this metric (with shared decode noise, a latent-ignoring decoder scores +∞); cross-check against `mix_rate` and `sdr_lin_gt`.
+- **sdr_lin_gt** — latent-arithmetic SI-SDR vs **ground truth**: SI-SDR(g(z̄), x̄). The externally comparable variant (added June 2026; older JSONs lack it until re-run).
 - **l_lat** — MSE between E(x̄) and z̄ in latent space. Lower is better. (Encoder linearity in latent space.)
 - **mix_rate** — ratio of recon loss on mixed-decoded path vs encode-then-decode-of-mix path. <1 means latent mix beats encoded mix.
 - **fad** — Fréchet Audio Distance vs ground truth, LAION-CLAP backbone, 10 s clips at 48 kHz. Lower is better.

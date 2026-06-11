@@ -4,8 +4,9 @@ Post-hoc mixing-equivariance metrics on the v1.1 / v2 test set.
 For every val batch, generates a random fixed-point-free permutation, sets
 α=0.5 (paper convention), computes:
 
-  SDR_rec  — SI-SDR(g(f(x)), x)               reconstruction quality
-  SDR_lin  — SI-SDR(g(z̄), g(f(x̄)))             end-to-end linearity
+  SDR_rec    — SI-SDR(g(f(x)), x)             reconstruction quality
+  SDR_lin    — SI-SDR(g(z̄), g(f(x̄)))           linearity vs own recon ceiling (decode-vs-decode)
+  SDR_lin_gt — SI-SDR(g(z̄), x̄)                linearity vs ground-truth mix (externally comparable)
   ℓ_lat    — ‖z̄ − f(x̄)‖² / ‖f(x̄)‖²            encoder linearity (normalized MSE)
   MixRate  — L_recon(g(z̄), x̄) / L_recon(g(f(x̄)), x̄)   decoder equivariance
 
@@ -160,8 +161,14 @@ def _process_batch(
     # Per-sample SDR_rec on x (single-source recon)
     sdr_rec = _si_sdr(g_recon, x).cpu().tolist()
 
-    # Per-sample SDR_lin between g(z̄) and g(f(x̄))
+    # Per-sample SDR_lin between g(z̄) and g(f(x̄)) — decode-vs-decode,
+    # equivariance relative to the model's own reconstruction ceiling.
     sdr_lin = _si_sdr(g_zbar, g_zreal).cpu().tolist()
+
+    # Per-sample SDR_lin_gt between g(z̄) and the ground-truth mix x̄ —
+    # the externally comparable variant (Torres et al. / M2L Table 3 style),
+    # immune to inflation from a latent-insensitive decoder.
+    sdr_lin_gt = _si_sdr(g_zbar, x_mix).cpu().tolist()
 
     # Per-sample ℓ_lat = ||z̄ - z_real||^2 / ||z_real||^2
     diff = (z_interp - z_real).reshape(B, -1)
@@ -179,6 +186,7 @@ def _process_batch(
     out: Dict[str, List] = {
         "sdr_rec": list(zip(sources, sdr_rec)),
         "sdr_lin": list(zip(sources, sdr_lin)),
+        "sdr_lin_gt": list(zip(sources, sdr_lin_gt)),
         "l_lat":   list(zip(sources, l_lat)),
         "mix_rate": list(zip(sources, mix_rate)),
     }
@@ -232,7 +240,7 @@ def main():
     print(f"val: {len(val_ds):,} chunks across {len(val_ds.files)} files")
 
     aggregates: Dict[str, List[tuple]] = {
-        "sdr_rec": [], "sdr_lin": [], "l_lat": [], "mix_rate": [],
+        "sdr_rec": [], "sdr_lin": [], "sdr_lin_gt": [], "l_lat": [], "mix_rate": [],
     }
 
     n_seen = 0
@@ -254,7 +262,7 @@ def main():
     summary = {k: _tally(v) for k, v in aggregates.items()}
 
     print("\n=== mixing metrics ===")
-    for metric in ("sdr_rec", "sdr_lin", "l_lat", "mix_rate"):
+    for metric in ("sdr_rec", "sdr_lin", "sdr_lin_gt", "l_lat", "mix_rate"):
         line = f"  {metric:8s}"
         for src in sorted(summary[metric].keys()):
             line += f"  {src}={summary[metric][src]:+.4f}"
