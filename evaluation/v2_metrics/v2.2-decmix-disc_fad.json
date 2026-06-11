@@ -1,0 +1,19 @@
+{
+  "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.2-decmix-disc\\best.pth",
+  "step": 25000,
+  "n_embeddings_per_source": {
+    "fma": 26859,
+    "maestro": 7044,
+    "musdb": 1181,
+    "all": 35084
+  },
+  "config": {
+    "sample_rate": 44100,
+    "clap_sr": 48000,
+    "clip_seconds": 10.0
+  },
+  "fad/fma": 0.041013312610267416,
+  "fad/maestro": 0.08162734508920966,
+  "fad/musdb": 0.06092768620397093,
+  "fad/all": 0.04397974188582543
+}

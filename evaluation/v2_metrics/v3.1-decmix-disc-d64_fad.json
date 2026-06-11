@@ -1,0 +1,19 @@
+{
+  "checkpoint": "checkpoints/v3.1-decmix-disc-d64/best.pth",
+  "step": 240000,
+  "n_embeddings_per_source": {
+    "fma": 26859,
+    "maestro": 7044,
+    "musdb": 1181,
+    "all": 35084
+  },
+  "config": {
+    "sample_rate": 44100,
+    "clap_sr": 48000,
+    "clip_seconds": 10.0
+  },
+  "fad/fma": 0.05929037935723658,
+  "fad/maestro": 0.09989509779836026,
+  "fad/musdb": 0.07986144260008099,
+  "fad/all": 0.06093020460261522
+}

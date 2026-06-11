@@ -1,0 +1,20 @@
+{
+  "checkpoint": "d:/projects/music2latent/music2latent/models/music2latent.pt",
+  "model": "music2latent",
+  "step": -1,
+  "n_embeddings_per_source": {
+    "fma": 26859,
+    "maestro": 7044,
+    "musdb": 1181,
+    "all": 35084
+  },
+  "config": {
+    "sample_rate": 44100,
+    "clap_sr": 48000,
+    "clip_seconds": 10.0
+  },
+  "fad/fma": 0.1252034550753809,
+  "fad/maestro": 0.16618827332326336,
+  "fad/musdb": 0.18875814792479906,
+  "fad/all": 0.12688541314869983
+}

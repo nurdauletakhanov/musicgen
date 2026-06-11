@@ -1,0 +1,48 @@
+{
+  "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v3.1-decmix-disc-d64\\best.pth",
+  "step": 240000,
+  "config": {
+    "musdb_dir": "D:\\projects\\musicgen\\dataset\\musdb18\\test",
+    "chunks_per_track": 30,
+    "n_chunks_seen": 1470,
+    "seed": 0
+  },
+  "skipped_tracks": [
+    {
+      "track": "PR - Oh No",
+      "reason": "sanity=18.47"
+    }
+  ],
+  "subtraction": {
+    "drums": {
+      "sdr_sub": 5.357803103287045,
+      "sdr_ceil": 7.969813869048392,
+      "gap": 2.6120107657613465,
+      "n": 1470
+    },
+    "bass": {
+      "sdr_sub": 4.73425541297805,
+      "sdr_ceil": 6.285469969351884,
+      "gap": 1.551214556373834,
+      "n": 1470
+    },
+    "vocals": {
+      "sdr_sub": 6.852060486455321,
+      "sdr_ceil": 8.801491381385091,
+      "gap": 1.9494308949297698,
+      "n": 1470
+    },
+    "other": {
+      "sdr_sub": 3.870143748963011,
+      "sdr_ceil": 7.626859729038868,
+      "gap": 3.756715980075857,
+      "n": 1470
+    },
+    "all": {
+      "sdr_sub": 5.203565687920857,
+      "sdr_ceil": 7.670908737206059,
+      "gap": 2.4673430492852013,
+      "n": 5880
+    }
+  }
+}
