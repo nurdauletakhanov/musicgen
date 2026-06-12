@@ -67,7 +67,7 @@ def main():
     print(f"val: {len(val_ds):,} chunks across {len(val_ds.files)} files")
 
     aggregates: Dict[str, List[tuple]] = {
-        "sdr_rec": [], "sdr_lin": [], "l_lat": [], "mix_rate": [],
+        "sdr_rec": [], "sdr_lin": [], "sdr_lin_gt": [], "l_lat": [], "mix_rate": [],
     }
 
     n_seen = 0
@@ -89,7 +89,7 @@ def main():
     summary = {k: _tally(v) for k, v in aggregates.items()}
 
     print("\n=== M2L mixing metrics ===")
-    for metric in ("sdr_rec", "sdr_lin", "l_lat", "mix_rate"):
+    for metric in ("sdr_rec", "sdr_lin", "sdr_lin_gt", "l_lat", "mix_rate"):
         line = f"  {metric:8s}"
         for src in sorted(summary[metric].keys()):
             line += f"  {src}={summary[metric][src]:+.4f}"
