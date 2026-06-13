@@ -284,6 +284,43 @@ Phase 1 and Phase 2 share the same `mix-linearity` branch — Phase 2 code is pu
 
 ---
 
+# Phase 3 re-eval (EMA-consistent + new metrics, June 2026) — SUPERSEDES the M2L numbers above
+
+The original M2L rows above had two problems (see the project audit): (a) the fine-tune phases were evaluated with **raw** `gen_state_dict` weights while Phase 0 used the published **EMA-merged** weights, and (b) `sdr_lin` is decode-vs-decode (g(z̄) vs g(f(x̄))), not comparable to papers reporting SI-SDR vs the ground-truth mix. Phase 3 fixes both: every fine-tune phase re-run against its `*_ema.pt` checkpoint (`music2latent-mix/scripts/make_ema_checkpoint.py`), and `sdr_lin_gt` = SI-SDR(g(z̄), x̄) added. Plus the new **Phase 0.5 control** (consistency-only fine-tune, no mixing losses, same data/schedule). Files: `m2l_phase{0,05,1,2,2b}_ema_{mixing,fad,subtraction}.json`.
+
+## M2L headline (EMA weights, α=0.5)
+
+| Run | Loss config | FAD ↓ | sdr_rec | sdr_lin (dd) | **sdr_lin_gt** | l_lat ↓ | mix_rate ↓ |
+|---|---|---|---|---|---|---|---|
+| Phase 0 | published baseline | 0.1269 | −3.28 | 5.02 | **−9.63** | 0.150 | 1.101 |
+| **Phase 0.5** | **continued-train control, no mix** | 0.1339 | −3.09 | 5.08 | **−9.50** | 0.145 | 1.125 |
+| Phase 1 | ℒ_enc (γ=5000) | 0.1364 | −3.12 | 5.84 | **−9.09** | 0.105 | 1.118 |
+| **Phase 2** | ℒ_dec (0.5) + cons-on-mix (1.0) | **0.1189** | −2.57 | **6.92** | **−7.80** | 0.115 | 1.086 |
+| Phase 2b | ℒ_dec (5.0) + cons-on-mix | 0.2926 | **−0.45** | 5.66 | **−4.62** | 0.111 | **1.064** |
+
+(Phase 0 FAD is the published-checkpoint value — already EMA, not re-run. sdr_lin_gt is negative for all M2L runs: the consistency decoder is phase-incoherent with raw waveforms, so g(z̄) never aligns in phase with x̄ regardless of latent linearity.)
+
+## M2L subtraction (EMA weights), with new phase-cancelled `sdr_dd` column
+
+| Run | sub (vs GT) | ceil | **sdr_dd (phase-cancelled)** | gap |
+|---|---|---|---|---|
+| Phase 0 | −13.81 | −2.74 | **−3.18** | 11.07 |
+| Phase 2 | −11.18 | −2.79 | **+0.39** | 8.39 |
+
+## Decision-gate verdict (Phase 4)
+
+1. **Control passes — gain is mixing supervision, not domain adaptation.** Phase 0.5 moves sdr_lin +0.06, sdr_lin_gt +0.13 dB over Phase 0, and FAD *worsens* (0.127→0.134). Phase 2's +1.9 dB (both protocols) with *better* FAD is therefore attributable to the mixing losses. **The cross-architecture section stays.**
+
+2. **Both protocols agree on the improvement → not a measurement artifact.** Phase 2 vs Phase 0: +1.90 dB sdr_lin (decode-vs-decode) AND +1.83 dB sdr_lin_gt (vs ground truth). The earlier worry that decode-vs-decode inflated the gain is falsified — same direction, same magnitude. Subtraction confirms independently: sdr_dd −3.18 → +0.39 (+3.6 dB, phase nuisance removed).
+
+3. **Honest limitation (now stated explicitly).** Absolute sdr_lin_gt stays ≈ −8 dB and subtraction-vs-GT ≈ −11 dB because M2L's consistency decoder is phase-incoherent with raw waveforms. Mixing supervision improves M2L's *latent geometry* (l_lat, mix_rate, sdr_dd all improve) but a consistency decoder can't turn that into clean waveform arithmetic the way the v2 GAN decoder does (v2.2-sym subtraction **+6.04** vs M2L Phase 2 **−11.18** dB vs GT). → Frame the v2/v3 GAN-decoder result as the headline; M2L as "recipe generalizes, decoder class caps the payoff."
+
+4. **Phase 2b = Pareto illustration.** Over-weighting ℒ_dec (w=5) makes the decoder phase-deterministic (sdr_lin_gt −4.62 best, sdr_rec −0.45 best) but wrecks FAD (0.29) and decode-vs-decode sdr_lin (5.66). Quality-vs-phase-coherence trade-off — a figure, not a defect.
+
+**Still pending before numbers freeze:** v2/v3 mixing re-eval with `sdr_lin_gt` (checkpoints exist), v3.0-baseline-d64 training (~35 h) + its evals, alpha sweep (`scripts/run_alpha_sweep.py`), v2/v3 subtraction `sdr_dd` re-run.
+
+---
+
 # v3 — from-scratch + higher compression
 
 After v2 we wanted to address two reviewer-level concerns: (1) is 7.66× compression too loose for the linearity claim to mean anything, and (2) does the mixing-supervision recipe work *from scratch* rather than only as a 25k-step fine-tune over a strong v1.1 baseline? **v3.1** answers both: same v2.2-sym recipe (ℒ_dec=0.5, symmetric disc-on-mix), `d_model: 128 → 64` (compression 7.66× → 15.31×), trained 250k steps from random init.

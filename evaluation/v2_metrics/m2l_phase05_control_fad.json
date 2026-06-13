@@ -1,0 +1,20 @@
+{
+  "checkpoint": "d:/projects/music2latent-mix/checkpoints/mix_phase05_control/2026-06-11_16-14-16/model_fid_-1.0_loss_57.824_iters_25000_ema.pt",
+  "model": "music2latent",
+  "step": -1,
+  "n_embeddings_per_source": {
+    "fma": 26859,
+    "maestro": 7044,
+    "musdb": 1181,
+    "all": 35084
+  },
+  "config": {
+    "sample_rate": 44100,
+    "clap_sr": 48000,
+    "clip_seconds": 10.0
+  },
+  "fad/fma": 0.12490109684689843,
+  "fad/maestro": 0.20031600820670897,
+  "fad/musdb": 0.20491189471320337,
+  "fad/all": 0.13392822699610996
+}

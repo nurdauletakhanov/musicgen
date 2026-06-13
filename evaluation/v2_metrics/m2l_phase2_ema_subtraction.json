@@ -1,0 +1,54 @@
+{
+  "checkpoint": "d:\\projects\\music2latent-mix\\checkpoints\\mix_phase2_decmix_consmix\\2026-05-06_14-11-27\\model_fid_-1.0_loss_119.60_iters_50000_ema.pt",
+  "model": "music2latent",
+  "step": -1,
+  "config": {
+    "musdb_dir": "dataset/musdb18/test",
+    "chunks_per_track": 30,
+    "n_chunks_seen": 1470,
+    "seed": 0
+  },
+  "skipped_tracks": [
+    {
+      "track": "PR - Oh No",
+      "reason": "sanity=18.47"
+    }
+  ],
+  "subtraction": {
+    "drums": {
+      "sdr_sub": -9.882508353255435,
+      "sdr_ceil": -2.2707532790065015,
+      "sdr_dd": 0.714462452615947,
+      "gap": 7.611755074248934,
+      "n": 1470
+    },
+    "bass": {
+      "sdr_sub": -12.261763480001566,
+      "sdr_ceil": -3.5358191170197513,
+      "sdr_dd": 0.30866231508838127,
+      "gap": 8.725944362981814,
+      "n": 1470
+    },
+    "vocals": {
+      "sdr_sub": -9.917676066941752,
+      "sdr_ceil": -1.7633505685933626,
+      "sdr_dd": 0.21435091108365162,
+      "gap": 8.154325498348388,
+      "n": 1470
+    },
+    "other": {
+      "sdr_sub": -12.65487184379698,
+      "sdr_ceil": -3.5762296541705436,
+      "sdr_dd": 0.3231618871649436,
+      "gap": 9.078642189626438,
+      "n": 1470
+    },
+    "all": {
+      "sdr_sub": -11.179204935998934,
+      "sdr_ceil": -2.78653815469754,
+      "sdr_dd": 0.39015939148823087,
+      "gap": 8.392666781301394,
+      "n": 5880
+    }
+  }
+}
