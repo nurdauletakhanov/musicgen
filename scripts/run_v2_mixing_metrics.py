@@ -30,10 +30,13 @@ MODELS = [
     "v2.0-continued",
     "v2.1-decmix",
     "v2.2-decmix-disc",
+    "v2.2-decmix-disc-old-asym",
     "v2.3-encmix-g5",
     "v2.4-encmix-g10",
     "v2.5-encmix-g20",
     "v2.6-decmix-frozenenc",
+    "v3.0-baseline-d64",
+    "v3.1-decmix-disc-d64",
 ]
 
 OUT_DIR = REPO / "evaluation" / "v2_metrics"
