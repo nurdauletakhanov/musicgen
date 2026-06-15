@@ -46,6 +46,27 @@ Sorted by run number, baseline first.
 - **v2.1 has the smallest sdr_lin gain (+0.13)** despite the lowest mix_rate. mix_rate and sdr_lin are not co-monotonic across runs.
 - **v2.6 (frozen) has worse l_lat than v2.0** (0.0720 vs 0.0678) despite being trained with ℒ_dec.
 
+## Corrected-metric re-eval (June 2026) — sdr_lin_gt changes the mechanism reading
+
+The headline above (v2.2 disc-on-mix +3.87 dB) was computed on **sdr_lin = SI-SDR(g(z̄), g(f(x̄)))** — decode-vs-decode, which measures consistency between two latent routes, NOT the mixing-equivariance equation g(z̄) ≈ x̄. Re-running all 7 v2 models with **sdr_lin_gt = SI-SDR(g(z̄), x̄)** (vs the true mix — the metric that directly measures the claimed property; deterministic GAN decoder so it's phase-coherent and clean):
+
+| model | sdr_lin (dd, old) | **sdr_lin_gt (vs GT)** | Δ_gt vs v2.0 | mix_rate ↓ |
+|---|---|---|---|---|
+| v2.0 baseline | 12.00 | 7.99 | — | 1.203 |
+| v2.1 decmix only | 12.13 | **10.25** | **+2.26** | **0.972** |
+| v2.2 decmix + disc | **16.03** | 9.89 | +1.90 | 1.052 |
+| v2.3 encmix g5 | 12.82 | 8.37 | +0.38 | 1.175 |
+| v2.4 encmix g10 | 13.13 | 8.50 | +0.51 | 1.165 |
+| v2.5 encmix g20 | 13.51 | 8.69 | +0.70 | 1.153 |
+| v2.6 frozen-enc | 11.72 | 9.54 | +1.55 | 1.056 |
+
+**Observations (factual):**
+- Two independent ground-truth-based metrics agree: **sdr_lin_gt** and **mix_rate** both rank v2.1 (decmix only) at or above v2.2 (decmix + disc). The disc-on-mix's +3.87 dB advantage exists ONLY in the decode-vs-decode metric.
+- The decode-vs-decode → ground-truth gap widens with disc-on-mix: v2.0 gap = 4.0 dB, v2.2 gap = 6.1 dB. Interpretation: disc-on-mix pulls g(z̄) and g(f(x̄)) onto a common realistic manifold (raising their mutual SI-SDR) without bringing g(z̄) closer to the true mix x̄.
+- v2.1 vs v2.2 on sdr_lin_gt is 10.25 vs 9.89 = **0.36 dB, within plausible n=1 seed noise** → defensible statement is "disc-on-mix does not measurably improve ground-truth equivariance," NOT "v2.1 is best."
+
+**Framing implication (PENDING v2.1 subtraction run):** headline = decode-mixing loss drives equivariance (every mixing model beats baseline on sdr_lin_gt). Disc-on-mix becomes an ablation: improves decode-consistency, not ground-truth equivariance → the plain loss is sufficient, no adversarial machinery required (consistent with M2L, which used no discriminator). The decisive confirmation is whether v2.1 matches v2.2 on the downstream subtraction task (v2.2-sym = +6.04 dB); v2.1 subtraction not yet run as of this writing.
+
 ## Per-source breakdown
 
 ### v2.0-continued (control, no mixing loss)
