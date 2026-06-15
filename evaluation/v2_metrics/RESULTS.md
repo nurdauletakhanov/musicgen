@@ -65,7 +65,17 @@ The headline above (v2.2 disc-on-mix +3.87 dB) was computed on **sdr_lin = SI-SD
 - The decode-vs-decode → ground-truth gap widens with disc-on-mix: v2.0 gap = 4.0 dB, v2.2 gap = 6.1 dB. Interpretation: disc-on-mix pulls g(z̄) and g(f(x̄)) onto a common realistic manifold (raising their mutual SI-SDR) without bringing g(z̄) closer to the true mix x̄.
 - v2.1 vs v2.2 on sdr_lin_gt is 10.25 vs 9.89 = **0.36 dB, within plausible n=1 seed noise** → defensible statement is "disc-on-mix does not measurably improve ground-truth equivariance," NOT "v2.1 is best."
 
-**Framing implication (PENDING v2.1 subtraction run):** headline = decode-mixing loss drives equivariance (every mixing model beats baseline on sdr_lin_gt). Disc-on-mix becomes an ablation: improves decode-consistency, not ground-truth equivariance → the plain loss is sufficient, no adversarial machinery required (consistent with M2L, which used no discriminator). The decisive confirmation is whether v2.1 matches v2.2 on the downstream subtraction task (v2.2-sym = +6.04 dB); v2.1 subtraction not yet run as of this writing.
+**Framing (CONFIRMED — v2.1 subtraction in):** headline = decode-mixing loss drives equivariance (every mixing model beats baseline on sdr_lin_gt). Disc-on-mix is an ablation that does NOT add a consistent ground-truth benefit → the plain loss is sufficient, no adversarial machinery required (consistent with M2L, which used no discriminator).
+
+Triangulated across three ground-truth metrics, v2.1 (decmix only) ≈ v2.2 (decmix + disc), no consistent winner:
+
+| model | sdr_lin_gt | mix_rate ↓ | subtraction (vs GT) | gap ↓ | sdr_dd (dd) |
+|---|---|---|---|---|---|
+| v2.0 baseline | 7.99 | 1.203 | +3.42 | +5.21 | +6.42 |
+| v2.1 decmix only | **10.25** | **0.972** | +5.73 | +2.97 | +10.01 |
+| v2.2 decmix + disc | 9.89 | 1.052 | **+6.04** | **+2.59** | +11.77 |
+
+v2.1 leads on sdr_lin_gt + mix_rate; v2.2 leads on subtraction by 0.31 dB (within n=1 noise) and sdr_dd. Both ~halve the linearity-tax gap vs baseline. Disc-on-mix's only consistent advantage is on sdr_dd (decode-vs-decode, phase-cancelled — same family as the inflated sdr_lin), which is not a ground-truth equivariance measure. **Conclusion: the decode-mixing loss is the active ingredient; the discriminator-on-mix is unnecessary for mixing-equivariance.**
 
 ## Per-source breakdown
 
