@@ -34,6 +34,8 @@ MODELS = [
     "v2.4-encmix-g10",
     "v2.5-encmix-g20",
     "v2.6-decmix-frozenenc",
+    "v3.0-baseline-d64",
+    "v3.1-decmix-disc-d64",
 ]
 
 OUT_DIR = REPO / "evaluation" / "v2_metrics"

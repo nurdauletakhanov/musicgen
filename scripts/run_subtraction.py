@@ -32,7 +32,9 @@ OUT_DIR = REPO / "evaluation" / "v2_metrics"
 #   kind="m2l"  payload=absolute path to .pt file
 MODELS = [
     ("v2.0-continued",        "v2",  REPO / "checkpoints" / "v2.0-continued"),
+    ("v2.1-decmix",           "v2",  REPO / "checkpoints" / "v2.1-decmix"),
     ("v2.2-decmix-disc",      "v2",  REPO / "checkpoints" / "v2.2-decmix-disc"),
+    ("v3.0-baseline-d64",     "v2",  REPO / "checkpoints" / "v3.0-baseline-d64"),
     ("v3.1-decmix-disc-d64",  "v2",  REPO / "checkpoints" / "v3.1-decmix-disc-d64"),
     ("m2l-phase2",            "m2l",
      "d:/projects/music2latent-mix/checkpoints/mix_phase2_decmix_consmix/"
