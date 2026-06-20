@@ -230,14 +230,21 @@ def main():
     step = ckpt.get("global_step", "?")
     print(f"loaded {args.checkpoint} @ step {step}")
 
-    # Reuse the standard val dataloader so collate behavior matches training
+    # Reuse the standard val dataloader so collate behavior matches training.
+    # When subsampling (--max-batches), shuffle val with a fixed seed — the
+    # val set is source-contiguous, so an unshuffled prefix would be a single
+    # source (almost always fma). Full runs keep the deterministic order.
+    subsampling = args.max_batches is not None
     _, val_loader, _, val_ds, _ = build_dataloaders(
         chunks_dir=cfg["data"]["chunks_dir"],
         batch_size=args.batch_size,
         num_workers=int(cfg.get("train", {}).get("num_workers", 4)),
         pin_memory=(device.type == "cuda"),
+        val_shuffle=subsampling,
+        val_seed=args.seed,
     )
-    print(f"val: {len(val_ds):,} chunks across {len(val_ds.files)} files")
+    print(f"val: {len(val_ds):,} chunks across {len(val_ds.files)} files"
+          + ("  [SUBSAMPLED, val shuffled]" if subsampling else ""))
 
     aggregates: Dict[str, List[tuple]] = {
         "sdr_rec": [], "sdr_lin": [], "sdr_lin_gt": [], "l_lat": [], "mix_rate": [],
@@ -260,6 +267,11 @@ def main():
         n_seen += x_wave.size(0)
 
     summary = {k: _tally(v) for k, v in aggregates.items()}
+
+    # Per-source sample counts — guards against a single-source subsample.
+    from collections import Counter as _Counter
+    src_counts = _Counter(s for s, _ in aggregates["sdr_lin"])
+    print(f"per-source samples: {dict(src_counts)}  (n_seen={n_seen})")
 
     print("\n=== mixing metrics ===")
     for metric in ("sdr_rec", "sdr_lin", "sdr_lin_gt", "l_lat", "mix_rate"):

@@ -150,10 +150,19 @@ def build_dataloaders(
     persistent_workers: bool = True,
     prefetch_factor: Optional[int] = 2,
     cache_size: int = 8,
+    val_shuffle: bool = False,
+    val_seed: int = 0,
 ) -> Tuple[DataLoader, DataLoader, WaveformDataset, WaveformDataset, FileGroupedSampler]:
     train_ds = WaveformDataset(chunks_dir, split="train", cache_size=cache_size)
     val_ds = WaveformDataset(chunks_dir, split="test", cache_size=cache_size)
     train_sampler = FileGroupedSampler(train_ds, shuffle=True)
+    # val is stored source-contiguous (all fma, then maestro, then musdb), so
+    # a --max-batches prefix of an unshuffled loader is single-source. When
+    # subsampling, shuffle val with a fixed seed so the draw spans all sources.
+    val_sampler = None
+    if val_shuffle:
+        val_sampler = torch.utils.data.RandomSampler(
+            val_ds, generator=torch.Generator().manual_seed(val_seed))
 
     common = {
         "batch_size": batch_size,
@@ -167,5 +176,6 @@ def build_dataloaders(
             common["prefetch_factor"] = prefetch_factor
 
     train_loader = DataLoader(train_ds, sampler=train_sampler, **common)
-    val_loader = DataLoader(val_ds, shuffle=False, **common)
+    val_loader = DataLoader(val_ds, sampler=val_sampler,
+                            shuffle=False, **common)
     return train_loader, val_loader, train_ds, val_ds, train_sampler
