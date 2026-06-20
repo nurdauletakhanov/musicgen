@@ -40,9 +40,10 @@ ALPHAS = [0.1, 0.3, 0.5, 0.7, 0.9]
 #
 # THIS IS A FIGURE, NOT A HEADLINE TABLE. The sweep shows the *shape* of
 # sdr_lin vs alpha (flat under the correct shared-noise protocol, U-shaped
-# under the phase-variance artifact) — that shape is clear at ~1k samples.
-# ALWAYS run with --max-batches 40 (~1300 samples/point). A full-test-set
-# M2L sweep is ~4 h/eval x 5 alphas = ~20 h PER M2L PHASE — do not do it.
+# under the phase-variance artifact) — clear at ~1k samples. Uses balanced
+# --per-source sampling (default 400/source = 1200/point) so musdb isn't
+# swamped by fma; minutes per point. A full-test-set M2L sweep is ~20 h PER
+# PHASE — do not do it.
 #
 # Model list trimmed to the minimum the figure needs: one no-mix baseline,
 # one mix model, one M2L (the consistency-decoder U-shape). The α=0.5
@@ -72,7 +73,9 @@ def main():
                     help="Run only the given model names")
     ap.add_argument("--alphas", nargs="+", type=float, default=ALPHAS)
     ap.add_argument("--batch-size", type=int, default=32)
-    ap.add_argument("--max-batches", type=int, default=None)
+    ap.add_argument("--per-source", type=int, default=400,
+                    help="Balanced chunks PER source per alpha point "
+                         "(default 400 -> 1200/point, stable curve, minutes).")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--force", action="store_true")
     args = ap.parse_args()
@@ -128,8 +131,7 @@ def main():
                 ]
                 if ckpt is not None:
                     cmd += ["--m2l-checkpoint", str(ckpt)]
-            if args.max_batches is not None:
-                cmd += ["--max-batches", str(args.max_batches)]
+            cmd += ["--per-source", str(args.per_source)]
 
             print("\n" + "=" * 70)
             print(f"[run ] {name}  alpha={alpha:g}")

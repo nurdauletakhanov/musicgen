@@ -142,6 +142,33 @@ class FileGroupedSampler(Sampler[int]):
             yield from chunk_idxs
 
 
+def stratified_val_indices(val_ds: "WaveformDataset", per_source: int,
+                           seed: int = 0) -> Tuple[List[int], Dict[str, int]]:
+    """Return a balanced index list: up to ``per_source`` chunks PER source.
+
+    The val set is heavily source-imbalanced (fma ~80%, musdb ~3%), so a
+    proportional random draw leaves musdb with a handful of samples. This
+    picks an equal quota per source (seeded), then shuffles the combined
+    list so sources are interleaved across batches. Returns (indices,
+    per_source_counts).
+    """
+    import random as _random
+    by_src: Dict[str, List[int]] = {}
+    for f in val_ds.files:
+        by_src.setdefault(f["source"], []).extend(range(f["start"], f["end"]))
+    rng = _random.Random(seed)
+    picked: List[int] = []
+    counts: Dict[str, int] = {}
+    for src in sorted(by_src):
+        idxs = by_src[src][:]
+        rng.shuffle(idxs)
+        take = idxs[:per_source] if per_source else idxs
+        picked.extend(take)
+        counts[src] = len(take)
+    rng.shuffle(picked)
+    return picked, counts
+
+
 def build_dataloaders(
     chunks_dir: str,
     batch_size: int,
@@ -152,15 +179,21 @@ def build_dataloaders(
     cache_size: int = 8,
     val_shuffle: bool = False,
     val_seed: int = 0,
+    val_per_source: Optional[int] = None,
 ) -> Tuple[DataLoader, DataLoader, WaveformDataset, WaveformDataset, FileGroupedSampler]:
     train_ds = WaveformDataset(chunks_dir, split="train", cache_size=cache_size)
     val_ds = WaveformDataset(chunks_dir, split="test", cache_size=cache_size)
     train_sampler = FileGroupedSampler(train_ds, shuffle=True)
-    # val is stored source-contiguous (all fma, then maestro, then musdb), so
-    # a --max-batches prefix of an unshuffled loader is single-source. When
-    # subsampling, shuffle val with a fixed seed so the draw spans all sources.
+    # val is stored source-contiguous (all fma, then maestro, then musdb).
+    #   val_per_source: balanced quota per source (preferred for subsampling).
+    #   val_shuffle:    proportional random draw (legacy; fma-dominated).
+    #   neither:        deterministic full order (default; full-eval runs).
     val_sampler = None
-    if val_shuffle:
+    if val_per_source is not None:
+        idxs, counts = stratified_val_indices(val_ds, val_per_source, val_seed)
+        print(f"val stratified sample: {counts} (total {len(idxs)})")
+        val_sampler = idxs  # explicit index list = deterministic, balanced
+    elif val_shuffle:
         val_sampler = torch.utils.data.RandomSampler(
             val_ds, generator=torch.Generator().manual_seed(val_seed))
 
@@ -176,6 +209,11 @@ def build_dataloaders(
             common["prefetch_factor"] = prefetch_factor
 
     train_loader = DataLoader(train_ds, sampler=train_sampler, **common)
+    # For a stratified subsample, keep every picked chunk (no drop_last) so
+    # the per-source quotas are exact.
+    val_common = dict(common)
+    if val_per_source is not None:
+        val_common["drop_last"] = False
     val_loader = DataLoader(val_ds, sampler=val_sampler,
-                            shuffle=False, **common)
+                            shuffle=False, **val_common)
     return train_loader, val_loader, train_ds, val_ds, train_sampler

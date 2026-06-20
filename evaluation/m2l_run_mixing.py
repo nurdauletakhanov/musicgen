@@ -43,6 +43,9 @@ def main():
     ap.add_argument("--batch-size", type=int, default=16)
     ap.add_argument("--max-batches", type=int, default=None,
                     help="Cap eval batches (smoke test)")
+    ap.add_argument("--per-source", type=int, default=None,
+                    help="Stratified subsample: this many chunks PER source, "
+                         "balanced. Preferred over --max-batches.")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
@@ -58,20 +61,18 @@ def main():
     ).to(device)
     model.eval()
 
-    # Shuffle val when subsampling — the val set is source-contiguous, so an
-    # unshuffled --max-batches prefix would be a single source (almost always
-    # fma). Full runs keep the deterministic order.
-    subsampling = args.max_batches is not None
+    # Subsampling: --per-source N gives a balanced N/source draw (preferred);
+    # --max-batches gives a proportional shuffled draw (fma-dominated, legacy).
     _, val_loader, _, val_ds, _ = build_dataloaders(
         chunks_dir=cfg["data"]["chunks_dir"],
         batch_size=args.batch_size,
         num_workers=int(cfg.get("train", {}).get("num_workers", 4)),
         pin_memory=(device.type == "cuda"),
-        val_shuffle=subsampling,
+        val_per_source=args.per_source,
+        val_shuffle=(args.per_source is None and args.max_batches is not None),
         val_seed=args.seed,
     )
-    print(f"val: {len(val_ds):,} chunks across {len(val_ds.files)} files"
-          + ("  [SUBSAMPLED, val shuffled]" if subsampling else ""))
+    print(f"val: {len(val_ds):,} chunks across {len(val_ds.files)} files")
 
     aggregates: Dict[str, List[tuple]] = {
         "sdr_rec": [], "sdr_lin": [], "sdr_lin_gt": [], "l_lat": [], "mix_rate": [],
