@@ -37,15 +37,20 @@ ALPHAS = [0.1, 0.3, 0.5, 0.7, 0.9]
 # kind "v2": config/checkpoint under checkpoints/<name>/.
 # kind "m2l": checkpoint resolved from ckpt_dir (newest *_ema.pt under the
 #             run's timestamped subdirs); None = published M2L checkpoint.
+#
+# THIS IS A FIGURE, NOT A HEADLINE TABLE. The sweep shows the *shape* of
+# sdr_lin vs alpha (flat under the correct shared-noise protocol, U-shaped
+# under the phase-variance artifact) — that shape is clear at ~1k samples.
+# ALWAYS run with --max-batches 40 (~1300 samples/point). A full-test-set
+# M2L sweep is ~4 h/eval x 5 alphas = ~20 h PER M2L PHASE — do not do it.
+#
+# Model list trimmed to the minimum the figure needs: one no-mix baseline,
+# one mix model, one M2L (the consistency-decoder U-shape). The α=0.5
+# headline numbers for every other model already live in the main tables.
 MODELS = [
-    {"kind": "v2", "name": "v2.0-continued"},
-    {"kind": "v2", "name": "v2.2-decmix-disc"},
-    {"kind": "v2", "name": "v3.0-baseline-d64"},
-    {"kind": "v2", "name": "v3.1-decmix-disc-d64"},
-    {"kind": "m2l", "name": "m2l-phase0", "ckpt_dir": None},
-    {"kind": "m2l", "name": "m2l-phase05",
-     "ckpt_dir": M2L_REPO / "checkpoints" / "mix_phase05_control"},
-    {"kind": "m2l", "name": "m2l-phase2",
+    {"kind": "v2", "name": "v2.0-continued"},      # no-mix baseline (flat)
+    {"kind": "v2", "name": "v2.1-decmix"},          # mix (flat, shifted up)
+    {"kind": "m2l", "name": "m2l-phase2",           # consistency decoder
      "ckpt_dir": M2L_REPO / "checkpoints" / "mix_phase2_decmix_consmix"},
 ]
 
