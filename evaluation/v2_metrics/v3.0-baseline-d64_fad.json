@@ -1,0 +1,19 @@
+{
+  "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v3.0-baseline-d64\\best.pth",
+  "step": 240000,
+  "n_embeddings_per_source": {
+    "fma": 26859,
+    "maestro": 7044,
+    "musdb": 1181,
+    "all": 35084
+  },
+  "config": {
+    "sample_rate": 44100,
+    "clap_sr": 48000,
+    "clip_seconds": 10.0
+  },
+  "fad/fma": 0.047935758202587886,
+  "fad/maestro": 0.10099766989740772,
+  "fad/musdb": 0.06068733929533021,
+  "fad/all": 0.05181400802436764
+}

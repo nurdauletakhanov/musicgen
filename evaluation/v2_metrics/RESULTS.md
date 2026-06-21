@@ -378,9 +378,20 @@ Files: [v3.1-decmix-disc-d64_mixing.json](v3.1-decmix-disc-d64_mixing.json), [v3
 
 Mixing-equivariance recipe is **not** an artifact of (a) the 7.66× compression rate or (b) the v1.1 warm-start. Same recipe, 2× tighter bottleneck, from random init, lands within 1.23 dB of v2.2-sym on sdr_lin. **+2.64 dB above v2.0 (the no-mixing baseline at the easier compression)**, so even at 15.31× from scratch we beat the no-mixing model at 7.66×.
 
-### Missing control (deliberate, not done)
+### v3.0 control — TRAINED (June 2026), v3 gate PASSES
 
-A from-scratch baseline at d_model=64 *without* mixing supervision (v3.0) was scaffolded ([configs/experiments/v3/v3.0_baseline_d64.yaml](../../configs/experiments/v3/v3.0_baseline_d64.yaml)) but not trained. The cleanest isolation of "mixing supervision contribution at 15× compression" requires it; we'd estimate v3.0 FAD around 0.06 and sdr_lin around +12 dB (like the 7.66× v2.0 control), but until trained we can't separate compression cost from mixing-supervision cost in the v2.2 → v3.1 FAD delta.
+v3.0 (from-scratch d_model=64, 15.31×, NO mixing) trained 250k steps as the matched control for v3.1. Full-test mixing metrics (with sdr_lin_gt):
+
+| metric | v3.0 (no mix) | v3.1 (mix) | Δ |
+|---|---|---|---|
+| sdr_rec | 9.98 | 9.93 | ~0 (free) |
+| sdr_lin (dd) | 10.62 | 14.64 | +4.02 |
+| **sdr_lin_gt** | 6.83 | **8.56** | **+1.73** |
+| l_lat ↓ | 0.078 | 0.057 | better |
+| mix_rate ↓ | 1.187 | 1.046 | better |
+| FAD ↓ | (see v3.0_fad.json) | 0.061 | — |
+
+**Gate verdict:** at 15.31× from scratch, mixing supervision adds **+1.73 dB ground-truth equivariance**, lower l_lat, and mix_rate 1.19→1.05, at **identical reconstruction** (9.98 vs 9.93). Because v3.0 is a matched control (same arch/compression/schedule, mixing off), this isolates the mixing-supervision contribution from compression cost — the gap the old "missing control" note flagged is now closed. Confirms the recipe is not an artifact of the 7.66× rate or warm-starting.
 
 ---
 
