@@ -1,0 +1,352 @@
+% -----------------------------------------------
+% ICASSP 2027 — draft v1
+% Mixing-equivariant audio autoencoders via an explicit decode-mixing loss
+% -----------------------------------------------
+\documentclass[conference]{IEEEtran}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tikz}
+\usetikzlibrary{positioning}
+\usepackage{cite}
+\usepackage{url}
+
+% convenience refs
+\newcommand{\tabref}[1]{Table~\ref{#1}}
+\newcommand{\figref}[1]{Fig.~\ref{#1}}
+\newcommand{\secref}[1]{Section~\ref{#1}}
+\newcommand{\Ldec}{\mathcal{L}_\mathrm{mix}^\mathrm{dec}}
+\newcommand{\Lenc}{\mathcal{L}_\mathrm{mix}^\mathrm{enc}}
+
+\begin{document}
+
+\title{An Explicit Decode-Mixing Loss for\\Mixing-Equivariant Audio Autoencoders}
+
+\author{\IEEEauthorblockN{Anonymous}
+\IEEEauthorblockA{Anonymous Affiliation}}
+
+\maketitle
+
+\begin{abstract}
+Audio mixing is linear in the waveform domain, yet the latent spaces of neural
+audio autoencoders do not preserve this structure: interpolating two latent
+codes and decoding does not reproduce the corresponding waveform mix. We
+introduce an explicit \emph{decode-mixing loss} that enforces this property
+directly --- decoded latent interpolations are required to match true waveform
+mixes --- at the cost of a single extra decoder pass per step. On a waveform
+GAN autoencoder the loss makes the latent space mixing-equivariant
+\emph{at no reconstruction cost}, enabling latent-domain stem manipulation:
+removing a stem by latent subtraction improves from $+3.4$ to $+6.0$\,dB SI-SDR.
+A controlled ablation isolates the mechanism: the decode-mixing loss itself is
+the active ingredient, and an adversarial term applied to the mixed path --- which
+inflates a decode-consistency metric --- adds no measurable gain on
+ground-truth equivariance. The recipe transfers across compression rates
+(trained from scratch at $15.3\times$) and to a structurally different
+consistency-model autoencoder (Music2Latent), where a continued-training
+control confirms the gain is the loss and not domain adaptation. Finally, we
+show that the commonly used decode-vs-decode linearity metric is confounded
+by decoder phase variance and report a ground-truth-referenced variant
+throughout.
+\end{abstract}
+
+\begin{IEEEkeywords}
+audio autoencoders, representation learning, mixing equivariance, latent arithmetic, source separation
+\end{IEEEkeywords}
+
+\section{Introduction}\label{sec:intro}
+Audio mixing is a linear operation:
+$\mathrm{mix}(x_1,x_2,\alpha)=\alpha x_1+(1{-}\alpha)x_2$.
+For an autoencoder with encoder $f$ and decoder $g$, we call the latent space
+\emph{mixing-equivariant} when
+\begin{equation}
+  g\!\left(\alpha f(x_1)+(1{-}\alpha)f(x_2)\right)\approx \alpha x_1+(1{-}\alpha)x_2 .
+  \label{eq:equiv}
+\end{equation}
+This property turns latent vector arithmetic into audio editing: subtracting a
+stem's latent removes it from a mixture, adding latents mixes sources, and
+weighted combinations remix --- all without a dedicated separation or synthesis
+model. It is also a prerequisite for latent-diffusion systems
+\cite{liu2023audioldm,evans2024stable} that compose independently modeled
+sources. Yet standard autoencoders do not satisfy
+Eq.~\ref{eq:equiv}: their objectives reward reconstruction fidelity, not
+algebraic structure, and quantized codecs (DAC \cite{kumar2024dac},
+EnCodec \cite{defossez2023encodec}) cannot represent interpolated codes at all.
+
+Recent work pursues linearity through \emph{implicit} regularization ---
+training on random mixes as data augmentation \cite{torres2026linearity}
+(related to mixup \cite{zhang2018mixup}). We take the direct route: an explicit
+loss (\secref{sec:method}) that compares decoded latent interpolations to true
+waveform mixes, propagating gradients through the decoder \emph{and} back into
+the encoder. Our contributions are:
+\begin{enumerate}
+  \item An explicit decode-mixing loss that makes a waveform GAN autoencoder
+  mixing-equivariant \emph{without degrading reconstruction}
+  (\secref{sec:ablation}), enabling latent-arithmetic stem removal
+  (\secref{sec:downstream}).
+  \item A controlled ablation isolating the mechanism: the decode-mixing loss
+  is the active ingredient, while an adversarial-on-mix term --- which inflates
+  a decode-consistency metric --- gives no measurable ground-truth gain, and an
+  encoder-only variant and a frozen-encoder variant both underperform.
+  \item Evidence that the recipe generalizes: from-scratch training at
+  $2\times$ tighter compression, and transfer to a consistency-model
+  autoencoder with a continued-training control ruling out domain adaptation.
+  \item A methodological correction: the widely used decode-vs-decode
+  SI-SDR$_\mathrm{lin}$ metric is confounded by decoder phase variance; we
+  report a ground-truth-referenced variant.
+\end{enumerate}
+
+\section{Related Work}\label{sec:related}
+\textbf{Neural audio codecs.} DAC \cite{kumar2024dac},
+EnCodec \cite{defossez2023encodec}, and SoundStream \cite{zeghidour2022soundstream}
+pair convolutional encoders with HiFi-GAN decoders \cite{kong2020hifigan} and
+multi-scale discriminators, optimizing reconstruction without latent structure;
+their residual vector quantization also precludes latent interpolation.
+RAVE \cite{caillon2021rave} learns a variational latent space but does not
+target mixing equivariance, and disentanglement regularizers
+\cite{higgins2017betavae} encourage generic smoothness rather than a specific
+algebraic identity.
+\textbf{Linear audio representations.} Music2Latent \cite{pasini2024music2latent}
+is a consistency autoencoder with partial linearity as a byproduct.
+Torres et al.~\cite{torres2026linearity} improve linearity on it via data
+augmentation. We differ by (i) using an explicit, controllable loss,
+(ii) isolating which training signal actually drives the property, and
+(iii) reporting a ground-truth-referenced metric in place of the
+phase-confounded decode-vs-decode one.
+
+\section{Method}\label{sec:method}
+
+\subsection{Decode-mixing loss}\label{sec:loss}
+Given a batch $\{x_i\}$ we form pairs $(x_i,x_j)$ with a fixed-point-free
+permutation and draw $\alpha\sim U[0,1]$. Let $\bar{x}=\alpha x_i+(1{-}\alpha)x_j$
+be the waveform mix and $\bar{z}=\alpha f(x_i)+(1{-}\alpha)f(x_j)$ the latent
+interpolation. The decode-mixing loss requires the decoded interpolation to
+match the true mix:
+\begin{equation}
+  \Ldec=\mathcal{L}_\mathrm{recon}\!\left(g(\bar{z}),\,\bar{x}\right),
+  \label{eq:ldec}
+\end{equation}
+where $\mathcal{L}_\mathrm{recon}$ is the multi-resolution STFT + mel loss also
+used for reconstruction. Gradients flow through $g$ and back into $f$ via
+$\bar{z}$, so a single term constrains both networks; it costs one extra
+decoder pass per step. We also study an \emph{encoder-only} variant that
+penalizes encoder nonlinearity directly,
+$\Lenc=\lVert f(\bar{x})-\bar{z}\rVert^2$ (one extra encoder pass, no decoder
+pass). The total generator objective is
+$\mathcal{L}=\mathcal{L}_\mathrm{recon}+\mathcal{L}_\mathrm{GAN}+\lambda\,\Ldec
++\lambda_{\ell_2}\lVert z\rVert^2$.
+
+\subsection{Metrics}\label{sec:metrics}
+We report reconstruction SI-SDR$_\mathrm{rec}=\mathrm{SISDR}(g(f(x)),x)$ and
+two equivariance views at $\alpha{=}0.5$:
+\begin{itemize}
+  \item \textbf{SI-SDR$_\mathrm{lin}$} (decode-vs-decode):
+  $\mathrm{SISDR}(g(\bar{z}),g(f(\bar{x})))$ --- equivariance relative to the
+  model's \emph{own} reconstruction of the mix.
+  \item \textbf{SI-SDR$_\mathrm{lin}^\mathrm{gt}$} (vs.\ ground truth):
+  $\mathrm{SISDR}(g(\bar{z}),\bar{x})$ --- the quantity in
+  Eq.~\ref{eq:equiv}, comparable across models.
+\end{itemize}
+We also report $\ell_\mathrm{lat}=\lVert\bar{z}-f(\bar{x})\rVert^2/\lVert f(\bar{x})\rVert^2$
+(encoder linearity) and MixRate
+$=\mathcal{L}_\mathrm{recon}(g(\bar{z}),\bar{x})/\mathcal{L}_\mathrm{recon}(g(f(\bar{x})),\bar{x})$
+(decoder equivariance; $<1$ is better than the encode-then-decode path).
+SI-SDR$_\mathrm{lin}$ is the metric used by prior work, but it is
+\emph{gameable}: a decoder driven onto a common realistic manifold raises the
+mutual SI-SDR of its two decode paths without bringing either closer to
+$\bar{x}$ (\secref{sec:ablation}). It is also confounded for stochastic
+decoders: a consistency-model decoder \cite{pasini2024music2latent} draws fresh
+noise per call, so two decodes of the same latent differ in phase and
+SI-SDR$_\mathrm{lin}$ collapses unless the noise is shared. \figref{fig:protocol}
+shows the same Music2Latent checkpoints scoring $\approx{-}8$\,dB under
+independent-noise decoding (the protocol implied by prior reports) and
+\emph{positive} under shared-noise decoding --- a $12$\,dB swing driven purely by
+the eval protocol, not the model. We therefore treat
+SI-SDR$_\mathrm{lin}^\mathrm{gt}$ and MixRate as the equivariance metrics of
+record, and use shared decode noise everywhere.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.82\linewidth]{figures/fig_protocol.pdf}
+  \caption{Decode-noise protocol confound (Music2Latent, MUSDB18,
+  $\alpha{=}0.5$). The same checkpoints score deeply negative under
+  independent-noise decoding and positive under shared-noise decoding; the
+  $\approx{-}8$\,dB figure is a phase artifact, not a linearity measurement.}
+  \label{fig:protocol}
+\end{figure}
+
+\subsection{Experimental setup}\label{sec:setup}
+The primary model is a waveform autoencoder (DAC-style 1-D convolutional
+encoder, HiFi-GAN decoder \cite{kong2020hifigan}, combined multi-scale-STFT and
+multi-period discriminator) operating at 44.1\,kHz on 1-second mono chunks,
+trained on a ${\sim}$950-hour union of FMA-large, MAESTRO, and MUSDB18-HQ
+\cite{rafii2017musdb18}. Two compression regimes are used: $7.66\times$
+($d{=}128$) and $15.3\times$ ($d{=}64$). Mixing losses are added either as a
+25k-step fine-tune over a converged baseline (v2.x) or from scratch over 250k
+steps (v3.x). All runs use a single NVIDIA RTX~5090. Unless noted, metrics are
+computed over the full multi-source test set; the $\alpha$-sweep
+(\secref{sec:alpha}) uses a source-balanced subsample.
+
+\begin{figure}[t]
+  \centering
+  \resizebox{0.92\linewidth}{!}{%
+  \begin{tikzpicture}[
+    node distance=1.0cm and 1.2cm,
+    box/.style={draw, rounded corners, minimum height=0.6cm, minimum width=0.9cm, fill=#1},
+    box/.default=gray!10, arr/.style={-stealth, thick},
+    redarr/.style={-stealth, thick, red!70!black, dashed}]
+    \node (x1) {$x_i$};
+    \node[below=0.7cm of x1] (x2) {$x_j$};
+    \node[box, right=0.8cm of x1] (enc1) {$f$};
+    \node[box, right=0.8cm of x2] (enc2) {$f$};
+    \node[right=0.6cm of enc1] (z1) {$z_i$};
+    \node[right=0.6cm of enc2] (z2) {$z_j$};
+    \node[box=blue!10, right=1.1cm of z1, yshift=-0.35cm] (interp) {$\bar{z}=\alpha z_i{+}(1{-}\alpha)z_j$};
+    \node[box, right=1.1cm of interp] (dec) {$g$};
+    \node[right=0.6cm of dec] (out) {$g(\bar{z})$};
+    \node[box=green!10, below=1.2cm of interp] (target) {$\bar{x}=\alpha x_i{+}(1{-}\alpha)x_j$};
+    \node[box=red!10, right=0.8cm of target, yshift=0.35cm] (loss) {$\Ldec$};
+    \draw[arr] (x1) -- (enc1); \draw[arr] (x2) -- (enc2);
+    \draw[arr] (enc1) -- (z1); \draw[arr] (enc2) -- (z2);
+    \draw[arr] (z1) -- (interp); \draw[arr] (z2) -- (interp);
+    \draw[arr] (interp) -- (dec); \draw[arr] (dec) -- (out);
+    \draw[redarr] (out.south) -- (loss.north east);
+    \draw[redarr] (target.east) -- (loss.south west);
+    \draw[arr, gray] (x1.south) |- (target.west);
+    \draw[arr, gray] (x2.south) |- (target.west);
+  \end{tikzpicture}}
+  \caption{Decode-mixing loss: encode a pair, interpolate latents, decode, and
+  compare to the true waveform mix. Gradients (dashed) flow through the decoder
+  and back into the encoder via $\bar{z}$.}
+  \label{fig:method}
+\end{figure}
+
+\section{Results}\label{sec:results}
+
+\subsection{Mechanism ablation}\label{sec:ablation}
+\tabref{tab:ablation} ablates the loss on the $7.66\times$ GAN autoencoder
+(25k-step fine-tunes from a shared converged baseline). Three observations
+drive the rest of the paper.
+
+\begin{table}[t]
+  \centering\footnotesize
+  \input{tables/ablation.tex}
+  \caption{Mechanism ablation on the GAN autoencoder ($7.66\times$, full test
+  set, $\alpha{=}0.5$). SDR$_\mathrm{lin}$ is decode-vs-decode;
+  SDR$_\mathrm{lin}^\mathrm{gt}$ is vs.\ ground truth. Single seed.}
+  \label{tab:ablation}
+\end{table}
+
+\textbf{(1) Reconstruction is unaffected.} SDR$_\mathrm{rec}$ is flat across all
+configurations ($11.2$--$11.4$\,dB): the mixing loss buys equivariance for free.
+
+\textbf{(2) The decode-mixing loss is the active ingredient; the discriminator
+on the mixed path is not.} On the ground-truth metric, $\Ldec$ alone improves
+SDR$_\mathrm{lin}^\mathrm{gt}$ from $8.0$ to $10.2$\,dB and is the only run with
+MixRate $<1$ ($0.97$). Adding an adversarial term to the mixed path
+(``+disc-on-mix'') does \emph{not} improve ground-truth equivariance
+($9.9$\,dB, MixRate $1.05$) --- yet it dramatically inflates the decode-vs-decode
+SDR$_\mathrm{lin}$ ($12.1\!\to\!16.0$\,dB). The discriminator pulls the two
+decode paths onto a common realistic manifold, raising their mutual SI-SDR
+without moving either toward $\bar{x}$. This is direct evidence that
+SDR$_\mathrm{lin}$ is gameable and that no adversarial machinery is required for
+equivariance.
+
+\textbf{(3) Direct decoder gradient matters.} The encoder-only variant $\Lenc$
+drives $\ell_\mathrm{lat}$ lowest but leaves MixRate high ($1.15$--$1.18$): it
+linearizes the encoder without making the decoder equivariant. Freezing the
+encoder and training only the decoder is the single worst run on the
+ground-truth metric relative to its reconstruction, confirming both networks
+must adapt.
+
+\subsection{Generalization: compression and architecture}\label{sec:general}
+\tabref{tab:crossarch} extends the recipe along two axes. \textbf{Compression:}
+trained \emph{from scratch} at $15.3\times$ (v3.1), the mixing model matches its
+no-mixing control (v3.0) on reconstruction ($9.9$ vs.\ $10.0$\,dB) while
+improving ground-truth equivariance by $+1.7$\,dB
+(SDR$_\mathrm{lin}^\mathrm{gt}$ $6.8\!\to\!8.6$), MixRate ($1.19\!\to\!1.05$),
+and encoder linearity ($\ell_\mathrm{lat}$ $0.078\!\to\!0.057$). Because v3.0 is
+a matched control --- same architecture, compression, and schedule, mixing
+disabled --- this isolates the loss's contribution and shows the effect is not
+an artifact of the looser $7.66\times$ rate or of warm-starting. \textbf{Architecture:} we fine-tune the published
+Music2Latent \cite{pasini2024music2latent} consistency autoencoder with a
+decode-mixing objective (its native consistency loss applied to the mixed pair
+substitutes for the discriminator). A continued-training control --- the same
+fine-tune with the mixing terms disabled --- moves equivariance by
+$<0.2$\,dB and \emph{worsens} FAD, so the mixing model's gain is attributable
+to the loss, not to domain adaptation. Both decode-vs-decode and ground-truth
+metrics agree on the improvement, confirming it is not a measurement artifact.
+Absolute SDR$_\mathrm{lin}^\mathrm{gt}$ remains negative on Music2Latent because
+its consistency decoder is phase-incoherent with raw waveforms; the latent
+\emph{geometry} improves (MixRate, $\ell_\mathrm{lat}$) but a consistency
+decoder does not convert this into clean waveform arithmetic as the GAN decoder
+does --- hence we report the GAN autoencoder as the primary result.
+
+\begin{table}[t]
+  \centering\footnotesize
+  \input{tables/crossarch.tex}
+  \caption{Generalization across compression and architecture (full test set,
+  $\alpha{=}0.5$, EMA weights for Music2Latent). The M2L ``fine-tune control''
+  is the continued-training baseline with mixing disabled.}
+  \label{tab:crossarch}
+\end{table}
+
+\subsection{Downstream: latent-arithmetic stem removal}\label{sec:downstream}
+We remove a stem by latent subtraction,
+$\hat{x}=g(f(x_\mathrm{mix})-f(x_\mathrm{stem}))$, and measure SI-SDR against
+the true residual on the MUSDB18 test set. This tests extrapolation beyond the
+convex range seen in training. \tabref{tab:subtraction} shows the mixing loss
+roughly doubles usable subtraction quality on the GAN autoencoder ($+3.4\!\to\!+6.0$\,dB
+overall), with the largest gain on bass ($+0.4\!\to\!+5.4$\,dB). The
+decode-mixing-only and +disc variants are comparable here too, consistent with
+\secref{sec:ablation}.
+
+\begin{table}[t]
+  \centering\footnotesize
+  \input{tables/subtraction.tex}
+  \caption{Stem removal via latent subtraction (SI-SDR, dB; MUSDB18 test).
+  Higher is better.}
+  \label{tab:subtraction}
+\end{table}
+
+\subsection{Equivariance across mixing ratios}\label{sec:alpha}
+Sweeping $\alpha$ on a source-balanced subsample (\figref{fig:alpha}), the
+mixing loss \emph{flattens} the equivariance curve: the no-mixing baseline sags
+most at the hardest balanced mix ($\alpha{=}0.5$) and recovers toward the
+extremes, while mixing models stay near-uniform across $\alpha$ (e.g.\
+SDR$_\mathrm{lin}^\mathrm{gt}$ swing of $1.2$\,dB for $\Ldec{+}$disc vs.\
+$3.2$\,dB for the baseline). Thus the property holds across mixing ratios, not
+only at the trained operating point.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.82\linewidth]{figures/fig_alpha.pdf}
+  \caption{Ground-truth equivariance vs.\ mixing coefficient $\alpha$
+  (source-balanced subsample). The no-mixing baseline sags at the hardest
+  balanced mix ($\alpha{=}0.5$); the decode-mixing loss flattens and lifts the
+  curve across all $\alpha$.}
+  \label{fig:alpha}
+\end{figure}
+We caution that the decode-vs-decode SDR$_\mathrm{lin}$ is U-shaped in $\alpha$
+for \emph{all} models --- near-identity mixes are trivially easy --- which is a
+property of that metric, distinct from the phase-variance confound discussed in
+\secref{sec:metrics}.
+
+\section{Conclusion}\label{sec:conclusion}
+An explicit decode-mixing loss makes a waveform autoencoder
+mixing-equivariant at no reconstruction cost, enabling latent-arithmetic audio
+editing. The loss itself --- not an adversarial term on the mixed path --- is the
+active ingredient, and the effect transfers across compression rates and to a
+consistency-model autoencoder under a continued-training control.
+\textbf{Limitations.} All results use a single training seed; small
+differences (e.g.\ $\Ldec$ vs.\ $\Ldec{+}$disc) are within plausible seed
+variance, and we report them as ``comparable.'' Experiments are mono;
+consistency-decoder latent arithmetic remains phase-limited; and we conduct no
+listening test. Stereo, multi-seed estimates, and latent-diffusion composition
+are future work.
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}
