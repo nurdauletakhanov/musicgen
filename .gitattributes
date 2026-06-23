@@ -1,0 +1,15 @@
+# Normalize line endings so git and editors agree (prevents spurious
+# "modified" markers on Windows checkouts where core.autocrlf=true).
+* text=auto
+*.py   text eol=lf
+*.yaml text eol=lf
+*.md   text eol=lf
+*.tex  text eol=lf
+*.bib  text eol=lf
+*.json text eol=lf
+# Binary assets — never normalize.
+*.pdf  binary
+*.png  binary
+*.wav  binary
+*.pth  binary
+*.pt   binary
