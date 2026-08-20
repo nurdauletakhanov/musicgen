@@ -24,8 +24,13 @@
 
 \title{An Explicit Decode-Mixing Loss for\\Mixing-Equivariant Audio Autoencoders}
 
-\author{\IEEEauthorblockN{Anonymous}
-\IEEEauthorblockA{Anonymous Affiliation}}
+% ICASSP 2027 is single-anonymous: reviewers see author names, so this paper is
+% deliberately NOT anonymized. Add "City, Country" as a line before the email if
+% you want a location printed.
+\author{\IEEEauthorblockN{Nurdaulet Akhanov}
+\IEEEauthorblockA{Mohamed bin Zayed University of Artificial Intelligence\\
+Abu Dhabi, United Arab Emirates\\
+nurdaulet.akhanov@mbzuai.ac.ae}}
 
 \maketitle
 
@@ -38,7 +43,10 @@ directly --- decoded latent interpolations are required to match true waveform
 mixes --- at the cost of a single extra decoder pass per step. On a waveform
 GAN autoencoder the loss makes the latent space mixing-equivariant
 \emph{at no reconstruction cost}, enabling latent-domain stem manipulation:
-removing a stem by latent subtraction improves from $+3.4$ to $+6.0$\,dB SI-SDR.
+removing a stem by latent subtraction improves from $+3.4$ to $+5.7$\,dB
+SI-SDR. At $2\times$ tighter compression the loss is what makes the operation
+viable at all --- against a matched from-scratch control, stem removal goes
+from an unusable $+1.2$\,dB to $+5.2$\,dB.
 A controlled ablation isolates the mechanism: the decode-mixing loss itself is
 the active ingredient, and an adversarial term applied to the mixed path --- which
 inflates a decode-consistency metric --- adds no measurable gain on
@@ -89,9 +97,11 @@ the encoder. Our contributions are:
   is the active ingredient, while an adversarial-on-mix term --- which inflates
   a decode-consistency metric --- gives no measurable ground-truth gain, and an
   encoder-only variant and a frozen-encoder variant both underperform.
-  \item Evidence that the recipe generalizes: from-scratch training at
-  $2\times$ tighter compression, and transfer to a consistency-model
-  autoencoder with a continued-training control ruling out domain adaptation.
+  \item Evidence that the recipe generalizes, each against a matched control:
+  from-scratch training at $2\times$ tighter compression --- where the loss is
+  what makes latent subtraction viable at all --- and transfer to a
+  consistency-model autoencoder with a continued-training control ruling out
+  domain adaptation. The gain holds on all three test domains.
   \item A methodological correction: the widely used decode-vs-decode
   SI-SDR$_\mathrm{lin}$ metric is confounded by decoder phase variance; we
   report a ground-truth-referenced variant.
@@ -181,7 +191,9 @@ The primary model is a waveform autoencoder (DAC-style 1-D convolutional
 encoder, HiFi-GAN decoder \cite{kong2020hifigan}, combined multi-scale-STFT and
 multi-period discriminator) operating at 44.1\,kHz on 1-second mono chunks,
 trained on a ${\sim}$950-hour union of FMA-large, MAESTRO, and MUSDB18-HQ
-\cite{rafii2017musdb18}. Two compression regimes are used: $7.66\times$
+\cite{rafii2017musdb18}.\footnote{Code, training configurations, pretrained
+weights, and every metric reported here:
+\url{https://github.com/nurdauletakhanov/musicgen}} Two compression regimes are used: $7.66\times$
 ($d{=}128$) and $15.3\times$ ($d{=}64$). Mixing losses are added either as a
 25k-step fine-tune over a converged baseline (v2.x) or from scratch over 250k
 steps (v3.x). All runs use a single NVIDIA RTX~5090. Unless noted, metrics are
@@ -231,6 +243,7 @@ drive the rest of the paper.
 
 \begin{table}[t]
   \centering\footnotesize
+  \setlength{\tabcolsep}{3.5pt}
   \input{tables/ablation.tex}
   \caption{Mechanism ablation on the GAN autoencoder ($7.66\times$, full test
   set, $\alpha{=}0.5$). SDR$_\mathrm{lin}$ is decode-vs-decode;
@@ -239,7 +252,9 @@ drive the rest of the paper.
 \end{table}
 
 \textbf{(1) Reconstruction is unaffected.} SDR$_\mathrm{rec}$ is flat across all
-configurations ($11.2$--$11.4$\,dB): the mixing loss buys equivariance for free.
+configurations ($11.2$--$11.4$\,dB), and so is FAD ($0.044$--$0.046$): the
+mixing loss buys equivariance for free, on both a sample-wise and a
+distributional measure of quality.
 
 \textbf{(2) The decode-mixing loss is the active ingredient; the discriminator
 on the mixed path is not.} On the ground-truth metric, $\Ldec$ alone improves
@@ -285,6 +300,7 @@ does --- hence we report the GAN autoencoder as the primary result.
 
 \begin{table}[t]
   \centering\footnotesize
+  \setlength{\tabcolsep}{4pt}
   \input{tables/crossarch.tex}
   \caption{Generalization across compression and architecture (full test set,
   $\alpha{=}0.5$, EMA weights for Music2Latent). The M2L ``fine-tune control''
@@ -292,21 +308,57 @@ does --- hence we report the GAN autoencoder as the primary result.
   \label{tab:crossarch}
 \end{table}
 
+\begin{table}[t]
+  \centering\footnotesize
+  \input{tables/persource.tex}
+  \caption{Ground-truth equivariance per test domain (dB). Each $\Delta$ is
+  against the matched no-mixing control at the same compression rate. The gain
+  is present on every domain, not carried by one.}
+  \label{tab:persource}
+\end{table}
+
+\textbf{The gain is not domain-driven.} Our test set spans three acoustically
+distinct domains --- crowd-sourced indie production (FMA), solo piano
+(MAESTRO), and multi-track studio mixes (MUSDB18). \tabref{tab:persource}
+breaks SDR$_\mathrm{lin}^\mathrm{gt}$ out by domain against the matched
+no-mixing control at each compression rate. The improvement appears on all
+three at both rates ($+2.0$ to $+3.1$\,dB at $7.66\times$; $+1.2$ to
+$+3.2$\,dB at $15.3\times$), so it reflects a property of the learned latent
+space rather than an artifact of one recording style. The absolute ordering
+(MAESTRO easiest, MUSDB hardest) tracks reconstruction difficulty and is
+preserved by the mixing loss.
+
 \subsection{Downstream: latent-arithmetic stem removal}\label{sec:downstream}
 We remove a stem by latent subtraction,
 $\hat{x}=g(f(x_\mathrm{mix})-f(x_\mathrm{stem}))$, and measure SI-SDR against
-the true residual on the MUSDB18 test set. This tests extrapolation beyond the
-convex range seen in training. \tabref{tab:subtraction} shows the mixing loss
-roughly doubles usable subtraction quality on the GAN autoencoder ($+3.4\!\to\!+6.0$\,dB
-overall), with the largest gain on bass ($+0.4\!\to\!+5.4$\,dB). The
-decode-mixing-only and +disc variants are comparable here too, consistent with
-\secref{sec:ablation}.
+the true residual on the MUSDB18 test set. This tests \emph{extrapolation}
+beyond the convex range $\alpha\in[0,1]$ seen in training. Alongside the
+subtraction score we report the \emph{linearity tax}
+$\mathrm{gap}=\mathrm{SISDR}(g(f(x_\mathrm{res})),x_\mathrm{res})-\mathrm{SISDR}(\hat{x},x_\mathrm{res})$,
+the shortfall of latent arithmetic against the same model's own encode--decode
+ceiling on the residual. The gap normalizes away raw reconstruction quality
+and so compares models at different compression rates on equal terms.
+
+\tabref{tab:subtraction} shows the mixing loss roughly doubles usable
+subtraction quality at $7.66\times$ ($+3.4\!\to\!+5.7$\,dB overall) and cuts
+the linearity tax from $5.2$ to $3.0$\,dB, with the largest gain on bass
+($+0.4\!\to\!+4.9$\,dB). Adding disc-on-mix is comparable rather than better
+($+6.0$\,dB, tax $2.6$), consistent with \secref{sec:ablation}. The effect is
+starkest against the matched from-scratch control at $15.3\times$: without the
+mixing loss, latent subtraction is essentially unusable ($+1.2$\,dB overall,
+and $-1.6$\,dB on bass --- worse than emitting the unmodified mixture), while
+the same architecture trained with it reaches $+5.2$\,dB and the \emph{lowest}
+tax of any model ($2.5$\,dB). Tighter compression therefore does not merely
+cost a little subtraction quality --- it is what makes the property fail
+outright, and the loss is what restores it.
 
 \begin{table}[t]
   \centering\footnotesize
+  \setlength{\tabcolsep}{3.5pt}
   \input{tables/subtraction.tex}
   \caption{Stem removal via latent subtraction (SI-SDR, dB; MUSDB18 test).
-  Higher is better.}
+  Higher is better; ``gap'' is the linearity tax against each model's own
+  encode--decode ceiling (lower is better).}
   \label{tab:subtraction}
 \end{table}
 

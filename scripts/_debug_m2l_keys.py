@@ -1,4 +1,7 @@
 """Verify state_dict load actually populated the model (not silently skipped)."""
+import os
+from pathlib import Path
+
 import torch
 from music2latent.inference import EncoderDecoder
 from music2latent.models import UNet
@@ -21,7 +24,11 @@ def main():
     print(f"LOADED encoder.conv_inp: mean={loaded_w_mean:+.4e}  std={loaded_w_std:.4e}")
 
     # Load the raw state_dict and compare key sets
-    ckpt_path = "d:/projects/music2latent/music2latent/models/music2latent.pt"
+    # Override with: export MUSICGEN_M2L_PUBLISHED=/path/to/music2latent.pt
+    ckpt_path = os.environ.get(
+        "MUSICGEN_M2L_PUBLISHED",
+        str(Path(__file__).resolve().parents[1].parent
+            / "music2latent" / "music2latent" / "models" / "music2latent.pt"))
     sd = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     print("checkpoint keys:", list(sd.keys()))
     if "gen_state_dict" in sd:

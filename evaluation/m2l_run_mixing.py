@@ -6,7 +6,7 @@ attributes the metric code reads on the v2 Autoencoder.
 
 Usage:
   python -m evaluation.m2l_run_mixing \
-      --m2l-checkpoint d:/projects/music2latent/music2latent/models/music2latent.pt \
+      --m2l-checkpoint $MUSICGEN_M2L_PUBLISHED \
       --musicgen-config configs/experiments/v2/v2.0_continued.yaml \
       --out evaluation/v2_metrics/m2l_phase0_mixing.json
 """

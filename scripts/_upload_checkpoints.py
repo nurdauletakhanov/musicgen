@@ -6,15 +6,22 @@ plus a MANIFEST.md mapping each file to its run. Private repo by default.
 
 import glob
 import os
+from pathlib import Path
 
 from huggingface_hub import HfApi
 
-REPO_ID = "SoMa25/mixing-equivariant-ae-checkpoints"
-MUSICGEN = "d:/projects/musicgen"
-M2L = "d:/projects/music2latent-mix"
+REPO_ID = os.environ.get("MUSICGEN_HF_REPO", "SoMa25/mixing-equivariant-ae-checkpoints")
+MUSICGEN = os.environ.get("MUSICGEN_REPO",
+                          str(Path(__file__).resolve().parents[1]))
+M2L = os.environ.get("MUSICGEN_M2L_REPO",
+                     str(Path(__file__).resolve().parents[1].parent / "music2latent-mix"))
+
+# The paper links these weights, so the repo must be public. Set
+# MUSICGEN_HF_PRIVATE=1 to keep a working copy private instead.
+PRIVATE = os.environ.get("MUSICGEN_HF_PRIVATE", "") == "1"
 
 api = HfApi()
-api.create_repo(REPO_ID, repo_type="model", private=True, exist_ok=True)
+api.create_repo(REPO_ID, repo_type="model", private=PRIVATE, exist_ok=True)
 
 uploads = []  # (local_path, repo_path, note)
 

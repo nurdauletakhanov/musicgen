@@ -81,8 +81,14 @@ fma_metadata.zip
 results/
 generate_presentation_pdf.py
 
-# Research / paper drafts (kept local, not pushed)
-research/
+# Research / paper drafts are kept local by default, EXCEPT the ICASSP 2027
+# submission, which is tracked. Note the trailing /* on the excluded dirs: git
+# cannot re-include a path whose parent directory is itself excluded, so
+# "research/" would make the !-rules below silently do nothing.
+research/*
+!research/paper/
+research/paper/*
+!research/paper/icassp2027/
 
 # Windows artifacts
 nul

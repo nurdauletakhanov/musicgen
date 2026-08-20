@@ -20,12 +20,23 @@ Already-existing outputs are skipped unless --force is passed.
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 OUT_DIR = REPO / "evaluation" / "v2_metrics"
+
+# Music2Latent Phase-2 checkpoint (sibling repo). Override with:
+#   export MUSICGEN_M2L_CHECKPOINT=/path/to/model_..._iters_50000.pt
+# Only the "m2l-phase2" row needs this; the v2/v3 rows run without it.
+M2L_PHASE2_CKPT = os.environ.get(
+    "MUSICGEN_M2L_CHECKPOINT",
+    str(Path(os.environ.get("MUSICGEN_M2L_REPO", REPO.parent / "music2latent-mix"))
+        / "checkpoints" / "mix_phase2_decmix_consmix"
+        / "2026-05-06_14-11-27"
+        / "model_fid_-1.0_loss_119.60_iters_50000.pt"))
 
 # (name, kind, payload)
 #   kind="v2"   payload=path to checkpoint dir under REPO/checkpoints/
@@ -36,9 +47,7 @@ MODELS = [
     ("v2.2-decmix-disc",      "v2",  REPO / "checkpoints" / "v2.2-decmix-disc"),
     ("v3.0-baseline-d64",     "v2",  REPO / "checkpoints" / "v3.0-baseline-d64"),
     ("v3.1-decmix-disc-d64",  "v2",  REPO / "checkpoints" / "v3.1-decmix-disc-d64"),
-    ("m2l-phase2",            "m2l",
-     "d:/projects/music2latent-mix/checkpoints/mix_phase2_decmix_consmix/"
-     "2026-05-06_14-11-27/model_fid_-1.0_loss_119.60_iters_50000.pt"),
+    ("m2l-phase2",            "m2l",  M2L_PHASE2_CKPT),
 ]
 
 

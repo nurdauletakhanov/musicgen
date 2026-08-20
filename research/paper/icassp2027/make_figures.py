@@ -28,6 +28,12 @@ os.makedirs(FIG, exist_ok=True)
 plt.rcParams.update({
     "font.size": 9, "axes.labelsize": 9, "legend.fontsize": 8,
     "xtick.labelsize": 8, "ytick.labelsize": 8, "figure.dpi": 200,
+    # IEEE PDF eXpress rejects Type 3 fonts (matplotlib's PDF default).
+    # Type 42 embeds the glyphs as TrueType instead.
+    "pdf.fonttype": 42, "ps.fonttype": 42,
+    # Match the IEEEtran body font so figure text blends with the page.
+    "font.family": "serif", "font.serif": ["Nimbus Roman No9 L", "Times New Roman", "DejaVu Serif"],
+    "mathtext.fontset": "stix",
 })
 
 ALPHAS = [0.1, 0.3, 0.5, 0.7, 0.9]
