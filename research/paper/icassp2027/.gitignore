@@ -6,3 +6,6 @@ paper.fls
 paper.log
 build.log
 *.out
+
+# Internal submission checklist — working document, not part of the artifact.
+SUBMISSION.md

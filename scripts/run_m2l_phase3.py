@@ -27,7 +27,9 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-M2L_REPO = Path("d:/projects/music2latent-mix")
+# Music2Latent fine-tuning lives in a sibling repo. Override with:
+#   export MUSICGEN_M2L_REPO=/path/to/music2latent-mix
+M2L_REPO = Path(os.environ.get("MUSICGEN_M2L_REPO", REPO.parent / "music2latent-mix"))
 OUT_DIR = REPO / "evaluation" / "v2_metrics"
 
 # phase -> checkpoint dir under music2latent-mix/checkpoints (None = published)

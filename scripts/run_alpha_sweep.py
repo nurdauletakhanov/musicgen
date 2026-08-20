@@ -28,7 +28,10 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-M2L_REPO = Path("d:/projects/music2latent-mix")
+# Music2Latent fine-tuning lives in a sibling repo. Override with:
+#   export MUSICGEN_M2L_REPO=/path/to/music2latent-mix
+# Only the M2L rows need this; the v2/v3 sweep runs without it.
+M2L_REPO = Path(os.environ.get("MUSICGEN_M2L_REPO", REPO.parent / "music2latent-mix"))
 OUT_DIR = REPO / "evaluation" / "v2_metrics" / "alpha_sweep"
 SUMMARY_PATH = REPO / "evaluation" / "v2_metrics" / "alpha_sweep_summary.json"
 

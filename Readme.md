@@ -1,257 +1,210 @@
-# Music Autoencoder — v1 clean baseline
+# Mixing-Equivariant Audio Autoencoders
 
-A wave-to-wave continuous-latent autoencoder for 44.1 kHz music, trained on a ~950-hour
-mix of FMA-large, MAESTRO, and MUSDB18-HQ. Step-based training with an MSSTFTD + MPD
-discriminator and multi-resolution STFT + mel reconstruction losses.
+Code and evaluation data for **"An Explicit Decode-Mixing Loss for
+Mixing-Equivariant Audio Autoencoders"** (submitted to ICASSP 2027).
 
-**v1 is a recon-only baseline.** No mixing losses, no stem-pair training, no alpha
-sweeps — just clean reconstruction quality on a larger, more diverse training set than
-prior iterations. Mixing-equivariance experiments become v2+, once the baseline FAD is
-strong enough to afford the perceptual-quality cost of the extra supervision.
+Audio mixing is linear in the waveform domain, but neural autoencoder latents do
+not preserve that structure: interpolating two latent codes and decoding does
+not reproduce the corresponding waveform mix. This repo trains waveform
+autoencoders with an explicit **decode-mixing loss** that enforces
 
-The pre-v1 lineage (STFT autoencoder, mixing/decode-mix experiments, M2L fine-tuning,
-diffusion decoder) is preserved under `archive/pre-v1/` and its former configs under
-`archive/pre-v1/configs-*/`.
+```
+g( α·f(x₁) + (1−α)·f(x₂) )  ≈  α·x₁ + (1−α)·x₂
+```
+
+directly, at the cost of one extra decoder pass per step. The result is a latent
+space where vector arithmetic is audio editing — subtracting a stem's latent
+removes it from a mixture — **at no measured reconstruction cost**.
+
+Paper source (LaTeX, tables, figures): [`research/paper/icassp2027/`](research/paper/icassp2027/).
+Full experiment log and per-source breakdowns: [`evaluation/v2_metrics/RESULTS.md`](evaluation/v2_metrics/RESULTS.md).
+**To reproduce a specific number, table, or figure from the paper, see
+[`REPRODUCING.md`](REPRODUCING.md).**
 
 ---
 
-## Architecture
+## Headline results
 
-33.5M parameters total, wave-to-wave, no transformer.
+Full multi-source test set, α=0.5, single seed. SDR$_{lin}^{gt}$ is
+SI-SDR(g(z̄), x̄) — equivariance against the **ground-truth** mix.
+
+| Model | Compression | SDR_rec ↑ | SDR_lin_gt ↑ | MixRate ↓ | FAD ↓ |
+|---|---|---|---|---|---|
+| GAN AE, no mix (v2.0) | 7.66× | +11.3 | +8.0 | 1.203 | 0.045 |
+| **GAN AE, +ℒ_dec (v2.1)** | 7.66× | +11.4 | **+10.2** | **0.972** | 0.044 |
+| GAN AE, no mix (v3.0) | 15.3× | +10.0 | +6.8 | 1.187 | 0.052 |
+| **GAN AE, +mix (v3.1)** | 15.3× | +9.9 | **+8.6** | **1.046** | 0.061 |
+
+Downstream — **stem removal by latent subtraction** (MUSDB18 test, SI-SDR dB):
+
+| Model | drums | bass | vocals | other | all |
+|---|---|---|---|---|---|
+| 7.66× no mix | +4.2 | +0.4 | +5.2 | +3.9 | +3.4 |
+| 7.66× +ℒ_dec | +5.7 | +4.9 | +7.2 | +5.1 | **+5.7** |
+| 15.3× no mix | +1.2 | −1.6 | +3.0 | +2.1 | +1.2 |
+| 15.3× +mix | +5.4 | +4.7 | +6.9 | +3.9 | **+5.2** |
+
+At 15.3× compression the no-mixing control is *unusable* for latent subtraction
+(−1.6 dB on bass — worse than passing the mixture through untouched). The loss
+is what makes the operation viable, not merely better.
+
+Two findings worth flagging for anyone building on this:
+
+- **The decode-mixing loss is the active ingredient.** Adding a discriminator on
+  the mixed path inflates the decode-vs-decode metric (12.1 → 16.0 dB) while
+  giving *no* ground-truth gain. No adversarial machinery is required.
+- **The commonly used decode-vs-decode SI-SDR_lin is confounded** by decoder
+  phase variance. On a consistency-model decoder the same checkpoint scores
+  ≈ −8 dB or *positive* depending purely on whether decode noise is shared.
+  Report the ground-truth-referenced variant. See
+  [`scripts/_diag_old_vs_new_eval.py`](scripts/_diag_old_vs_new_eval.py).
+
+---
+
+## Model lineage
+
+| Run | What it is | Init | d_model | Compression | Steps |
+|---|---|---|---|---|---|
+| `v1.1` | recon-only baseline | scratch | 128 | 7.66× | 250k |
+| `v2.0` | continued-training control (no mixing) | v1.1 | 128 | 7.66× | +25k |
+| `v2.1` | **ℒ_dec only** — the paper's recommended recipe | v1.1 | 128 | 7.66× | +25k |
+| `v2.2` | ℒ_dec + discriminator-on-mix | v1.1 | 128 | 7.66× | +25k |
+| `v2.3–2.5` | ℒ_enc only (γ = 5 / 10 / 20) | v1.1 | 128 | 7.66× | +25k |
+| `v2.6` | ℒ_dec, frozen encoder | v1.1 | 128 | 7.66× | +25k |
+| `v3.0` | matched from-scratch control (no mixing) | scratch | 64 | 15.3× | 250k |
+| `v3.1` | from-scratch + mixing | scratch | 64 | 15.3× | 250k |
+
+Configs for every run are tracked under [`configs/experiments/`](configs/experiments/).
+
+### Architecture
+
+33.5M parameters, wave-to-wave, no transformer, 44.1 kHz on 1-second mono chunks.
 
 ```
-waveform [B, 1, 44100]  ── 1 s at 44.1 kHz ──>
-  encoder (DAC-style)                    ──>  latent [B, 45, 128]   (5,760 floats, ~7.66× compression)
+waveform [B, 1, 44100]
+  encoder (DAC-style)   -> latent [B, 45, d_model]
     4 stages, strides [4, 5, 7, 7] = 980
-    channels       [64, 128, 256, 512, 512]
-    dilated resblocks (1, 3, 9) per stage
-    weight-norm Conv1d
-  decoder (HiFi-GAN)                     ──>  waveform [B, 1, 44100]
-    reversed strides [7, 7, 5, 4]
-    channels       [512, 512, 256, 128, 64]
-    ConvTranspose1d + MRF blocks (k=3,7 with dilations [1,3])
-    weight-norm Conv1d
+    dilated resblocks (1, 3, 9) per stage, weight-norm Conv1d
+  decoder (HiFi-GAN V1) -> waveform [B, 1, 44100]
+    ConvTranspose1d upsampling + MRF blocks (k=3,7, dilations [1,3])
 ```
 
-**Encoder** (`models/encoder.py`): strided 1-D convs downsample the waveform; each stage
-is followed by a residual block with three parallel dilated Conv1d branches. The product
-of encoder strides equals `44100 / num_segments = 980`, so the latent sequence is exactly
-45 tokens of 128 dims.
+Discriminator is MSSTFTD (multi-scale STFT, three FFT sizes) + MPD (periods
+2, 3, 5, 7, 11), enabled after `disc_start_step = 10,000`.
 
-**Decoder** (`models/decoder.py`): HiFi-GAN V1 recipe — ConvTranspose1d upsampling stages
-interleaved with Multi-Receptive-Field (MRF) fusion blocks that average parallel
-dilated-kernel residual stacks.
+**Losses.** Multi-resolution STFT (1.0) + mel (1.0) + latent L2 (0.001) +
+adversarial (0.5) + feature matching (2.0), plus the mixing terms:
 
-**Discriminator** (`models/discriminator.py`):
-- **MSSTFTD** — Multi-Scale STFT discriminator at three FFT sizes
-- **MPD** — Multi-Period discriminator at HiFi-GAN's default periods (2, 3, 5, 7, 11)
-- `CombinedDiscriminator` runs both and concatenates their outputs
-
-Adversarial + feature-matching losses are applied only after `disc_start_step = 10,000`
-so the generator can first learn coarse reconstruction without disc pressure.
-
-### Losses
-
-Training loss is a weighted sum:
-
-| Term | Weight | Description |
-|---|---|---|
-| Multi-resolution STFT | 1.0 | Magnitude log-L1 + spectral convergence at FFTs [256, 512, 1024, 2048] |
-| Mel reconstruction | 1.0 | L1 on log-mel spectrogram |
-| Latent L2 | 0.001 | Keeps latent magnitudes bounded |
-| Adversarial (disc) | 0.5 | MSSTFTD + MPD, enabled after step 10,000 |
-| Feature matching | 2.0 | L1 on intermediate disc activations |
-
-No mixing loss, no decode-mix supervision, no stem-pair reconstruction for v1.
+- **ℒ_dec** (decode-mixing) — `L_recon(g(z̄), x̄)` for a latent interpolation z̄
+  and the true waveform mix x̄. Gradients flow through the decoder *and* back
+  into the encoder via z̄. One extra decoder pass per step.
+- **ℒ_enc** (encoder-only) — `‖f(x̄) − z̄‖²`. One extra encoder pass, no decoder
+  pass. Linearizes the encoder but leaves the decoder non-equivariant; reported
+  as an ablation, not recommended.
 
 ---
 
 ## Data
 
-All three sources land in one unified chunks directory (`chunks-44k-1s/`) with a shared
-`index.json`. The `source` tag on every entry (`fma`, `maestro`, `musdb`) is what lets
-validation report per-domain SI-SDR without re-running on different directories.
+Three sources in one unified chunk directory with a shared `index.json`. Every
+entry carries a `source` tag (`fma` / `maestro` / `musdb`), which is what lets
+evaluation report per-domain metrics without re-running on separate directories.
 
-**Chunks** are 1 s at 44.1 kHz = 44,100 samples, stored as `fp16` with the per-chunk peak
-(for recovering absolute loudness) also saved. Peak-normalized to 0.95 on write so the
-model always sees audio in [-0.95, 0.95]. Non-overlapping on a fixed grid.
+Chunks are 1 s @ 44.1 kHz (44,100 samples), stored `fp16` with the per-chunk
+peak retained, peak-normalized to 0.95, non-overlapping on a fixed grid.
 
-**Train (96,264 tracks / 950.8 h total):**
+| Split | Source | Tracks | Chunks | Hours |
+|---|---|---|---|---|
+| train | FMA-large (train+val) | 95,065 | 2,767,005 | 768.6 |
+| train | MAESTRO v3 (train+val) | 1,099 | 633,858 | 176.1 |
+| train | MUSDB18-HQ train | 100 | 22,096 | 6.1 |
+| test | FMA-large (official test) | 11,239 | 325,954 | 90.5 |
+| test | MAESTRO test | 177 | 71,214 | 19.8 |
+| test | MUSDB18-HQ test | 50 | 12,055 | 3.3 |
 
-| Source | Tracks | Chunks | Hours |
-|---|---|---|---|
-| FMA-large (training + validation splits) | 95,065 | 2,767,005 | 768.6 |
-| MAESTRO v3 (training + validation) | 1,099 | 633,858 | 176.1 |
-| MUSDB18-HQ train | 100 | 22,096 | 6.1 |
+**950.8 h train / 113.7 h test.** MUSDB stems stay on disk — v1 uses only
+`mixture.wav`, but the stem-subtraction eval needs the individual stems.
 
-**Test (11,466 tracks / 113.7 h total):**
-
-| Source | Tracks | Chunks | Hours |
-|---|---|---|---|
-| FMA-large (official test split) | 11,239 | 325,954 | 90.5 |
-| MAESTRO test | 177 | 71,214 | 19.8 |
-| MUSDB18-HQ test | 50 | 12,055 | 3.3 |
-
-Test covers three distinct domains (real production / clean piano / diverse indie) so
-SI-SDR, FAD, or any other eval can be reported both aggregate and per-source.
-
-### Sources
-
-- **FMA-large** (`dataset/fma_large/`, 93 GB MP3) — 106,574 Creative-Commons indie tracks,
-  30 s each. Official 80/10/10 splits via `fma_metadata/tracks.csv`. 270 tracks skipped
-  (0.25%) for known-bad data in the FMA archive (truncated stubs, silent files, corrupt
-  frames). Loaded directly via `soundfile`/`libsndfile` 1.2+ native MP3 support (no
-  ffmpeg dependency).
-- **MAESTRO v3** (`dataset/maestro-v3.0.0/`) — 1,276 solo classical piano recordings.
-  Source splits `{training, validation}` → our `train`, source `test` → our `test`.
-- **MUSDB18-HQ** (`dataset/musdb18/`) — 150 rock/pop tracks with separate WAV stems.
-  v1 uses only `mixture.wav`. Stem files remain on disk for v2+ mixing experiments.
-
----
-
-## Training
-
-Step-based schedule — robust to dataset size changes.
-
-| Knob | Value |
-|---|---|
-| `max_steps` | 250,000 |
-| `warmup_steps` | 3,000 (linear LR from 1e-3 × peak to peak) |
-| LR schedule | Cosine to 10% of peak over remaining 247,000 steps |
-| `batch_size` | 64 |
-| Effective batch | 64 (no grad accum) |
-| Optimizer | AdamW, betas (0.8, 0.99), wd 1e-3 |
-| `learning_rate` (gen) | 3e-4 |
-| `disc_lr` | 2e-4, betas (0.5, 0.9), wd 0 |
-| `grad_clip` | 1.0 |
-| `disc_start_step` | 10,000 |
-| Precision | fp32 (bf16 AMP caused a step-4700 regression on the original v1 run) |
-| `save_every_steps` | 10,000 |
-| `log_every_steps` | 100 |
-
-Total training examples seen: 64 × 250,000 = 16M, ≈ **4.7 passes** over the 3.42M unique
-training chunks. At batch 64 fp32, per-step cost is roughly equivalent to the original
-bf16 batch 128 plan, so wall-clock stays around **~35 hours**.
-
-### Output layout
-
-```
-checkpoints/v1.1/
-  config.yaml           # copy of the YAML used for this run
-  train.log             # console tee (human-readable)
-  train_log.jsonl       # one line per log-interval; machine-readable
-  val_log.jsonl         # one line per val checkpoint (loss, MR-STFT, Mel, SI-SDR total + per-source)
-  latest.pth            # most recent checkpoint (atomic-rename, safe to resume)
-  best.pth              # lowest val loss so far
-  step_250000.pth       # final checkpoint at end of training
-  samples/
-    step_0000010000/    # at each val checkpoint: listenable ref/recon .wav pairs
-      00_musdb_ref.wav
-      00_musdb_hat.wav
-      01_maestro_ref.wav
-      01_maestro_hat.wav
-      ...
-```
-
-No TensorBoard, no HuggingFace Hub — the JSONL files are sufficient for plotting and
-offline analysis, and `.wav` dumps let you audit reconstructions without running
-additional inference.
+Sources: [FMA-large](https://github.com/mdeff/fma) (93 GB MP3, official 80/10/10
+split via `fma_metadata/tracks.csv`; 270 tracks skipped for known-bad data),
+[MAESTRO v3](https://magenta.tensorflow.org/datasets/maestro),
+[MUSDB18-HQ](https://zenodo.org/record/3338373). None are redistributed here.
 
 ---
 
 ## Quickstart
 
-### 1. One-time preprocessing
+```bash
+pip install -r requirements.txt
 
-```
+# 1. Preprocess (resumable; --force to regenerate)
 python -m data.preprocess musdb
 python -m data.preprocess maestro
 python -m data.preprocess fma --workers 8
-python -m scripts.reshuffle_fma_splits       # moves FMA's official test split into test/
+python -m scripts.reshuffle_fma_splits    # move FMA's official test split into test/
+
+# 2. Train
+python -m training.train --config configs/experiments/v2/v2.1_decmix.yaml
+
+# 3. Resume
+python -m training.train --config configs/experiments/v2/v2.1_decmix.yaml \
+    --resume ./checkpoints/v2.1-decmix/latest.pth
 ```
 
-Each preprocessor is resumable (checks existing `.pt` files). `--force` before the
-subcommand (e.g. `python -m data.preprocess --force fma`) regenerates everything.
+Outputs land in `checkpoints/<run>/`: `config.yaml` (copy of the run's config),
+`train_log.jsonl`, `val_log.jsonl`, `best.pth`, `latest.pth`, and listenable
+`samples/step_<N>/*.wav` reference/reconstruction pairs at each val checkpoint.
 
-Outputs to `./chunks-44k-1s/{train,test}/` with a shared `index.json`.
+## Pretrained weights
 
-### 2. Train
-
-```
-python -m training.train --config configs/experiments/v1/v1.1.yaml
-```
-
-Resume from any checkpoint:
-
-```
-python -m training.train --config configs/experiments/v1/v1.1.yaml \
-    --resume ./checkpoints/v1.1/latest.pth
-```
-
-### 3. Listen
-
-While the run is alive, the most recent `.wav` dump lives at the highest-numbered
-`checkpoints/v1.1/samples/step_<N>/` directory. Open `00_musdb_ref.wav` and
-`00_musdb_hat.wav` side-by-side to audit how the reconstruction sounds on MUSDB; same
-for `maestro` and `fma` prefixes.
+Inference checkpoints (`best.pth` per run) are on the Hugging Face Hub:
+**[`SoMa25/mixing-equivariant-ae-checkpoints`](https://huggingface.co/SoMa25/mixing-equivariant-ae-checkpoints)**.
+Download them into `checkpoints/<run>/` and the eval drivers in
+[`REPRODUCING.md`](REPRODUCING.md) will pick them up.
 
 ---
 
-## Project layout
+## Scope and limitations
+
+Stated plainly, so nobody rediscovers these the hard way:
+
+- **Single seed.** Every number is n=1. Differences under ~0.5 dB (e.g. v2.1 vs
+  v2.2) are within plausible seed variance and are reported as "comparable."
+- **Mono, 1-second chunks.** No stereo, no long-context modeling.
+- **No listening test.** FAD is the only perceptual proxy.
+- **The Music2Latent cross-architecture experiments (paper Section IV-B) are
+  not reproducible from this repo.** That fine-tuning code lives in a separate
+  `music2latent-mix` repo which is not public. What *is* here: the evaluation
+  adapter ([`evaluation/m2l_adapter.py`](evaluation/m2l_adapter.py)), the eval
+  drivers, and every resulting metric JSON — so the numbers are inspectable and
+  the eval protocol is auditable, but the fine-tuning runs cannot be repeated.
+- Latent arithmetic on a **consistency decoder stays phase-limited**; the
+  geometry improves but waveform arithmetic does not become clean. This is a
+  property of the decoder class, not of the loss.
+
+## Layout
 
 ```
-dataset/                       # raw data (all .gitignored)
-  musdb18/{train,test}/<TrackName>/{mixture,drums,bass,other,vocals}.wav
-  maestro-v3.0.0/<year>/<piece>.wav
-  fma_large/<xxx>/<trackid>.mp3
-  fma_metadata/tracks.csv      # provides official 80/10/10 split
-
-chunks-44k-1s/                 # preprocessed (.gitignored)
-  index.json                   # {"train": {key: entry}, "test": {key: entry}}
-  train/<key>.pt               # {"x_wave": fp16 [N, 44100], "peak": fp32 [N]}
-  test/<key>.pt
-
-data/
-  dataset.py                   # WaveformDataset + FileGroupedSampler + build_dataloaders
-  preprocess.py                # unified CLI: musdb | maestro | fma
-
-models/
-  encoder.py                   # WaveEncoder
-  decoder.py                   # WaveDecoder
-  autoencoder.py               # glues encoder + decoder + reconstruction losses
-  discriminator.py             # MSSTFTD + MPD + combined
-
-training/
-  trainer.py                   # Trainer class (step-based), ~400 lines
-  train.py                     # CLI entry point
-  config.py                    # YAML loader + build_model_config
-
-configs/
-  base.yaml                    # slim v1-compatible defaults
-  experiments/v1/v1.1.yaml # this run
-
-scripts/
-  reshuffle_fma_splits.py      # one-time: move FMA test split from train/ to test/
-
-archive/pre-v1/                # pre-v1 lineage, kept for reference
-  code/{data,training,evaluation,scripts,utils}/...
-  configs-{compression,compression-21x,diffusion,mixing}/
+data/          dataset.py, preprocess.py (musdb | maestro | fma)
+models/        encoder.py, decoder.py, autoencoder.py, discriminator.py
+training/      trainer.py (step-based), train.py, config.py
+configs/       base.yaml + experiments/{v1,v2,v3}/*.yaml
+evaluation/    compute_{mixing_metrics,fad,subtraction}.py, m2l_* adapters
+               v2_metrics/    all result JSONs + RESULTS.md
+scripts/       run_{subtraction,alpha_sweep,v2_fad,v2_mixing_metrics}.py drivers
+research/      paper/icassp2027/ — LaTeX source, table/figure generators
 ```
 
----
+Scripts prefixed `_` are diagnostics rather than pipeline steps. One of them is
+load-bearing: `_diag_old_vs_new_eval.py` produces the paper's Fig. 1.
 
-## Notes on the v1 → v2 boundary
+## Citation
 
-The file `archive/pre-v1/` preserves everything from the v5–v17 experiments: old STFT
-autoencoder, stempeg-based MUSDB preprocessing, `StemPairDataset`, decode-mix and
-latent-mix losses, alpha-sweep evaluation, TensorBoard and HF Hub integration, M2L
-fine-tuning, the Vocos decoder, and the diffusion training pipeline. None of that is
-imported by v1 code — v1 only shares the architecture classes
-(`models/{encoder,decoder,autoencoder,discriminator}.py`).
-
-v2's plan is:
-1. Demonstrate v1 achieves solid reconstruction on the test set (FAD and SI-SDR).
-2. Re-introduce mixing supervision as an **addition** on top of the clean v1 recipe,
-   not as a replacement for it.
-3. Evaluate whether mixing-equivariance can be learned without degrading the FAD ceiling
-   the v1 baseline establishes.
+```bibtex
+@inproceedings{akhanov2027mixing,
+  title     = {An Explicit Decode-Mixing Loss for Mixing-Equivariant Audio Autoencoders},
+  author    = {Akhanov, Nurdaulet},
+  booktitle = {Proc. IEEE Int. Conf. on Acoustics, Speech and Signal Processing (ICASSP)},
+  year      = {2027}
+}
+```

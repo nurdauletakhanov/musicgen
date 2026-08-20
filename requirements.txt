@@ -1,10 +1,30 @@
-torch
-torchaudio
-numpy
-pyyaml
-tqdm
-soundfile
-tensorboard
-huggingface_hub
-matplotlib
-frechet-audio-distance
+# Core training + eval stack.
+#
+# Lower bounds are the ones the code actually needs; they are NOT the exact
+# versions the paper's runs used. Before publishing, run `pip freeze` on the
+# training machine and paste the exact pins under "Paper run" below, so the
+# reported numbers are tied to a resolvable environment.
+#
+# torch>=2.7 is a hard floor for the RTX 5090 used in the paper: Blackwell
+# (sm_120) support arrived in torch 2.7 built against CUDA 12.8. Older wheels
+# will import but fail at kernel launch on that card. Any CUDA-capable GPU
+# works for eval; only the 250k-step v3 runs assume a 5090-class card.
+torch>=2.7
+torchaudio>=2.7
+numpy>=1.24
+pyyaml>=6.0
+tqdm>=4.65
+# libsndfile 1.2+ for native MP3 decoding of FMA-large (no ffmpeg dependency)
+soundfile>=0.12.1
+tensorboard>=2.13
+huggingface_hub>=0.20
+matplotlib>=3.7
+# FAD with the LAION-CLAP backbone (see evaluation/compute_fad.py)
+frechet-audio-distance>=0.1.2
+
+# --- Paper run (fill from `pip freeze` on the training machine) -------------
+# torch==
+# torchaudio==
+# numpy==
+# CUDA driver / toolkit:
+# Python:

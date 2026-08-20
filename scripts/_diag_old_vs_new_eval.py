@@ -18,7 +18,10 @@ If (A) shows a consistent improvement of ~Phase 2's +1.89 dB across protocols
 """
 import argparse
 import math
+import os
 import sys
+from pathlib import Path
+
 import torch
 
 sys.path.insert(0, '.')
@@ -28,8 +31,17 @@ from training.config import get_device
 from evaluation.compute_mixing_metrics import _process_batch, _no_fixed_point_perm, _si_sdr
 from evaluation.m2l_adapter import M2LAutoencoderAdapter, _M2LDecoderWrapper
 
-PHASE0_CKPT = "d:/projects/music2latent/music2latent/models/music2latent.pt"
-PHASE2_CKPT = "d:/projects/music2latent-mix/checkpoints/mix_phase2_decmix_consmix/2026-05-06_14-11-27/model_fid_-1.0_loss_119.60_iters_50000.pt"
+# Checkpoints live outside this repo. Override either with an env var:
+#   export MUSICGEN_M2L_PUBLISHED=/path/to/music2latent.pt        # Pasini et al.
+#   export MUSICGEN_M2L_CHECKPOINT=/path/to/model_..._50000.pt    # our Phase 2
+_M2L_REPO = Path(os.environ.get("MUSICGEN_M2L_REPO", Path(__file__).resolve().parents[1].parent / "music2latent-mix"))
+PHASE0_CKPT = os.environ.get(
+    "MUSICGEN_M2L_PUBLISHED",
+    str(Path(__file__).resolve().parents[1].parent / "music2latent" / "music2latent" / "models" / "music2latent.pt"))
+PHASE2_CKPT = os.environ.get(
+    "MUSICGEN_M2L_CHECKPOINT",
+    str(_M2L_REPO / "checkpoints" / "mix_phase2_decmix_consmix"
+        / "2026-05-06_14-11-27" / "model_fid_-1.0_loss_119.60_iters_50000.pt"))
 N_BATCHES = 25
 BATCH_SIZE = 8
 

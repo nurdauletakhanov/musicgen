@@ -178,7 +178,7 @@ Fine-tuning the published Music2Latent (Pasini 2024) checkpoint with the v2 mixi
 - **Phase 1**: fine-tune from M2L checkpoint with **ℒ_enc** (encoder mixing-linearity loss, γ=5000). Mirrors v2.5. Trained 25,000 optimizer steps at batch=16, lr=1e-5.
 - **Phase 2**: fine-tune from M2L checkpoint with **ℒ_dec + consistency-on-mix**. Mirrors v2.2-sym in spirit, but the v2 disc-on-mix discriminator is replaced by an M2L-native analog: applying M2L's pseudo-Huber consistency loss to the mixed-pair path (`x̄`, `z_interp`) so mixed latents enter the decoder's training distribution. Trained 25,000 optimizer steps (50,000 micro-batches × accum=2) at batch=8 effective-batch=16, lr=1e-5.
 
-Code lives in [`d:/projects/music2latent-mix`](d:/projects/music2latent-mix) on the `mix-linearity` branch off `origin/training`. Eval scripts in [`evaluation/m2l_run_mixing.py`](d:/projects/musicgen/evaluation/m2l_run_mixing.py) / [`m2l_run_fad.py`](d:/projects/musicgen/evaluation/m2l_run_fad.py) wrap an [`M2LAutoencoderAdapter`](d:/projects/musicgen/evaluation/m2l_adapter.py) that exposes M2L behind the v2 `Autoencoder` interface (so the existing `compute_mixing_metrics` and `compute_fad` work unchanged).
+Code lives in `music2latent-mix` (separate repo, not public) on the `mix-linearity` branch off `origin/training`. Eval scripts in [`evaluation/m2l_run_mixing.py`](../m2l_run_mixing.py) / [`m2l_run_fad.py`](../m2l_run_fad.py) wrap an [`M2LAutoencoderAdapter`](../m2l_adapter.py) that exposes M2L behind the v2 `Autoencoder` interface (so the existing `compute_mixing_metrics` and `compute_fad` work unchanged).
 
 ## Headline table — M2L Phase 0/1/2/2b (deterministic-noise eval)
 
@@ -257,9 +257,9 @@ M2L's decoder is a **consistency model**: every `decode(z)` call starts from `ra
 `SI-SDR_lin = SI-SDR(g(z̄), g(f(x̄)))` compares two decode calls. Two protocols:
 
 - **Random-noise protocol** (old paper draft, presumably also Torres et al.): each decode uses **independent** random noise. Even if z̄ ≈ f(x̄), the two outputs have different phases → SI-SDR is dominated by phase variance, not real linearity. **Reports `~−8 dB regardless of true mixing-linearity.`**
-- **Shared-noise protocol** (current [m2l_adapter.py:88-112](d:/projects/musicgen/evaluation/m2l_adapter.py#L88-L112)): both decodes use the **same** seeded random noise. Phase nuisance cancels. **Reports real mixing-linearity.**
+- **Shared-noise protocol** (current [m2l_adapter.py:88-112](../m2l_adapter.py#L88-L112)): both decodes use the **same** seeded random noise. Phase nuisance cancels. **Reports real mixing-linearity.**
 
-### Diagnostic verifying both protocols ([scripts/_diag_old_vs_new_eval.py](d:/projects/musicgen/scripts/_diag_old_vs_new_eval.py))
+### Diagnostic verifying both protocols ([scripts/_diag_old_vs_new_eval.py](../../scripts/_diag_old_vs_new_eval.py))
 
 240 MUSDB chunks at α=0.5:
 
@@ -306,10 +306,10 @@ We could not reproduce the +11.7 number from the current Phase 2 checkpoint unde
 
 | Phase | Code | Config | Eval script | Result JSON |
 |---|---|---|---|---|
-| 0 | published M2L | n/a | [m2l_run_mixing.py](d:/projects/musicgen/evaluation/m2l_run_mixing.py) / [m2l_run_fad.py](d:/projects/musicgen/evaluation/m2l_run_fad.py) | [m2l_phase0_*.json](.) |
-| 1 | [music2latent-mix `mix-linearity`](d:/projects/music2latent-mix) | [mix_phase1_encmix.py](d:/projects/music2latent-mix/configs/mix_phase1_encmix.py) | same as Phase 0 | [m2l_phase1_*.json](.) |
-| 2 | same branch | [mix_phase2_decmix_consmix.py](d:/projects/music2latent-mix/configs/mix_phase2_decmix_consmix.py) | same as Phase 0 | [m2l_phase2_*.json](.) |
-| Diagnostic | [scripts/_diag_old_vs_new_eval.py](d:/projects/musicgen/scripts/_diag_old_vs_new_eval.py) | n/a | (self-contained) | [_diag_old_vs_new_eval.log](_diag_old_vs_new_eval.log) |
+| 0 | published M2L | n/a | [m2l_run_mixing.py](../m2l_run_mixing.py) / [m2l_run_fad.py](../m2l_run_fad.py) | [m2l_phase0_*.json](.) |
+| 1 | `music2latent-mix `mix-linearity`` (in `music2latent-mix`, not public) | `mix_phase1_encmix.py` (in `music2latent-mix`, not public) | same as Phase 0 | [m2l_phase1_*.json](.) |
+| 2 | same branch | `mix_phase2_decmix_consmix.py` (in `music2latent-mix`, not public) | same as Phase 0 | [m2l_phase2_*.json](.) |
+| Diagnostic | [scripts/_diag_old_vs_new_eval.py](../../scripts/_diag_old_vs_new_eval.py) | n/a | (self-contained) | [_diag_old_vs_new_eval.log](_diag_old_vs_new_eval.log) |
 
 Phase 1 and Phase 2 share the same `mix-linearity` branch — Phase 2 code is purely additive on top of Phase 1, gated by config (`decode_mix_weight + cons_mix_weight > 0`). Re-running Phase 1's config on the current code produces the same result as before Phase 2 was added.
 

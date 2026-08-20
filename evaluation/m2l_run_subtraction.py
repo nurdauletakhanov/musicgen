@@ -8,7 +8,7 @@ consistency-model decode deterministic across the (subtraction, ceiling) pair.
 
 Usage:
   python -m evaluation.m2l_run_subtraction \
-      --m2l-checkpoint d:/projects/music2latent-mix/checkpoints/mix_phase2_decmix_consmix/.../model_xxx.pt \
+      --m2l-checkpoint $MUSICGEN_M2L_CHECKPOINT \
       --out evaluation/v2_metrics/m2l_phase2_subtraction.json
 """
 
