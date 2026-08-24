@@ -48,6 +48,11 @@ At 15.3× compression the no-mixing control is *unusable* for latent subtraction
 (−1.6 dB on bass — worse than passing the mixture through untouched). The loss
 is what makes the operation viable, not merely better.
 
+**Listen:** [audio examples](https://nurdauletakhanov.github.io/musicgen/) —
+stem removal on MUSDB18 test mixtures, all four models side by side.
+Example selection is deterministic and independent of model outputs
+(no cherry-picking; protocol on the page).
+
 Two findings worth flagging for anyone building on this:
 
 - **The decode-mixing loss is the active ingredient.** Adding a discriminator on

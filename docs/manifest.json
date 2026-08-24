@@ -1,0 +1,156 @@
+{
+  "sr": 44100,
+  "seconds": 3.93,
+  "protocol": {
+    "chunk_seconds": 1.0,
+    "crossfade_samples": 1024,
+    "selection": "fixed 0.5 s grid, argmax stem RMS; independent of all model outputs",
+    "shared_gain_per_example": true,
+    "seed": 0,
+    "checkpoint_name": "best.pth"
+  },
+  "models": [
+    {
+      "name": "v2.0-continued",
+      "label": "7.66\u00d7, no mix (v2.0)"
+    },
+    {
+      "name": "v2.1-decmix",
+      "label": "7.66\u00d7, +\u2112_dec (v2.1)"
+    },
+    {
+      "name": "v3.0-baseline-d64",
+      "label": "15.3\u00d7, no mix (v3.0)"
+    },
+    {
+      "name": "v3.1-decmix-disc-d64",
+      "label": "15.3\u00d7, +mix (v3.1)"
+    }
+  ],
+  "examples": [
+    {
+      "stem": "drums",
+      "track": "PR - Happy Daze",
+      "start": 2712150,
+      "stem_rms": 0.1788,
+      "start_seconds": 61.5,
+      "files": {
+        "mixture": "audio/ex0_mixture.wav",
+        "stem": "audio/ex0_stem.wav",
+        "target": "audio/ex0_target.wav",
+        "sub_v2.0-continued": "audio/ex0_sub_v2.0-continued.wav",
+        "ceil_v2.0-continued": "audio/ex0_ceil_v2.0-continued.wav",
+        "sub_v2.1-decmix": "audio/ex0_sub_v2.1-decmix.wav",
+        "ceil_v2.1-decmix": "audio/ex0_ceil_v2.1-decmix.wav",
+        "sub_v3.0-baseline-d64": "audio/ex0_sub_v3.0-baseline-d64.wav",
+        "ceil_v3.0-baseline-d64": "audio/ex0_ceil_v3.0-baseline-d64.wav",
+        "sub_v3.1-decmix-disc-d64": "audio/ex0_sub_v3.1-decmix-disc-d64.wav",
+        "ceil_v3.1-decmix-disc-d64": "audio/ex0_ceil_v3.1-decmix-disc-d64.wav"
+      },
+      "metrics": {
+        "sub_v2.0-continued": 14.08,
+        "ceil_v2.0-continued": 17.53,
+        "sub_v2.1-decmix": 14.67,
+        "ceil_v2.1-decmix": 17.78,
+        "sub_v3.0-baseline-d64": 8.97,
+        "ceil_v3.0-baseline-d64": 14.22,
+        "sub_v3.1-decmix-disc-d64": 10.28,
+        "ceil_v3.1-decmix-disc-d64": 14.0
+      },
+      "gain": 1.0
+    },
+    {
+      "stem": "bass",
+      "track": "Punkdisco - Oral Hygiene",
+      "start": 7166250,
+      "stem_rms": 0.1876,
+      "start_seconds": 162.5,
+      "files": {
+        "mixture": "audio/ex1_mixture.wav",
+        "stem": "audio/ex1_stem.wav",
+        "target": "audio/ex1_target.wav",
+        "sub_v2.0-continued": "audio/ex1_sub_v2.0-continued.wav",
+        "ceil_v2.0-continued": "audio/ex1_ceil_v2.0-continued.wav",
+        "sub_v2.1-decmix": "audio/ex1_sub_v2.1-decmix.wav",
+        "ceil_v2.1-decmix": "audio/ex1_ceil_v2.1-decmix.wav",
+        "sub_v3.0-baseline-d64": "audio/ex1_sub_v3.0-baseline-d64.wav",
+        "ceil_v3.0-baseline-d64": "audio/ex1_ceil_v3.0-baseline-d64.wav",
+        "sub_v3.1-decmix-disc-d64": "audio/ex1_sub_v3.1-decmix-disc-d64.wav",
+        "ceil_v3.1-decmix-disc-d64": "audio/ex1_ceil_v3.1-decmix-disc-d64.wav"
+      },
+      "metrics": {
+        "sub_v2.0-continued": 2.11,
+        "ceil_v2.0-continued": 3.86,
+        "sub_v2.1-decmix": 2.88,
+        "ceil_v2.1-decmix": 3.95,
+        "sub_v3.0-baseline-d64": 0.31,
+        "ceil_v3.0-baseline-d64": 3.02,
+        "sub_v3.1-decmix-disc-d64": 3.17,
+        "ceil_v3.1-decmix-disc-d64": 3.49
+      },
+      "gain": 0.9889
+    },
+    {
+      "stem": "vocals",
+      "track": "Sambasevam Shanmugam - Kaathaadi",
+      "start": 6218100,
+      "stem_rms": 0.1795,
+      "start_seconds": 141.0,
+      "files": {
+        "mixture": "audio/ex2_mixture.wav",
+        "stem": "audio/ex2_stem.wav",
+        "target": "audio/ex2_target.wav",
+        "sub_v2.0-continued": "audio/ex2_sub_v2.0-continued.wav",
+        "ceil_v2.0-continued": "audio/ex2_ceil_v2.0-continued.wav",
+        "sub_v2.1-decmix": "audio/ex2_sub_v2.1-decmix.wav",
+        "ceil_v2.1-decmix": "audio/ex2_ceil_v2.1-decmix.wav",
+        "sub_v3.0-baseline-d64": "audio/ex2_sub_v3.0-baseline-d64.wav",
+        "ceil_v3.0-baseline-d64": "audio/ex2_ceil_v3.0-baseline-d64.wav",
+        "sub_v3.1-decmix-disc-d64": "audio/ex2_sub_v3.1-decmix-disc-d64.wav",
+        "ceil_v3.1-decmix-disc-d64": "audio/ex2_ceil_v3.1-decmix-disc-d64.wav"
+      },
+      "metrics": {
+        "sub_v2.0-continued": 11.91,
+        "ceil_v2.0-continued": 14.31,
+        "sub_v2.1-decmix": 12.92,
+        "ceil_v2.1-decmix": 14.45,
+        "sub_v3.0-baseline-d64": 10.24,
+        "ceil_v3.0-baseline-d64": 14.12,
+        "sub_v3.1-decmix-disc-d64": 12.58,
+        "ceil_v3.1-decmix-disc-d64": 14.18
+      },
+      "gain": 1.0
+    },
+    {
+      "stem": "other",
+      "track": "Hollow Ground - Ill Fate",
+      "start": 5710950,
+      "stem_rms": 0.1703,
+      "start_seconds": 129.5,
+      "files": {
+        "mixture": "audio/ex3_mixture.wav",
+        "stem": "audio/ex3_stem.wav",
+        "target": "audio/ex3_target.wav",
+        "sub_v2.0-continued": "audio/ex3_sub_v2.0-continued.wav",
+        "ceil_v2.0-continued": "audio/ex3_ceil_v2.0-continued.wav",
+        "sub_v2.1-decmix": "audio/ex3_sub_v2.1-decmix.wav",
+        "ceil_v2.1-decmix": "audio/ex3_ceil_v2.1-decmix.wav",
+        "sub_v3.0-baseline-d64": "audio/ex3_sub_v3.0-baseline-d64.wav",
+        "ceil_v3.0-baseline-d64": "audio/ex3_ceil_v3.0-baseline-d64.wav",
+        "sub_v3.1-decmix-disc-d64": "audio/ex3_sub_v3.1-decmix-disc-d64.wav",
+        "ceil_v3.1-decmix-disc-d64": "audio/ex3_ceil_v3.1-decmix-disc-d64.wav"
+      },
+      "metrics": {
+        "sub_v2.0-continued": 9.84,
+        "ceil_v2.0-continued": 31.32,
+        "sub_v2.1-decmix": 13.37,
+        "ceil_v2.1-decmix": 32.29,
+        "sub_v3.0-baseline-d64": 3.84,
+        "ceil_v3.0-baseline-d64": 29.56,
+        "sub_v3.1-decmix-disc-d64": 10.65,
+        "ceil_v3.1-decmix-disc-d64": 29.35
+      },
+      "gain": 1.0
+    }
+  ]
+}
