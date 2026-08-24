@@ -100,3 +100,7 @@ nul
 .env
 .env.local
 
+
+# Slurm re-run configs derived on the fly by scripts/slurm_train_rerun.sh
+configs/experiments/generated_*.yaml
+slurm-*.out

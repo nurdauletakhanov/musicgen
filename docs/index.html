@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audio Examples — Mixing-Equivariant Audio Autoencoders</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1a1e; --muted: #6b6b76; --card: #f6f6f8;
+    --line: #e3e3e8; --accent: #2456c4; --good: #1a7f4b; --bad: #b03030;
+    --ref: #eceef4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #131316; --fg: #e8e8ec; --muted: #9a9aa6; --card: #1d1d22;
+      --line: #2c2c33; --accent: #7aa2ff; --good: #4cc38a; --bad: #e5695f;
+      --ref: #232830;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  h1 { font-size: 1.55rem; line-height: 1.25; margin: 0 0 .4rem; }
+  .sub { color: var(--muted); margin: 0 0 2rem; }
+  .sub a { color: var(--accent); }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 1.15rem 1.25rem; margin: 0 0 1.5rem;
+  }
+  .card h2 { font-size: 1.1rem; margin: 0 0 .15rem; }
+  .card h2 .stem { color: var(--accent); }
+  .meta { color: var(--muted); font-size: .85rem; margin: 0 0 .9rem; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: .45rem .5rem; vertical-align: middle; }
+  thead th { font-size: .78rem; text-transform: uppercase; letter-spacing: .04em;
+             color: var(--muted); border-bottom: 1px solid var(--line); }
+  tbody tr { border-bottom: 1px solid var(--line); }
+  tbody tr:last-child { border-bottom: none; }
+  tr.ref { background: var(--ref); }
+  td.label { font-weight: 600; white-space: nowrap; font-size: .92rem; }
+  td.label .note { display: block; font-weight: 400; color: var(--muted); font-size: .78rem; }
+  audio { width: 100%; max-width: 340px; height: 34px; display: block; }
+  .sdr { font-variant-numeric: tabular-nums; font-weight: 650; white-space: nowrap; }
+  .sdr.good { color: var(--good); } .sdr.bad { color: var(--bad); }
+  .sdr .u { font-weight: 400; color: var(--muted); font-size: .78rem; }
+  .protocol { color: var(--muted); font-size: .85rem; border-top: 1px solid var(--line);
+              margin-top: 2.5rem; padding-top: 1.25rem; }
+  .protocol ul { margin: .5rem 0 0; padding-left: 1.2rem; }
+  #status { color: var(--muted); font-style: italic; }
+  @media (max-width: 640px) {
+    thead { display: none; }
+    tbody td { display: block; padding: .3rem .4rem; }
+    tbody tr { padding: .4rem 0; display: block; }
+    audio { max-width: 100%; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Stem Removal by Latent Subtraction</h1>
+  <p class="sub">
+    Audio examples for <em>“An Explicit Decode-Mixing Loss for
+    Mixing-Equivariant Audio Autoencoders”</em> (ICASSP 2027 submission)
+    &middot; <a href="https://github.com/nurdauletakhanov/musicgen">code &amp; paper</a>.
+    Each example removes one stem from a MUSDB18 test mixture entirely in
+    latent space: <code>g(f(mix) − f(stem))</code>. No separation model is
+    involved — only the autoencoder’s latent arithmetic.
+  </p>
+  <p id="status">Loading examples…</p>
+  <div id="examples"></div>
+  <div class="protocol" id="protocol" hidden>
+    <strong>Protocol.</strong>
+    <ul>
+      <li>Example selection is deterministic and independent of every model’s
+          output: windows are chosen on a fixed grid by the energy of the stem
+          being removed. No cherry-picking on results.</li>
+      <li>Clips are consecutive 1-second chunks processed independently (the
+          paper’s protocol), joined with a <span id="xfade"></span>-sample
+          linear crossfade. Mono, 44.1&nbsp;kHz.</li>
+      <li>All files within an example share one gain, so relative levels
+          between mixture, stem, target, and model outputs are truthful.</li>
+      <li>“Ceiling” is the model’s plain encode–decode of the true residual —
+          the best that model could sound with no latent arithmetic at all.
+          SI-SDR is computed against the true residual over the whole clip.</li>
+    </ul>
+  </div>
+</main>
+<script>
+(async () => {
+  const status = document.getElementById("status");
+  let m;
+  try {
+    const r = await fetch("manifest.json");
+    if (!r.ok) throw new Error(r.status);
+    m = await r.json();
+  } catch (e) {
+    status.textContent = "Audio has not been generated yet — run " +
+      "`python -m scripts.generate_demo_audio` and commit docs/.";
+    return;
+  }
+  status.remove();
+  document.getElementById("protocol").hidden = false;
+  document.getElementById("xfade").textContent = m.protocol.crossfade_samples;
+  const root = document.getElementById("examples");
+  const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+  const sdr = v => {
+    const cls = v >= 3 ? "good" : (v < 1 ? "bad" : "");
+    return `<span class="sdr ${cls}">${v > 0 ? "+" : ""}${v.toFixed(1)}<span class="u"> dB</span></span>`;
+  };
+  const player = f => `<audio controls preload="none" src="${f}"></audio>`;
+  m.examples.forEach(ex => {
+    const rows = [];
+    rows.push(`<tr class="ref"><td class="label">Mixture<span class="note">input</span></td>
+      <td>${player(ex.files.mixture)}</td><td></td></tr>`);
+    rows.push(`<tr class="ref"><td class="label">${cap(ex.stem)}<span class="note">stem being removed</span></td>
+      <td>${player(ex.files.stem)}</td><td></td></tr>`);
+    rows.push(`<tr class="ref"><td class="label">Target<span class="note">true residual (mix − stem)</span></td>
+      <td>${player(ex.files.target)}</td><td></td></tr>`);
+    m.models.forEach(mod => {
+      const s = ex.metrics["sub_" + mod.name];
+      const c = ex.metrics["ceil_" + mod.name];
+      rows.push(`<tr><td class="label">${mod.label}<span class="note">latent subtraction &middot; ceiling ${c > 0 ? "+" : ""}${c.toFixed(1)} dB</span></td>
+        <td>${player(ex.files["sub_" + mod.name])}</td>
+        <td>${sdr(s)}</td></tr>`);
+    });
+    const card = document.createElement("section");
+    card.className = "card";
+    card.innerHTML = `
+      <h2>Remove <span class="stem">${ex.stem}</span></h2>
+      <p class="meta">${ex.track} &middot; ${ex.start_seconds}s–${(ex.start_seconds + m.seconds).toFixed(0)}s
+        &middot; ${m.seconds.toFixed(1)} s clip</p>
+      <table><thead><tr><th>Signal</th><th>Audio</th><th>SI-SDR</th></tr></thead>
+      <tbody>${rows.join("")}</tbody></table>`;
+    root.appendChild(card);
+  });
+})();
+</script>
+</body>
+</html>
