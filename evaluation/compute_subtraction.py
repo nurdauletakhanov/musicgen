@@ -180,11 +180,17 @@ def _process_track(model, stems: Dict[str, np.ndarray], chunk_starts: List[int],
 def run_eval(model, musdb_dir: str, chunks_per_track: int, batch_size: int,
              seed: int, device: torch.device, max_tracks: int = None,
              sanity_thresh: float = 20.0,
-             desc: str = "subtraction") -> tuple:
+             desc: str = "subtraction",
+             per_chunk: list = None) -> tuple:
     """Iterate MUSDB tracks, aggregate per-stem SI-SDR.
 
     Returns (summary_dict, n_chunks_seen, skipped_tracks).
     summary_dict[stem] = {"sdr_sub", "sdr_ceil", "sdr_dd", "gap", "n"}; plus "all" entry.
+
+    If `per_chunk` is a list, every individual measurement is appended to it as
+    {"track", "stem", "chunk", "start", "sub", "ceil", "dd"}. Chunk selection is
+    a pure function of `seed` and the (sorted) track list, so these records are
+    aligned across models and can be compared pairwise.
     """
     rng = random.Random(seed)
     root = Path(musdb_dir)
@@ -222,6 +228,13 @@ def run_eval(model, musdb_dir: str, chunks_per_track: int, batch_size: int,
             aggregates[st]["sub"].extend(per_stem[st]["sub"])
             aggregates[st]["ceil"].extend(per_stem[st]["ceil"])
             aggregates[st]["dd"].extend(per_stem[st]["dd"])
+            if per_chunk is not None:
+                for i, start in enumerate(chunk_starts):
+                    per_chunk.append({
+                        "track": t.name, "stem": st, "chunk": i, "start": int(start),
+                        "sub": per_stem[st]["sub"][i],
+                        "ceil": per_stem[st]["ceil"][i],
+                        "dd": per_stem[st]["dd"][i]})
         n_chunks_seen += len(chunk_starts)
         # Free track audio before next
         del stems
@@ -286,6 +299,9 @@ def main():
     ap.add_argument("--max-tracks", type=int, default=None)
     ap.add_argument("--batch-size", type=int, default=16)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--per-chunk-out", type=str, default=None,
+                    help="Also write every individual measurement here "
+                         "(JSON), for paired statistics across models.")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -299,8 +315,10 @@ def main():
     step = ck.get("global_step", -1)
     print(f"loaded {args.checkpoint} @ step {step}")
 
+    per_chunk = [] if args.per_chunk_out else None
     summary, n_seen, skipped = run_eval(
         model=model,
+        per_chunk=per_chunk,
         musdb_dir=args.musdb_dir,
         chunks_per_track=args.chunks_per_track,
         batch_size=args.batch_size,
@@ -328,6 +346,14 @@ def main():
     with open(args.out, "w") as f:
         json.dump(out_dict, f, indent=2)
     print(f"\nwrote {args.out}")
+
+    if per_chunk is not None:
+        os.makedirs(os.path.dirname(args.per_chunk_out) or ".", exist_ok=True)
+        with open(args.per_chunk_out, "w") as f:
+            json.dump({"checkpoint": args.checkpoint, "seed": args.seed,
+                       "chunks_per_track": args.chunks_per_track,
+                       "records": per_chunk}, f)
+        print(f"wrote {args.per_chunk_out} ({len(per_chunk)} measurements)")
 
 
 if __name__ == "__main__":
