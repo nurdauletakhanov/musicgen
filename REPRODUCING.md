@@ -1,7 +1,7 @@
 # Reproducing the paper
 
-Maps every table and figure in *"An Explicit Decode-Mixing Loss for
-Mixing-Equivariant Audio Autoencoders"* to the command that produces it.
+Maps every table and figure in *"What Makes Audio Latents Mixing-Equivariant?
+A Controlled Study of Explicit Supervision"* to the command that produces it.
 
 **No number in the paper is hand-typed.** Every table cell is generated from
 the JSONs in [`evaluation/v2_metrics/`](evaluation/v2_metrics/) by

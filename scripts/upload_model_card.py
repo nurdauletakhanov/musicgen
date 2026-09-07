@@ -17,8 +17,8 @@ tags: [audio, autoencoder, music, representation-learning]
 
 # Mixing-Equivariant Audio Autoencoder — checkpoints
 
-Inference weights for **"An Explicit Decode-Mixing Loss for Mixing-Equivariant
-Audio Autoencoders"** (ICASSP 2027 submission).
+Inference weights for **"What Makes Audio Latents Mixing-Equivariant? A Controlled
+Study of Explicit Supervision"** (ICASSP 2027 submission).
 
 Code, configs, eval scripts, and the paper source:
 **https://github.com/nurdauletakhanov/musicgen** — see its `REPRODUCING.md`

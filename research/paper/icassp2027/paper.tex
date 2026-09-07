@@ -1,6 +1,6 @@
 % -----------------------------------------------
 % ICASSP 2027 — draft v1
-% Mixing-equivariant audio autoencoders via an explicit decode-mixing loss
+% What makes audio latents mixing-equivariant? A controlled study of explicit supervision
 % -----------------------------------------------
 \documentclass[conference]{IEEEtran}
 \usepackage[T1]{fontenc}
@@ -22,7 +22,7 @@
 
 \begin{document}
 
-\title{An Explicit Decode-Mixing Loss for\\Mixing-Equivariant Audio Autoencoders}
+\title{What Makes Audio Latents Mixing-Equivariant?\\A Controlled Study of Explicit Supervision}
 
 % ICASSP 2027 is single-anonymous: reviewers see author names, so this paper is
 % deliberately NOT anonymized. Add "City, Country" as a line before the email if
@@ -35,32 +35,33 @@ nurdaulet.akhanov@mbzuai.ac.ae}}
 \maketitle
 
 \begin{abstract}
-Audio mixing is linear in the waveform domain, yet the latent spaces of neural
-audio autoencoders do not preserve this structure: interpolating two latent
-codes and decoding does not reproduce the corresponding waveform mix. We
-introduce an explicit \emph{decode-mixing loss} that enforces this property
-directly --- decoded latent interpolations are required to match true waveform
-mixes --- at the cost of a single extra decoder pass per step. On a waveform
-GAN autoencoder the loss makes the latent space mixing-equivariant
-\emph{at no reconstruction cost}, enabling latent-domain stem manipulation:
-removing a stem by latent subtraction improves from $+3.4$ to $+5.7$\,dB
-SI-SDR. At $2\times$ tighter compression the loss is what makes the operation
-viable at all --- against a matched from-scratch control, stem removal goes
-from an unusable $+1.2$\,dB to $+5.2$\,dB.
-A controlled ablation isolates the mechanism: the decode-mixing loss itself is
-the active ingredient, and an adversarial term applied to the mixed path --- which
-inflates a decode-consistency metric --- adds no measurable gain on
-ground-truth equivariance. The recipe transfers across compression rates
-(trained from scratch at $15.3\times$) and to a structurally different
-consistency-model autoencoder (Music2Latent), where a continued-training
-control confirms the gain is the loss and not domain adaptation. Finally, we
-show that the commonly used decode-vs-decode linearity metric is confounded
-by decoder phase variance and report a ground-truth-referenced variant
-throughout.
+Mixing is a linear operation on waveforms, so a latent space that respects
+it --- one in which interpolating two codes and decoding reproduces the
+waveform mix --- is an \emph{equivariant} representation. Neural audio
+autoencoders do not learn this structure on their own, and prior work induces
+it only indirectly, through data augmentation. We ask which training signal is
+actually responsible for mixing-equivariance, and answer with a controlled
+study in which each experiment intervenes on a single factor while holding
+architecture, data, initialization, and schedule fixed. An explicit
+\emph{decode-mixing loss} --- decoded latent interpolations are required to
+match true waveform mixes, at the cost of one extra decoder pass --- is
+sufficient: on a waveform GAN autoencoder it makes the latent space
+mixing-equivariant \emph{at no reconstruction cost}, and latent subtraction
+removes a stem at $+5.7$\,dB SI-SDR versus $+3.4$\,dB without it. At $2\times$
+tighter compression, against a matched from-scratch control, the loss is what
+makes the operation viable at all ($+1.2\!\to\!+5.2$\,dB). The interventions
+also identify what is \emph{not} responsible: an adversarial term on the mixed
+path inflates a decode-consistency metric without improving ground-truth
+equivariance, exposing that metric as a confounded proxy; an encoder-only
+penalty linearizes the encoder without making the decoder equivariant; and on
+a consistency-model autoencoder (Music2Latent) a continued-training control
+rules out domain adaptation. Finally, the widely used decode-vs-decode
+linearity metric is shown to be confounded by decoder phase variance, and a
+ground-truth-referenced variant is reported throughout.
 \end{abstract}
 
 \begin{IEEEkeywords}
-audio autoencoders, representation learning, mixing equivariance, latent arithmetic, source separation
+representation learning, equivariant representations, audio autoencoders, latent arithmetic, controlled ablation, source separation
 \end{IEEEkeywords}
 
 \section{Introduction}\label{sec:intro}
@@ -84,19 +85,24 @@ EnCodec \cite{defossez2023encodec}) cannot represent interpolated codes at all.
 
 Recent work pursues linearity through \emph{implicit} regularization ---
 training on random mixes as data augmentation \cite{torres2026linearity}
-(related to mixup \cite{zhang2018mixup}). We take the direct route: an explicit
-loss (\secref{sec:method}) that compares decoded latent interpolations to true
-waveform mixes, propagating gradients through the decoder \emph{and} back into
-the encoder. Our contributions are:
+(related to mixup \cite{zhang2018mixup}). This leaves open \emph{which}
+training signal is responsible for the property, whether the encoder or the
+decoder must carry it, and whether the metrics used to certify it measure it
+at all. We answer these questions with a controlled study: an explicit loss
+(\secref{sec:method}) that compares decoded latent interpolations to true
+waveform mixes, whose effect we then isolate by intervening on one factor at a
+time. Our contributions are:
 \begin{enumerate}
   \item An explicit decode-mixing loss that makes a waveform GAN autoencoder
   mixing-equivariant \emph{without degrading reconstruction}
   (\secref{sec:ablation}), enabling latent-arithmetic stem removal
   (\secref{sec:downstream}).
-  \item A controlled ablation isolating the mechanism: the decode-mixing loss
-  is the active ingredient, while an adversarial-on-mix term --- which inflates
-  a decode-consistency metric --- gives no measurable ground-truth gain, and an
-  encoder-only variant and a frozen-encoder variant both underperform.
+  \item An interventional ablation isolating the mechanism: the decode-mixing
+  loss is the active ingredient; an adversarial term on the mixed path
+  inflates a decode-consistency metric with no ground-truth gain, exposing the
+  metric as a confounded proxy; and an encoder-only penalty or a frozen
+  encoder both fail, showing the property must be enforced through the decoder
+  with both networks adapting.
   \item Evidence that the recipe generalizes, each against a matched control:
   from-scratch training at $2\times$ tighter compression --- where the loss is
   what makes latent subtraction viable at all --- and transfer to a
@@ -117,6 +123,14 @@ RAVE \cite{caillon2021rave} learns a variational latent space but does not
 target mixing equivariance, and disentanglement regularizers
 \cite{higgins2017betavae} encourage generic smoothness rather than a specific
 algebraic identity.
+\textbf{Equivariant representations.} Mixing-equivariance is an instance
+of the symmetry-based view of representation learning, in which a
+representation is characterized by how it transforms under a known group
+action on the data \cite{higgins2018towards}; Verma and Berger
+\cite{verma2021framework} build equivariance to audio transformations into the
+architecture. We instead treat equivariance to the linear mixing operation as
+a property to be \emph{induced} by supervision, and isolate by intervention
+which supervision induces it.
 \textbf{Linear audio representations.} Music2Latent \cite{pasini2024music2latent}
 is a consistency autoencoder with partial linearity as a byproduct.
 Torres et al.~\cite{torres2026linearity} improve linearity on it via data
@@ -236,10 +250,11 @@ computed over the full multi-source test set; the $\alpha$-sweep
 
 \section{Results}\label{sec:results}
 
-\subsection{Mechanism ablation}\label{sec:ablation}
+\subsection{Which signal causes equivariance? An interventional ablation}\label{sec:ablation}
 \tabref{tab:ablation} ablates the loss on the $7.66\times$ GAN autoencoder
-(25k-step fine-tunes from a shared converged baseline). Three observations
-drive the rest of the paper.
+(25k-step fine-tunes from a shared converged baseline). Every row differs from
+the baseline in exactly one factor, so each comparison isolates that factor's
+effect. Three observations drive the rest of the paper.
 
 \begin{table}[t]
   \centering\footnotesize
@@ -275,7 +290,7 @@ encoder and training only the decoder is the single worst run on the
 ground-truth metric relative to its reconstruction, confirming both networks
 must adapt.
 
-\subsection{Generalization: compression and architecture}\label{sec:general}
+\subsection{Intervening on compression and architecture}\label{sec:general}
 \tabref{tab:crossarch} extends the recipe along two axes. \textbf{Compression:}
 trained \emph{from scratch} at $15.3\times$ (v3.1), the mixing model matches its
 no-mixing control (v3.0) on reconstruction ($9.9$ vs.\ $10.0$\,dB) while
@@ -386,10 +401,11 @@ property of that metric, distinct from the phase-variance confound discussed in
 \secref{sec:metrics}.
 
 \section{Conclusion}\label{sec:conclusion}
-An explicit decode-mixing loss makes a waveform autoencoder
-mixing-equivariant at no reconstruction cost, enabling latent-arithmetic audio
-editing. The loss itself --- not an adversarial term on the mixed path --- is the
-active ingredient, and the effect transfers across compression rates and to a
+A controlled study identifies an explicit decode-mixing loss as the training
+signal responsible for mixing-equivariance in a waveform autoencoder, obtained
+at no reconstruction cost and enabling latent-arithmetic audio editing. The
+loss itself --- not an adversarial term on the mixed path --- is the active
+ingredient, and the effect transfers across compression rates and to a
 consistency-model autoencoder under a continued-training control.
 \textbf{Limitations.} All results use a single training seed; small
 differences (e.g.\ $\Ldec$ vs.\ $\Ldec{+}$disc) are within plausible seed

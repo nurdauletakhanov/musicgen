@@ -1,7 +1,7 @@
 # Mixing-Equivariant Audio Autoencoders
 
-Code and evaluation data for **"An Explicit Decode-Mixing Loss for
-Mixing-Equivariant Audio Autoencoders"** (submitted to ICASSP 2027).
+Code and evaluation data for **"What Makes Audio Latents Mixing-Equivariant?
+A Controlled Study of Explicit Supervision"** (submitted to ICASSP 2027).
 
 Audio mixing is linear in the waveform domain, but neural autoencoder latents do
 not preserve that structure: interpolating two latent codes and decoding does
@@ -207,7 +207,7 @@ load-bearing: `_diag_old_vs_new_eval.py` produces the paper's Fig. 1.
 
 ```bibtex
 @inproceedings{akhanov2027mixing,
-  title     = {An Explicit Decode-Mixing Loss for Mixing-Equivariant Audio Autoencoders},
+  title     = {What Makes Audio Latents Mixing-Equivariant? A Controlled Study of Explicit Supervision},
   author    = {Akhanov, Nurdaulet},
   booktitle = {Proc. IEEE Int. Conf. on Acoustics, Speech and Signal Processing (ICASSP)},
   year      = {2027}
