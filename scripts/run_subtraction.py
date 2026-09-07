@@ -71,6 +71,10 @@ def main():
 
     names = [m[0] for m in MODELS]
     targets = args.only if args.only else names
+    # Seed re-runs (e.g. v2.1-decmix-s2) are valid v2-style runs if their dir exists.
+    for n in list(targets):
+        if n not in names and (REPO / "checkpoints" / n).exists():
+            MODELS.append((n, "v2", REPO / "checkpoints" / n)); names.append(n)
     unknown = [n for n in targets if n not in names]
     if unknown:
         sys.exit(f"unknown model(s): {unknown}. valid: {names}")

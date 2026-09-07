@@ -21,6 +21,8 @@ huggingface_hub>=0.20
 matplotlib>=3.7
 # FAD with the LAION-CLAP backbone (see evaluation/compute_fad.py)
 frechet-audio-distance>=0.1.2
+# LAION-CLAP embeddings for FAD (evaluation/compute_fad.py); checkpoint downloaded separately
+laion_clap>=1.1
 
 # --- Paper run (fill from `pip freeze` on the training machine) -------------
 # torch==

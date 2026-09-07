@@ -56,7 +56,8 @@ def main():
     args = ap.parse_args()
 
     targets = args.only if args.only else MODELS
-    unknown = [m for m in targets if m not in MODELS]
+    # Seed re-runs (e.g. v2.1-decmix-s2) are valid if their checkpoint dir exists.
+    unknown = [m for m in targets if m not in MODELS and not (REPO / "checkpoints" / m).exists()]
     if unknown:
         sys.exit(f"unknown model(s): {unknown}. valid: {MODELS}")
 
