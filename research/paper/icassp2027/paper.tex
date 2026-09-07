@@ -1,7 +1,3 @@
-% -----------------------------------------------
-% ICASSP 2027 — draft v1
-% What makes audio latents mixing-equivariant? A controlled study of explicit supervision
-% -----------------------------------------------
 \documentclass[conference]{IEEEtran}
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
@@ -13,7 +9,6 @@
 \usepackage{cite}
 \usepackage{url}
 
-% convenience refs
 \newcommand{\tabref}[1]{Table~\ref{#1}}
 \newcommand{\figref}[1]{Fig.~\ref{#1}}
 \newcommand{\secref}[1]{Section~\ref{#1}}
@@ -24,9 +19,6 @@
 
 \title{What Makes Audio Latents Mixing-Equivariant?\\A Controlled Study of Explicit Supervision}
 
-% ICASSP 2027 is single-anonymous: reviewers see author names, so this paper is
-% deliberately NOT anonymized. Add "City, Country" as a line before the email if
-% you want a location printed.
 \author{\IEEEauthorblockN{Nurdaulet Akhanov}
 \IEEEauthorblockA{Mohamed bin Zayed University of Artificial Intelligence\\
 Abu Dhabi, United Arab Emirates\\
@@ -36,15 +28,15 @@ nurdaulet.akhanov@mbzuai.ac.ae}}
 
 \begin{abstract}
 Mixing is a linear operation on waveforms, so a latent space that respects
-it --- one in which interpolating two codes and decoding reproduces the
-waveform mix --- is an \emph{equivariant} representation. Neural audio
+it, one in which interpolating two codes and decoding reproduces the
+waveform mix, is an \emph{equivariant} representation. Neural audio
 autoencoders do not learn this structure on their own, and prior work induces
 it only indirectly, through data augmentation. We ask which training signal is
 actually responsible for mixing-equivariance, and answer with a controlled
 study in which each experiment intervenes on a single factor while holding
 architecture, data, initialization, and schedule fixed. An explicit
-\emph{decode-mixing loss} --- decoded latent interpolations are required to
-match true waveform mixes, at the cost of one extra decoder pass --- is
+\emph{decode-mixing loss}, which requires decoded latent interpolations to
+match true waveform mixes, at the cost of one extra decoder pass, is
 sufficient: on a waveform GAN autoencoder it makes the latent space
 mixing-equivariant \emph{at no reconstruction cost}, and latent subtraction
 removes a stem at $+5.7$\,dB SI-SDR versus $+3.4$\,dB without it. At $2\times$
@@ -75,7 +67,7 @@ For an autoencoder with encoder $f$ and decoder $g$, we call the latent space
 \end{equation}
 This property turns latent vector arithmetic into audio editing: subtracting a
 stem's latent removes it from a mixture, adding latents mixes sources, and
-weighted combinations remix --- all without a dedicated separation or synthesis
+weighted combinations remix, all without a dedicated separation or synthesis
 model. It is also a prerequisite for latent-diffusion systems
 \cite{liu2023audioldm,evans2024stable} that compose independently modeled
 sources. Yet standard autoencoders do not satisfy
@@ -83,7 +75,7 @@ Eq.~\ref{eq:equiv}: their objectives reward reconstruction fidelity, not
 algebraic structure, and quantized codecs (DAC \cite{kumar2024dac},
 EnCodec \cite{defossez2023encodec}) cannot represent interpolated codes at all.
 
-Recent work pursues linearity through \emph{implicit} regularization ---
+Recent work pursues linearity through \emph{implicit} regularization:
 training on random mixes as data augmentation \cite{torres2026linearity}
 (related to mixup \cite{zhang2018mixup}). This leaves open \emph{which}
 training signal is responsible for the property, whether the encoder or the
@@ -104,8 +96,8 @@ time. Our contributions are:
   encoder both fail, showing the property must be enforced through the decoder
   with both networks adapting.
   \item Evidence that the recipe generalizes, each against a matched control:
-  from-scratch training at $2\times$ tighter compression --- where the loss is
-  what makes latent subtraction viable at all --- and transfer to a
+  from-scratch training at $2\times$ tighter compression, where the loss is
+  what makes latent subtraction viable at all, and transfer to a
   consistency-model autoencoder with a continued-training control ruling out
   domain adaptation. The gain holds on all three test domains.
   \item A methodological correction: the widely used decode-vs-decode
@@ -166,10 +158,10 @@ We report reconstruction SI-SDR$_\mathrm{rec}=\mathrm{SISDR}(g(f(x)),x)$ and
 two equivariance views at $\alpha{=}0.5$:
 \begin{itemize}
   \item \textbf{SI-SDR$_\mathrm{lin}$} (decode-vs-decode):
-  $\mathrm{SISDR}(g(\bar{z}),g(f(\bar{x})))$ --- equivariance relative to the
+  $\mathrm{SISDR}(g(\bar{z}),g(f(\bar{x})))$, equivariance relative to the
   model's \emph{own} reconstruction of the mix.
   \item \textbf{SI-SDR$_\mathrm{lin}^\mathrm{gt}$} (vs.\ ground truth):
-  $\mathrm{SISDR}(g(\bar{z}),\bar{x})$ --- the quantity in
+  $\mathrm{SISDR}(g(\bar{z}),\bar{x})$, the quantity in
   Eq.~\ref{eq:equiv}, comparable across models.
 \end{itemize}
 We also report $\ell_\mathrm{lat}=\lVert\bar{z}-f(\bar{x})\rVert^2/\lVert f(\bar{x})\rVert^2$
@@ -185,7 +177,7 @@ noise per call, so two decodes of the same latent differ in phase and
 SI-SDR$_\mathrm{lin}$ collapses unless the noise is shared. \figref{fig:protocol}
 shows the same Music2Latent checkpoints scoring $\approx{-}8$\,dB under
 independent-noise decoding (the protocol implied by prior reports) and
-\emph{positive} under shared-noise decoding --- a $12$\,dB swing driven purely by
+\emph{positive} under shared-noise decoding, a $12$\,dB swing driven purely by
 the eval protocol, not the model. We therefore treat
 SI-SDR$_\mathrm{lin}^\mathrm{gt}$ and MixRate as the equivariance metrics of
 record, and use shared decode noise everywhere.
@@ -276,7 +268,7 @@ on the mixed path is not.} On the ground-truth metric, $\Ldec$ alone improves
 SDR$_\mathrm{lin}^\mathrm{gt}$ from $8.0$ to $10.2$\,dB and is the only run with
 MixRate $<1$ ($0.97$). Adding an adversarial term to the mixed path
 (``+disc-on-mix'') does \emph{not} improve ground-truth equivariance
-($9.9$\,dB, MixRate $1.05$) --- yet it dramatically inflates the decode-vs-decode
+($9.9$\,dB, MixRate $1.05$), yet it dramatically inflates the decode-vs-decode
 SDR$_\mathrm{lin}$ ($12.1\!\to\!16.0$\,dB). The discriminator pulls the two
 decode paths onto a common realistic manifold, raising their mutual SI-SDR
 without moving either toward $\bar{x}$. This is direct evidence that
@@ -297,13 +289,13 @@ no-mixing control (v3.0) on reconstruction ($9.9$ vs.\ $10.0$\,dB) while
 improving ground-truth equivariance by $+1.7$\,dB
 (SDR$_\mathrm{lin}^\mathrm{gt}$ $6.8\!\to\!8.6$), MixRate ($1.19\!\to\!1.05$),
 and encoder linearity ($\ell_\mathrm{lat}$ $0.078\!\to\!0.057$). Because v3.0 is
-a matched control --- same architecture, compression, and schedule, mixing
-disabled --- this isolates the loss's contribution and shows the effect is not
+a matched control (same architecture, compression, and schedule, mixing
+disabled), this isolates the loss's contribution and shows the effect is not
 an artifact of the looser $7.66\times$ rate or of warm-starting. \textbf{Architecture:} we fine-tune the published
 Music2Latent \cite{pasini2024music2latent} consistency autoencoder with a
 decode-mixing objective (its native consistency loss applied to the mixed pair
-substitutes for the discriminator). A continued-training control --- the same
-fine-tune with the mixing terms disabled --- moves equivariance by
+substitutes for the discriminator). A continued-training control, the same
+fine-tune with the mixing terms disabled, moves equivariance by
 $<0.2$\,dB and \emph{worsens} FAD, so the mixing model's gain is attributable
 to the loss, not to domain adaptation. Both decode-vs-decode and ground-truth
 metrics agree on the improvement, confirming it is not a measurement artifact.
@@ -311,7 +303,7 @@ Absolute SDR$_\mathrm{lin}^\mathrm{gt}$ remains negative on Music2Latent because
 its consistency decoder is phase-incoherent with raw waveforms; the latent
 \emph{geometry} improves (MixRate, $\ell_\mathrm{lat}$) but a consistency
 decoder does not convert this into clean waveform arithmetic as the GAN decoder
-does --- hence we report the GAN autoencoder as the primary result.
+does, so we report the GAN autoencoder as the primary result.
 
 \begin{table}[t]
   \centering\footnotesize
@@ -333,7 +325,7 @@ does --- hence we report the GAN autoencoder as the primary result.
 \end{table}
 
 \textbf{The gain is not domain-driven.} Our test set spans three acoustically
-distinct domains --- crowd-sourced indie production (FMA), solo piano
+distinct domains: crowd-sourced indie production (FMA), solo piano
 (MAESTRO), and multi-track studio mixes (MUSDB18). \tabref{tab:persource}
 breaks SDR$_\mathrm{lin}^\mathrm{gt}$ out by domain against the matched
 no-mixing control at each compression rate. The improvement appears on all
@@ -361,10 +353,10 @@ the linearity tax from $5.2$ to $3.0$\,dB, with the largest gain on bass
 ($+6.0$\,dB, tax $2.6$), consistent with \secref{sec:ablation}. The effect is
 starkest against the matched from-scratch control at $15.3\times$: without the
 mixing loss, latent subtraction is essentially unusable ($+1.2$\,dB overall,
-and $-1.6$\,dB on bass --- worse than emitting the unmodified mixture), while
+and $-1.6$\,dB on bass, worse than emitting the unmodified mixture), while
 the same architecture trained with it reaches $+5.2$\,dB and the \emph{lowest}
 tax of any model ($2.5$\,dB). Tighter compression therefore does not merely
-cost a little subtraction quality --- it is what makes the property fail
+cost a little subtraction quality: it is what makes the property fail
 outright, and the loss is what restores it.
 
 \begin{table}[t]
@@ -396,7 +388,7 @@ only at the trained operating point.
   \label{fig:alpha}
 \end{figure}
 We caution that the decode-vs-decode SDR$_\mathrm{lin}$ is U-shaped in $\alpha$
-for \emph{all} models --- near-identity mixes are trivially easy --- which is a
+for \emph{all} models (near-identity mixes are trivially easy), which is a
 property of that metric, distinct from the phase-variance confound discussed in
 \secref{sec:metrics}.
 
@@ -404,7 +396,7 @@ property of that metric, distinct from the phase-variance confound discussed in
 A controlled study identifies an explicit decode-mixing loss as the training
 signal responsible for mixing-equivariance in a waveform autoencoder, obtained
 at no reconstruction cost and enabling latent-arithmetic audio editing. The
-loss itself --- not an adversarial term on the mixed path --- is the active
+loss itself, not an adversarial term on the mixed path, is the active
 ingredient, and the effect transfers across compression rates and to a
 consistency-model autoencoder under a continued-training control.
 \textbf{Limitations.} All results use a single training seed; small

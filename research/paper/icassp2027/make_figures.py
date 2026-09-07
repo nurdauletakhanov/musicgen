@@ -62,7 +62,10 @@ def fig_alpha():
     ax.set_ylabel(r"SI-SDR$_\mathrm{lin}^\mathrm{gt}$ (dB)")
     ax.set_xticks(ALPHAS)
     ax.grid(True, alpha=0.3)
-    ax.legend(loc="lower center", frameon=False, ncol=1)
+    # Legend above the axes: the curves dip at alpha=0.5, right where an
+    # in-axes legend would sit.
+    ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3,
+              frameon=False, columnspacing=1.0, handlelength=1.6)
     fig.tight_layout(pad=0.3)
     out = os.path.join(FIG, "fig_alpha.pdf")
     fig.savefig(out, bbox_inches="tight")
@@ -73,8 +76,8 @@ def fig_protocol():
     # From scripts/_diag_old_vs_new_eval (240 MUSDB chunks, alpha=0.5).
     # SI-SDR_lin (decode-vs-decode) under the two decode-noise protocols.
     data = {
-        "shared noise\n(phase cancelled)":     {"M2L base": 3.54, "M2L +mix": 5.96},
-        "independent noise\n(prior protocol)": {"M2L base": -9.28, "M2L +mix": -7.62},
+        "shared noise (phase cancelled)":     {"M2L base": 3.54, "M2L +mix": 5.96},
+        "independent noise (prior protocol)": {"M2L base": -9.28, "M2L +mix": -7.62},
     }
     models = ["M2L base", "M2L +mix"]
     fig, ax = plt.subplots(figsize=(3.3, 2.4))
@@ -87,7 +90,9 @@ def fig_protocol():
     ax.set_xticks(x)
     ax.set_xticklabels(models)
     ax.set_ylabel(r"SI-SDR$_\mathrm{lin}$ (dB)")
-    ax.legend(loc="lower right", frameon=False)
+    # Legend above the axes so it never covers the negative bars.
+    ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=2,
+              frameon=False, columnspacing=1.2)
     ax.grid(True, axis="y", alpha=0.3)
     fig.tight_layout(pad=0.3)
     out = os.path.join(FIG, "fig_protocol.pdf")
