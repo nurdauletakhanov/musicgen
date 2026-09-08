@@ -249,8 +249,8 @@ the baseline in exactly one factor, so each comparison isolates that factor's
 effect. Three observations drive the rest of the paper.
 
 \begin{table}[t]
-  \centering\footnotesize
-  \setlength{\tabcolsep}{3.5pt}
+  \centering\small
+  \setlength{\tabcolsep}{2.2pt}
   \input{tables/ablation.tex}
   \caption{Mechanism ablation on the GAN autoencoder ($7.66\times$, full test
   set, $\alpha{=}0.5$). SDR$_\mathrm{lin}$ is decode-vs-decode;
@@ -306,8 +306,8 @@ decoder does not convert this into clean waveform arithmetic as the GAN decoder
 does, so we report the GAN autoencoder as the primary result.
 
 \begin{table}[t]
-  \centering\footnotesize
-  \setlength{\tabcolsep}{4pt}
+  \centering\small
+  \setlength{\tabcolsep}{2.6pt}
   \input{tables/crossarch.tex}
   \caption{Generalization across compression and architecture (full test set,
   $\alpha{=}0.5$, EMA weights for Music2Latent). The M2L ``fine-tune control''
@@ -316,7 +316,7 @@ does, so we report the GAN autoencoder as the primary result.
 \end{table}
 
 \begin{table}[t]
-  \centering\footnotesize
+  \centering\small
   \input{tables/persource.tex}
   \caption{Ground-truth equivariance per test domain (dB). Each $\Delta$ is
   against the matched no-mixing control at the same compression rate. The gain
@@ -374,8 +374,8 @@ cost a little subtraction quality: it is what makes the property fail
 outright, and the loss is what restores it.
 
 \begin{table}[t]
-  \centering\footnotesize
-  \setlength{\tabcolsep}{3.5pt}
+  \centering\small
+  \setlength{\tabcolsep}{2.2pt}
   \input{tables/subtraction.tex}
   \caption{Stem removal via latent subtraction (SI-SDR, dB; MUSDB18 test).
   Higher is better; ``gap'' is the linearity tax against each model's own

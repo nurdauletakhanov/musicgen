@@ -26,8 +26,9 @@ FIG = os.path.join(HERE, "figures")
 os.makedirs(FIG, exist_ok=True)
 
 plt.rcParams.update({
-    "font.size": 9, "axes.labelsize": 9, "legend.fontsize": 8,
-    "xtick.labelsize": 8, "ytick.labelsize": 8, "figure.dpi": 200,
+    # ICASSP requires >= 9 pt throughout, so no tick/legend text below 9.
+    "font.size": 9, "axes.labelsize": 9, "legend.fontsize": 9,
+    "xtick.labelsize": 9, "ytick.labelsize": 9, "figure.dpi": 200,
     # IEEE PDF eXpress rejects Type 3 fonts (matplotlib's PDF default).
     # Type 42 embeds the glyphs as TrueType instead.
     "pdf.fonttype": 42, "ps.fonttype": 42,
