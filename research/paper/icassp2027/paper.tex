@@ -42,7 +42,8 @@ decode-consistency metric, exposing that metric as a confounded proxy; on a
 consistency-model autoencoder the loss improves latent geometry but not
 waveform arithmetic. Latent stem subtraction, in contrast, is governed by the
 latent origin, not the loss: adding the encoded silence $f(0)$ brings every
-model to within $0.5$\,dB of its reconstruction ceiling on all 49 test tracks.
+evaluated GAN configuration to within $0.5$\,dB of its reconstruction ceiling
+in aggregate, removing the loss's mean subtraction advantage.
 Comparisons are single-run, matched at one initialization.
 \end{abstract}
 
@@ -94,7 +95,8 @@ time. Our contributions are:
   autoencoder where latent geometry improves but waveform arithmetic does not
   (\secref{sec:general}).
   \item A downstream analysis showing latent stem removal is limited by the
-  latent origin rather than the loss (\secref{sec:downstream}).
+  latent origin rather than the loss, for every evaluated GAN configuration
+  (\secref{sec:downstream}).
   \item A methodological correction: the widely used decode-vs-decode
   SI-SDR$_\mathrm{lin}$ is confounded by decoder phase variance; we report a
   ground-truth-referenced variant.
@@ -351,21 +353,19 @@ an explanation of it.
   \label{tab:persource}
 \end{table}
 
-\textbf{The gain is not domain-driven.} Our test set spans three acoustically
-distinct domains: crowd-sourced indie production (FMA), solo piano
-(MAESTRO), and multi-track studio mixes (MUSDB18). \tabref{tab:persource}
-breaks SDR$_\mathrm{lin}^\mathrm{gt}$ out by domain against the matched
-no-mixing control at each compression rate. The improvement appears on all
-three at both rates ($+2.0$ to $+3.1$\,dB at $7.66\times$; $+1.2$ to
-$+3.2$\,dB at $15.3\times$), so it reflects a property of the learned latent
-space rather than an artifact of one recording style. The absolute ordering
-(MAESTRO easiest, MUSDB hardest) tracks reconstruction difficulty and is
-preserved by the mixing loss.
+\textbf{The gain is not domain-driven.} \tabref{tab:persource} breaks
+SDR$_\mathrm{lin}^\mathrm{gt}$ out by test domain (indie production, solo
+piano, studio mixes) against the matched control at each rate. The improvement
+appears on all three at both rates ($+2.0$ to $+3.1$\,dB at $7.66\times$;
+$+1.2$ to $+3.2$ at $15.3\times$), so it is a property of the latent space, not
+of one recording style.
 
 \subsection{Downstream: latent-arithmetic stem removal}\label{sec:downstream}
 We remove a stem by latent subtraction,
 $\hat{x}=g(f(x_\mathrm{mix})-f(x_\mathrm{stem}))$, and measure SI-SDR against
-the true residual on the MUSDB18 test set. This is an \emph{oracle} setting:
+the true residual on the MUSDB18 test set (49 of 50 tracks; one is excluded
+because its stems sum to the mixture at only $18.5$\,dB). This is an
+\emph{oracle} setting:
 the removed stem is available and encoded, so it tests the representation's
 arithmetic, not blind separation; its use is latent-domain editing when stem
 codes exist, as in a pipeline that stores compressed stems or a latent
@@ -373,9 +373,8 @@ generative model that composes sources without decoding each. Subtraction
 uses coefficients $(1,-1)$, which Eq.~\ref{eq:equiv} does not cover
 (\secref{sec:intro}), so we report raw subtraction and the origin-corrected
 form $g(f(x_\mathrm{mix})-f(x_\mathrm{stem})+f(0))$, exact for affine $f,g$.
-We also report the \emph{linearity tax}
-$\mathrm{gap}=\mathrm{SISDR}(g(f(x_\mathrm{res})),x_\mathrm{res})-\mathrm{SISDR}(\hat{x},x_\mathrm{res})$,
-the shortfall against the model's own encode--decode ceiling.
+We also report the \emph{linearity tax}, the shortfall of $\hat{x}$ against the
+model's own encode--decode ceiling on the residual.
 
 \begin{table}[t]
   \centering\small
@@ -384,23 +383,25 @@ the shortfall against the model's own encode--decode ceiling.
   \caption{Stem removal via latent subtraction (SI-SDR, dB; MUSDB18 test).
   Higher is better; ``gap'' is the linearity tax against each model's own
   encode--decode ceiling (lower is better). ``$+f(0)$'' rows add the encoded
-  silence to the subtracted latent (origin correction).}
+  silence to the subtracted latent (origin correction). Aggregates over
+  5{,}880 units from 49 tracks.}
   \label{tab:subtraction}
 \end{table}
 
 \textbf{Raw subtraction favours the mixing loss; origin correction removes the
 difference.} Raw, $\Ldec$ roughly doubles subtraction quality at $7.66\times$
 ($+3.4\!\to\!+5.7$\,dB) and the matched $15.3\times$ pair goes from $+1.2$ to
-$+5.2$\,dB. Adding $f(0)$, one encode of silence, lifts \emph{every} model to
-within $0.5$\,dB of its ceiling (\tabref{tab:subtraction}): $+2.0$ to
-$+6.0$\,dB per model, on all 49 tracks. With the origin corrected the loss no
-longer helps subtraction: $\Ldec$ versus no mixing is $-0.03$\,dB (95\%
-track-cluster CI $[-0.15,+0.11]$) and the $15.3\times$ pair $+0.01$\,dB
-($[-0.19,+0.21]$). The raw advantage was the no-mixing models' larger latent
+$+5.2$\,dB. Adding $f(0)$ gains $+2.0$ to $+6.0$\,dB for every evaluated GAN
+configuration, leaving each $0.37$--$0.53$\,dB from its ceiling in aggregate
+(\tabref{tab:subtraction}); per track the tail is wider (worst $2.2$\,dB,
+$29$--$32$ of $49$ tracks within $0.5$). For these autoencoders, origin
+correction removes any substantial mean subtraction advantage of mixing
+supervision: $\Ldec$ versus no mixing is $-0.03$\,dB (95\% track-cluster CI
+$[-0.15,+0.11]$), the $15.3\times$ pair $+0.01$ ($[-0.19,+0.21]$). The raw advantage was the no-mixing models' larger latent
 offset ($\lVert f(0)\rVert$ $6.6$ versus $5.4$ at $7.66\times$, $18.1$ versus
 $14.8$ at $15.3\times$), which coefficient-sum-zero arithmetic pays for. What
 the loss buys is convex equivariance (Tables~\ref{tab:ablation}
-and~\ref{tab:persource}); subtraction needs the origin, a free post-hoc fix.
+and~\ref{tab:persource}), which the correction leaves intact.
 
 \textbf{Baselines without latent arithmetic.} The unchanged mixture scores
 $+17.1$\,dB against the residual, above every autoencoder's ceiling, since the
@@ -408,9 +409,9 @@ removed stem is a small share of the energy: this metric cannot certify removal
 in absolute terms, only arithmetic relative to the model's own reconstruction.
 Within the model, autoencoding the mixture and doing nothing scores $+2.2$\,dB
 ($+1.7$ at $15.3\times$); decoding both signals and subtracting waveforms
-scores $+7.5$ ($+6.5$). Raw latent subtraction is below waveform subtraction
-for every model, origin-corrected latent subtraction above it by $+0.7$ to
-$+0.9$\,dB (track-cluster CIs exclude zero), with or without the loss.
+scores $+7.5$ ($+6.5$). Raw latent subtraction is below waveform subtraction for
+every configuration, origin-corrected latent subtraction above it by $+0.7$ to
+$+0.9$\,dB (CIs exclude zero), with or without the loss.
 
 All intervals here come from a paired cluster bootstrap over the 49 tracks
 ($10^4$ resamples), the correlated unit; they cover evaluation variance at the
@@ -436,16 +437,16 @@ only at the trained operating point.
 \end{figure}
 \section{Conclusion}\label{sec:conclusion}
 A controlled study identifies the decode-mixing loss, not an adversarial term
-on the mixed path, as the signal responsible for convex mixing-equivariance, at
-no measured reconstruction cost and across compression rates. Raw stem
+on the mixed path, as the signal responsible for convex mixing-equivariance,
+at no measured reconstruction cost and across compression rates. Raw stem
 subtraction is instead governed by the latent offset, which one encode of
-silence removes for every model. On a consistency-model autoencoder the loss
+silence removes for every evaluated GAN configuration. On a consistency-model autoencoder the loss
 improves latent geometry but not waveform arithmetic, so practical claims are
 confined to the GAN autoencoder we test.
-\textbf{Limitations.} Every comparison is matched at a single initialization,
-identifying each factor's effect there but not its variation across training
-runs; experiments are mono; and we conduct no listening test. Stereo,
-multi-seed estimates, and latent-diffusion composition are future work.
+\textbf{Limitations.} Comparisons are matched at a single initialization, so
+they identify each factor's effect there but not its variation across runs;
+experiments are mono and we conduct no listening test. Stereo, multi-seed
+estimates, and latent-diffusion composition are future work.
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}
