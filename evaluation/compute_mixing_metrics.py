@@ -43,6 +43,18 @@ from training.config import build_model_config, get_device, load_config
 
 def _si_sdr(x_hat: torch.Tensor, x: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
     """Per-sample SI-SDR (dB), returns [B] tensor."""
+    return _si_sdr_and_gain(x_hat, x, eps)[0]
+
+
+def _si_sdr_and_gain(x_hat: torch.Tensor, x: torch.Tensor, eps: float = 1e-8):
+    """Per-sample SI-SDR (dB) and the fitted scale it is invariant to.
+
+    SI-SDR projects x_hat onto x with the optimal gain alpha and scores only
+    the residual, so it says nothing about absolute level. gain_db =
+    20 log10(alpha) is the level error SI-SDR ignores: 0 dB means the decoded
+    mix comes out at exactly the right gain (Eq. 1 with '=' rather than
+    'up to scale').
+    """
     x_hat = x_hat.float().reshape(x_hat.size(0), -1)
     x = x.float().reshape(x.size(0), -1)
     x = x - x.mean(dim=1, keepdim=True)
@@ -50,9 +62,11 @@ def _si_sdr(x_hat: torch.Tensor, x: torch.Tensor, eps: float = 1e-8) -> torch.Te
     alpha = (x_hat * x).sum(dim=1, keepdim=True) / (x.pow(2).sum(dim=1, keepdim=True) + eps)
     s_target = alpha * x
     e_noise = x_hat - s_target
-    return 10.0 * torch.log10(
+    sdr = 10.0 * torch.log10(
         (s_target.pow(2).sum(dim=1) + eps) / (e_noise.pow(2).sum(dim=1) + eps)
     )
+    gain_db = 20.0 * torch.log10(alpha.squeeze(1).abs().clamp(min=eps))
+    return sdr, gain_db
 
 
 def _no_fixed_point_perm(B: int, device, max_tries: int = 5) -> torch.Tensor:
@@ -168,7 +182,12 @@ def _process_batch(
     # Per-sample SDR_lin_gt between g(z̄) and the ground-truth mix x̄ —
     # the externally comparable variant (Torres et al. / M2L Table 3 style),
     # immune to inflation from a latent-insensitive decoder.
-    sdr_lin_gt = _si_sdr(g_zbar, x_mix).cpu().tolist()
+    sdr_lin_gt_t, gain_lin_gt_t = _si_sdr_and_gain(g_zbar, x_mix)
+    sdr_lin_gt = sdr_lin_gt_t.cpu().tolist()
+    # Gain error SI-SDR ignores: 20 log10 of the fitted scale of g(z̄) vs x̄.
+    gain_lin_gt = gain_lin_gt_t.cpu().tolist()
+    # Same for plain reconstruction, as the reference level error of the AE.
+    gain_rec = _si_sdr_and_gain(g_zrec, x)[1].cpu().tolist()
 
     # Per-sample ℓ_lat = ||z̄ - z_real||^2 / ||z_real||^2
     diff = (z_interp - z_real).reshape(B, -1)
@@ -187,6 +206,10 @@ def _process_batch(
         "sdr_rec": list(zip(sources, sdr_rec)),
         "sdr_lin": list(zip(sources, sdr_lin)),
         "sdr_lin_gt": list(zip(sources, sdr_lin_gt)),
+        "gain_lin_gt": list(zip(sources, gain_lin_gt)),
+        "gain_rec": list(zip(sources, gain_rec)),
+        "abs_gain_lin_gt": list(zip(sources, [abs(g) for g in gain_lin_gt])),
+        "abs_gain_rec": list(zip(sources, [abs(g) for g in gain_rec])),
         "l_lat":   list(zip(sources, l_lat)),
         "mix_rate": list(zip(sources, mix_rate)),
     }
@@ -251,6 +274,7 @@ def main():
 
     aggregates: Dict[str, List[tuple]] = {
         "sdr_rec": [], "sdr_lin": [], "sdr_lin_gt": [], "l_lat": [], "mix_rate": [],
+        "gain_lin_gt": [], "gain_rec": [], "abs_gain_lin_gt": [], "abs_gain_rec": [],
     }
 
     n_seen = 0
@@ -277,7 +301,8 @@ def main():
     print(f"per-source samples: {dict(src_counts)}  (n_seen={n_seen})")
 
     print("\n=== mixing metrics ===")
-    for metric in ("sdr_rec", "sdr_lin", "sdr_lin_gt", "l_lat", "mix_rate"):
+    for metric in ("sdr_rec", "sdr_lin", "sdr_lin_gt", "l_lat", "mix_rate",
+                   "gain_lin_gt", "gain_rec", "abs_gain_lin_gt", "abs_gain_rec"):
         line = f"  {metric:8s}"
         for src in sorted(summary[metric].keys()):
             line += f"  {src}={summary[metric][src]:+.4f}"
