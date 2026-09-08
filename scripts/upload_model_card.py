@@ -50,6 +50,25 @@ model.eval()
 ```
 
 `v2.1-decmix` is the paper's recommended recipe (decode-mixing loss only).
+
+## Two things to know before comparing these models
+
+**Latent subtraction needs the origin.** Subtraction has coefficients
+(1, -1), which sum to zero, so the encoder's offset `f(0)` drops out. For an
+affine encoder `f(x) = Ax + b` the identity `f(mix) - f(stem) + f(0) = f(res)`
+is exact, so the corrected decode is the model's own reconstruction of the
+residual. Raw subtraction scores therefore mostly reflect each model's latent
+offset, not the training recipe; correct it before comparing:
+
+```bash
+python -m evaluation.compute_subtraction --origin-correct ...
+```
+
+**Decode-vs-decode SI-SDR is confounded for the M2L checkpoints.** A
+consistency decoder draws fresh noise per call. Decoding the same latent twice
+with independent noise scores -1.8 dB with no latent arithmetic at all, so
+share the decode noise (the eval adapter does) or the metric measures sampling,
+not linearity.
 """
 
 api = HfApi()
