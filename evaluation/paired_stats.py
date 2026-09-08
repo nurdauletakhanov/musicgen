@@ -37,6 +37,12 @@ CONTRASTS = [
     ("v2.2-decmix-disc", "v2.0-continued", "L_dec+disc vs no mix (7.66x)"),
     ("v2.2-decmix-disc", "v2.1-decmix", "disc-on-mix vs L_dec alone"),
     ("v3.1-decmix-disc-d64", "v3.0-baseline-d64", "mix vs no mix (15.3x)"),
+] + [
+    # Origin-corrected subtraction g(f(mix) - f(stem) + f(0)) vs raw, per model:
+    # does a latent offset contribute to the subtraction error?
+    (f"{r}+origin", r, f"origin-corrected vs raw: {r}")
+    for r in ("v2.0-continued", "v2.1-decmix", "v2.2-decmix-disc",
+              "v3.0-baseline-d64", "v3.1-decmix-disc-d64")
 ]
 KEY = "sub"          # metric of record: latent subtraction vs ground truth
 N_BOOT = 10000

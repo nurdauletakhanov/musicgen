@@ -120,7 +120,7 @@ def _pick_chunks(stems: Dict[str, np.ndarray], n_chunks: int,
 @torch.no_grad()
 def _process_track(model, stems: Dict[str, np.ndarray], chunk_starts: List[int],
                    device: torch.device, batch_size: int,
-                   seed: int) -> Dict[str, Dict[str, List[float]]]:
+                   seed: int, origin: torch.Tensor = None) -> Dict[str, Dict[str, List[float]]]:
     """For one track, run the subtraction + ceiling ops for every chunk and stem.
 
     Returns {stem: {"sub": [...], "ceil": [...], "dd": [...]}} (SI-SDR per chunk).
@@ -156,7 +156,13 @@ def _process_track(model, stems: Dict[str, np.ndarray], chunk_starts: List[int],
             torch.manual_seed(seed)
             z_stem = model.encoder(xs.unsqueeze(1))
             torch.manual_seed(seed)
-            x_sub, _ = model.decoder(z_full - z_stem)
+            z_sub = z_full - z_stem
+            if origin is not None:
+                # Origin correction: subtraction has coefficients (1, -1) summing
+                # to 0, so an affine offset in the latent map survives it. Adding
+                # f(0) restores a coefficient sum of 1 (exact for affine f, g).
+                z_sub = z_sub + origin
+            x_sub, _ = model.decoder(z_sub)
             x_sub = x_sub.squeeze(1)
 
             torch.manual_seed(seed)
@@ -181,7 +187,7 @@ def run_eval(model, musdb_dir: str, chunks_per_track: int, batch_size: int,
              seed: int, device: torch.device, max_tracks: int = None,
              sanity_thresh: float = 20.0,
              desc: str = "subtraction",
-             per_chunk: list = None) -> tuple:
+             per_chunk: list = None, origin: torch.Tensor = None) -> tuple:
     """Iterate MUSDB tracks, aggregate per-stem SI-SDR.
 
     Returns (summary_dict, n_chunks_seen, skipped_tracks).
@@ -223,7 +229,7 @@ def run_eval(model, musdb_dir: str, chunks_per_track: int, batch_size: int,
             skipped.append({"track": t.name, "reason": "no non-silent chunks"})
             continue
         per_stem = _process_track(model, stems, chunk_starts, device,
-                                  batch_size, seed)
+                                  batch_size, seed, origin=origin)
         for st in STEMS:
             aggregates[st]["sub"].extend(per_stem[st]["sub"])
             aggregates[st]["ceil"].extend(per_stem[st]["ceil"])
@@ -299,6 +305,9 @@ def main():
     ap.add_argument("--max-tracks", type=int, default=None)
     ap.add_argument("--batch-size", type=int, default=16)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--origin-correct", action="store_true",
+                    help="Decode f(mix) - f(stem) + f(0) instead of f(mix) - f(stem): "
+                         "tests whether a latent offset contributes to the error.")
     ap.add_argument("--per-chunk-out", type=str, default=None,
                     help="Also write every individual measurement here "
                          "(JSON), for paired statistics across models.")
@@ -316,9 +325,16 @@ def main():
     print(f"loaded {args.checkpoint} @ step {step}")
 
     per_chunk = [] if args.per_chunk_out else None
+    origin = None
+    if args.origin_correct:
+        with torch.no_grad():
+            torch.manual_seed(args.seed)
+            origin = model.encoder(torch.zeros(1, 1, CHUNK_LEN, device=device))
+        print(f"origin correction: f(0) latent norm {origin.norm().item():.4f} "
+              f"(per-element RMS {origin.pow(2).mean().sqrt().item():.4f})")
     summary, n_seen, skipped = run_eval(
         model=model,
-        per_chunk=per_chunk,
+        per_chunk=per_chunk, origin=origin,
         musdb_dir=args.musdb_dir,
         chunks_per_track=args.chunks_per_track,
         batch_size=args.batch_size,
@@ -340,6 +356,7 @@ def main():
             "seed": args.seed,
         },
         "skipped_tracks": skipped,
+        "origin_corrected": bool(args.origin_correct),
         "subtraction": summary,
     }
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
