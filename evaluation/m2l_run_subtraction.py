@@ -39,6 +39,10 @@ def main():
     ap.add_argument("--batch-size", type=int, default=8,
                     help="Smaller default than v2 — M2L decode is slower.")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--origin-correct", action="store_true",
+                    help="Decode f(mix) - f(stem) + f(0) (origin correction).")
+    ap.add_argument("--per-chunk-out", type=str, default=None,
+                    help="Also dump every measurement (JSON) for paired statistics.")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -51,8 +55,17 @@ def main():
     ).to(device)
     model.eval()
 
+    origin = None
+    if args.origin_correct:
+        from evaluation.compute_subtraction import CHUNK_LEN
+        with torch.no_grad():
+            torch.manual_seed(args.seed)
+            origin = model.encoder(torch.zeros(1, 1, CHUNK_LEN, device=device))
+        print(f"origin correction: f(0) latent norm {origin.norm().item():.4f}")
+    per_chunk = [] if args.per_chunk_out else None
     summary, n_seen, skipped = run_eval(
         model=model,
+        origin=origin, per_chunk=per_chunk,
         musdb_dir=args.musdb_dir,
         chunks_per_track=args.chunks_per_track,
         batch_size=args.batch_size,
@@ -80,6 +93,14 @@ def main():
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     with open(args.out, "w") as f:
         json.dump(out_dict, f, indent=2)
+    if per_chunk is not None:
+        import os as _os
+        _os.makedirs(_os.path.dirname(args.per_chunk_out) or ".", exist_ok=True)
+        with open(args.per_chunk_out, "w") as f:
+            json.dump({"checkpoint": args.m2l_checkpoint, "seed": args.seed,
+                       "origin_corrected": bool(args.origin_correct),
+                       "records": per_chunk}, f)
+        print(f"wrote {args.per_chunk_out} ({len(per_chunk)} measurements)")
     print(f"\nwrote {args.out}")
 
 

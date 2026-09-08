@@ -423,6 +423,18 @@ $14.8$ at $15.3\times$), which coefficient-sum-zero arithmetic pays for. What
 the loss buys is convex equivariance (Tables~\ref{tab:ablation}
 and~\ref{tab:persource}); subtraction needs the origin, a free post-hoc fix.
 
+\textbf{Baselines without latent arithmetic.} Returning the unchanged mixture
+scores $+17.1$\,dB against the residual (the removed stem is a small share of
+the energy), above every autoencoder's ceiling, so this metric cannot certify
+removal in absolute terms; it measures arithmetic relative to the model's own
+reconstruction. Within the model, autoencoding the mixture and doing nothing
+scores $+2.2$\,dB ($+1.7$ at $15.3\times$), and decoding mixture and stem
+separately and subtracting waveforms scores $+7.5$ ($+6.5$). Raw latent
+subtraction is below waveform subtraction for every model (by $1.3$ to
+$5.2$\,dB); origin-corrected latent subtraction is above it for every model,
+by $+0.7$ to $+0.9$\,dB (track-cluster CIs exclude zero; $80$--$92\%$ of
+tracks), with or without the mixing loss.
+
 \textbf{How much of this is measurement noise?} Units from one recording are
 correlated, so the resampling unit is the track: a paired cluster bootstrap
 draws the 49 tracks with replacement ($10^4$ resamples). Raw contrasts sit far

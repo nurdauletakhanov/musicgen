@@ -50,7 +50,8 @@ CONTRASTS = [
     # does a latent offset contribute to the subtraction error?
     (f"{r}+origin", r, f"origin-corrected vs raw: {r}")
     for r in ("v2.0-continued", "v2.1-decmix", "v2.2-decmix-disc",
-              "v3.0-baseline-d64", "v3.1-decmix-disc-d64")
+              "v3.0-baseline-d64", "v3.1-decmix-disc-d64",
+              "v1.1", "m2l_phase0_ema", "m2l_phase2_ema")
 ]
 KEY = "sub"          # metric of record: latent subtraction vs ground truth
 

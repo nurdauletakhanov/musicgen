@@ -1,0 +1,69 @@
+{
+  "checkpoint": "checkpoints/v3.1-decmix-disc-d64/best.pth",
+  "step": 240000,
+  "config": {
+    "musdb_dir": "dataset/musdb18/test",
+    "chunks_per_track": 30,
+    "n_chunks_seen": 1470,
+    "seed": 0
+  },
+  "skipped_tracks": [
+    {
+      "track": "PR - Oh No",
+      "reason": "sanity=18.47"
+    }
+  ],
+  "origin_corrected": false,
+  "subtraction": {
+    "drums": {
+      "sdr_sub": 5.358586762649907,
+      "sdr_ceil": 7.943000246625596,
+      "sdr_dd": 10.12371925699721,
+      "gap": 2.5844134839756894,
+      "n": 1470,
+      "sdr_identity": 10.84731975089423,
+      "sdr_aemix": 1.113076593208845,
+      "sdr_wavsub": 6.688121228114239
+    },
+    "bass": {
+      "sdr_sub": 4.732987756748386,
+      "sdr_ceil": 6.261756052550081,
+      "sdr_dd": 14.015968032982073,
+      "gap": 1.5287682958016946,
+      "n": 1470,
+      "sdr_identity": 21.350991657706885,
+      "sdr_aemix": 2.3966706376215505,
+      "sdr_wavsub": 6.203021835451185
+    },
+    "vocals": {
+      "sdr_sub": 6.864772720552377,
+      "sdr_ceil": 8.795962127756809,
+      "sdr_dd": 12.716888448555453,
+      "gap": 1.9311894072044318,
+      "n": 1470,
+      "sdr_identity": 31.90497468038443,
+      "sdr_aemix": 4.140002462487718,
+      "sdr_wavsub": 7.433406151516908
+    },
+    "other": {
+      "sdr_sub": 4.0199945297719415,
+      "sdr_ceil": 7.736849953350769,
+      "sdr_dd": 10.386380172100196,
+      "gap": 3.716855423578828,
+      "n": 1470,
+      "sdr_identity": 4.3030666309482495,
+      "sdr_aemix": -1.0951447537729555,
+      "sdr_wavsub": 5.803386225793384
+    },
+    "all": {
+      "sdr_sub": 5.244085442430653,
+      "sdr_ceil": 7.684392095070814,
+      "sdr_dd": 11.810738977658733,
+      "gap": 2.440306652640161,
+      "n": 5880,
+      "sdr_identity": 17.101588179983448,
+      "sdr_aemix": 1.6386512348862896,
+      "sdr_wavsub": 6.531983860218929
+    }
+  }
+}
