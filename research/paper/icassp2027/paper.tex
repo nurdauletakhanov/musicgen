@@ -30,9 +30,11 @@ nurdaulet.akhanov@mbzuai.ac.ae}}
 Mixing is a linear operation on waveforms, so a latent space that respects
 it, one in which interpolating two codes and decoding reproduces the
 waveform mix, is an \emph{equivariant} representation. Neural audio
-autoencoders do not learn this structure on their own, and prior work induces
-it only indirectly, through data augmentation. We ask which training signal is
-actually responsible for mixing-equivariance, and answer with a controlled
+autoencoders do not learn this structure on their own. Recent work induces it
+in a consistency autoencoder by decoding averaged latents against the true
+mix; we ask which part of such supervision is actually responsible, whether
+the decoder class limits what it delivers, and whether the metrics used to
+certify it measure it at all. We answer with a controlled
 study in which each experiment intervenes on a single factor while holding
 architecture, data, initialization, and schedule fixed. An explicit
 \emph{decode-mixing loss}, which requires decoded latent interpolations to
@@ -75,20 +77,24 @@ Eq.~\ref{eq:equiv}: their objectives reward reconstruction fidelity, not
 algebraic structure, and quantized codecs (DAC \cite{kumar2024dac},
 EnCodec \cite{defossez2023encodec}) cannot represent interpolated codes at all.
 
-Recent work pursues linearity through \emph{implicit} regularization:
-training on random mixes as data augmentation \cite{torres2026linearity}
-(related to mixup \cite{zhang2018mixup}). This leaves open \emph{which}
-training signal is responsible for the property, whether the encoder or the
-decoder must carry it, and whether the metrics used to certify it measure it
-at all. We answer these questions with a controlled study: an explicit loss
-(\secref{sec:method}) that compares decoded latent interpolations to true
-waveform mixes, whose effect we then isolate by intervening on one factor at a
+Torres et al.~\cite{torres2026linearity} induce linearity in a consistency
+autoencoder by decoding the \emph{average} of separately encoded latents and
+training it to reconstruct the true mix, a supervision principle related to
+mixup \cite{zhang2018mixup}. This leaves open which part of that supervision
+is responsible for the property, whether the encoder or the decoder must carry
+it, whether a consistency decoder can turn latent linearity into usable
+waveform arithmetic, and whether the metrics used to certify it measure it at
+all. We answer these questions with a controlled study: the same principle
+written as an explicit loss (\secref{sec:method}) on a waveform GAN
+autoencoder, whose effect we then isolate by intervening on one factor at a
 time. Our contributions are:
 \begin{enumerate}
-  \item An explicit decode-mixing loss that makes a waveform GAN autoencoder
-  mixing-equivariant \emph{without degrading reconstruction}
-  (\secref{sec:ablation}), enabling latent-arithmetic stem removal
-  (\secref{sec:downstream}).
+  \item A controlled study of mixed-latent supervision, instantiated as an
+  explicit decode-mixing loss on a waveform GAN autoencoder, where it yields
+  mixing-equivariance \emph{without degrading reconstruction}
+  (\secref{sec:ablation}) and phase-coherent latent-arithmetic stem removal
+  (\secref{sec:downstream}), which a consistency decoder does not deliver
+  \cite{torres2026linearity}.
   \item An interventional ablation isolating the mechanism: the decode-mixing
   loss is the active ingredient; an adversarial term on the mixed path
   inflates a decode-consistency metric with no ground-truth gain, exposing the
@@ -125,11 +131,23 @@ a property to be \emph{induced} by supervision, and isolate by intervention
 which supervision induces it.
 \textbf{Linear audio representations.} Music2Latent \cite{pasini2024music2latent}
 is a consistency autoencoder with partial linearity as a byproduct.
-Torres et al.~\cite{torres2026linearity} improve linearity on it via data
-augmentation. We differ by (i) using an explicit, controllable loss,
-(ii) isolating which training signal actually drives the property, and
-(iii) reporting a ground-truth-referenced metric in place of the
-phase-confounded decode-vs-decode one.
+Torres et al.~\cite{torres2026linearity} make it approximately linear by
+conditioning the decoder on the average of separately encoded latents while
+denoising the true mix under the unchanged consistency loss (plus a random
+gain for homogeneity, which we do not study). Our $\Ldec$ is the explicit-loss
+form of that additivity supervision: the same input (averaged latents) and
+target (true mix), differing in loss family (multi-resolution STFT and mel
+versus consistency), mixing coefficient ($\alpha\sim U[0,1]$ versus $0.5$),
+and decoder class (deterministic GAN versus consistency model). What we add is
+not the principle but its analysis: which ingredient carries the effect, a
+matched re-run of the principle on their architecture with a
+continued-training control (\secref{sec:general}), and ground-truth-referenced
+metrics. Their decoder-additivity and separation scores compare two decodes
+(decoded latent sum versus the \emph{autoencoded} mix or source), the
+protocol \secref{sec:metrics} shows to be confounded, and their
+latent-arithmetic separation is negative on every stem ($-0.3$ to $-1.8$\,dB
+SI-SDR), which is what our phase-coherence finding predicts for a consistency
+decoder.
 
 \section{Method}\label{sec:method}
 
@@ -292,9 +310,12 @@ and encoder linearity ($\ell_\mathrm{lat}$ $0.078\!\to\!0.057$). Because v3.0 is
 a matched control (same architecture, compression, and schedule, mixing
 disabled), this isolates the loss's contribution and shows the effect is not
 an artifact of the looser $7.66\times$ rate or of warm-starting. \textbf{Architecture:} we fine-tune the published
-Music2Latent \cite{pasini2024music2latent} consistency autoencoder with a
-decode-mixing objective (its native consistency loss applied to the mixed pair
-substitutes for the discriminator). A continued-training control, the same
+Music2Latent \cite{pasini2024music2latent} consistency autoencoder with the
+decode-mixing objective, the additivity supervision of
+\cite{torres2026linearity} on its own architecture, using its native
+consistency loss on the mixed pair in place of the discriminator; this is the
+matched comparison in which only the decoder class differs from the GAN
+autoencoder. A continued-training control, the same
 fine-tune with the mixing terms disabled, moves equivariance by
 $<0.2$\,dB and \emph{worsens} FAD, so the mixing model's gain is attributable
 to the loss, not to domain adaptation. Both decode-vs-decode and ground-truth
