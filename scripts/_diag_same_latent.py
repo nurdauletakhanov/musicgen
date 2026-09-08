@@ -10,7 +10,11 @@ property of the stochastic decoder, independent of any latent operation.
 
 Reports, on the same MUSDB chunks:
   same_latent_indep   SI-SDR(g_1(z), g_2(z)), independent noise, same z
-  same_latent_shared  SI-SDR(g(z), g(z)), shared noise (sanity: identical)
+  same_latent_shared  SI-SDR(g(z), g(z)), shared noise. A sanity check only:
+                      the decode is deterministic, so the two outputs are the
+                      same tensor and this diverges (float32 rounding puts it
+                      near +114 dB). Not a measurement; report it as
+                      "deterministic", never as a dB value.
   lin_shared / lin_indep   the Fig. 1 quantities on these chunks
 
 Usage:

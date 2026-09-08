@@ -180,9 +180,10 @@ a decoder driven onto a common realistic manifold raises the
 mutual SI-SDR of its two decode paths without bringing either closer to
 $\bar{x}$ (\secref{sec:ablation}). It is also confounded for stochastic
 decoders: a consistency-model decoder \cite{pasini2024music2latent} draws fresh
-noise per call. Decoding the \emph{same} latent twice, with no latent operation
-at all, scores $-1.8$\,dB under independent noise and $+114$\,dB under shared
-noise, so the decoder's sampling alone accounts for most of the collapse. \figref{fig:protocol}
+noise per call. Decoding the \emph{same} latent twice is deterministic under
+shared noise but scores $-1.8$\,dB under independent noise, with no latent
+operation at all, so the decoder's sampling alone accounts for most of the
+collapse. \figref{fig:protocol}
 shows the same Music2Latent checkpoints scoring $\approx{-}8$\,dB under
 independent-noise decoding (the protocol implied by prior reports) and
 \emph{positive} under shared-noise decoding, a $12$\,dB swing driven by the
