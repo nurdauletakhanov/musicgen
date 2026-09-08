@@ -40,17 +40,21 @@ architecture, data, initialization, and schedule fixed. An explicit
 \emph{decode-mixing loss}, which requires decoded latent interpolations to
 match true waveform mixes, at the cost of one extra decoder pass, is
 sufficient: on a waveform GAN autoencoder it makes the latent space
-mixing-equivariant \emph{at no measured reconstruction cost}, and latent subtraction
-removes a stem at $+5.7$\,dB SI-SDR versus $+3.4$\,dB without it. At $2\times$
-tighter compression, against a matched from-scratch control, the loss is what
-makes the operation viable at all ($+1.2\!\to\!+5.2$\,dB), on every test
-track. All comparisons are single-run, matched at one initialization. The interventions
+mixing-equivariant \emph{at no measured reconstruction cost}, and at $2\times$ tighter compression the
+same holds against a matched from-scratch control. Raw latent subtraction of a
+stem improves from $+3.4$ to $+5.7$\,dB SI-SDR with the loss, but this
+advantage is a latent-offset effect: adding the encoded silence $f(0)$, exact
+for affine maps, brings every model, with or without the loss, to within
+$0.5$\,dB of its reconstruction ceiling on all 49 test tracks. What the loss
+buys is convex equivariance; subtraction needs only the origin.
+All comparisons are single-run, matched at one initialization. The interventions
 also identify what is \emph{not} responsible: an adversarial term on the mixed
 path inflates a decode-consistency metric without improving ground-truth
 equivariance, exposing that metric as a confounded proxy; an encoder-only
 penalty linearizes the encoder without making the decoder equivariant; and on
 a consistency-model autoencoder (Music2Latent) a continued-training control
-rules out domain adaptation. Finally, the widely used decode-vs-decode
+shows the loss improves latent geometry, although absolute waveform arithmetic
+stays poor there: the decoder class sets what linearity can deliver. Finally, the widely used decode-vs-decode
 linearity metric is shown to be confounded by decoder phase variance, and a
 ground-truth-referenced variant is reported throughout.
 \end{abstract}
@@ -97,9 +101,9 @@ time. Our contributions are:
   \item A controlled study of mixed-latent supervision, instantiated as an
   explicit decode-mixing loss on a waveform GAN autoencoder, where it yields
   mixing-equivariance \emph{without degrading reconstruction}
-  (\secref{sec:ablation}) and phase-coherent latent-arithmetic stem removal
-  (\secref{sec:downstream}), which a consistency decoder does not deliver
-  \cite{torres2026linearity}.
+  (\secref{sec:ablation}); a downstream analysis shows latent stem removal is
+  limited by the latent origin rather than by the loss: adding $f(0)$ brings
+  every model to its reconstruction ceiling (\secref{sec:downstream}).
   \item An interventional ablation isolating the mechanism: the decode-mixing
   loss alone is sufficient; adding an adversarial term on the mixed path
   inflates a decode-consistency metric with no ground-truth gain, exposing the
@@ -108,10 +112,10 @@ time. Our contributions are:
   most of the gain, so the effect is carried through the decoder and is
   largest when both networks adapt.
   \item Evidence that the recipe generalizes, each against a matched control:
-  from-scratch training at $2\times$ tighter compression, where the loss is
-  what makes latent subtraction viable at all, and transfer to a
-  consistency-model autoencoder with a continued-training control ruling out
-  domain adaptation. The gain holds on all three test domains.
+  from-scratch training at $2\times$ tighter compression, and a matched re-run
+  on a consistency-model autoencoder with a continued-training control ruling
+  out domain adaptation, where latent geometry improves but waveform-level
+  arithmetic does not become usable. The gain holds on all three test domains.
   \item A methodological correction: the widely used decode-vs-decode
   SI-SDR$_\mathrm{lin}$ metric is confounded by decoder phase variance; we
   report a ground-truth-referenced variant.
@@ -382,49 +386,17 @@ preserved by the mixing loss.
 \subsection{Downstream: latent-arithmetic stem removal}\label{sec:downstream}
 We remove a stem by latent subtraction,
 $\hat{x}=g(f(x_\mathrm{mix})-f(x_\mathrm{stem}))$, and measure SI-SDR against
-the true residual on the MUSDB18 test set. This tests \emph{extrapolation}
-beyond the convex range $\alpha\in[0,1]$ seen in training and beyond what
-Eq.~\ref{eq:equiv} guarantees (\secref{sec:intro}); we therefore also report
-the origin-corrected variant $g(f(x_\mathrm{mix}){-}f(x_\mathrm{stem}){+}f(0))$,
-exact for affine $f,g$, to test whether a latent offset contributes to the
-error. Alongside the
-subtraction score we report the \emph{linearity tax}
+the true residual on the MUSDB18 test set. This is an \emph{oracle} setting:
+the removed stem is available and encoded, so it tests the representation's
+arithmetic, not blind separation; its use is latent-domain editing when stem
+codes exist, as in a pipeline that stores compressed stems or a latent
+generative model that composes sources without decoding each. Subtraction
+uses coefficients $(1,-1)$, which Eq.~\ref{eq:equiv} does not cover
+(\secref{sec:intro}), so we report raw subtraction and the origin-corrected
+form $g(f(x_\mathrm{mix})-f(x_\mathrm{stem})+f(0))$, exact for affine $f,g$.
+We also report the \emph{linearity tax}
 $\mathrm{gap}=\mathrm{SISDR}(g(f(x_\mathrm{res})),x_\mathrm{res})-\mathrm{SISDR}(\hat{x},x_\mathrm{res})$,
-the shortfall of latent arithmetic against the same model's own encode--decode
-ceiling on the residual. The gap normalizes away raw reconstruction quality
-and so compares models at different compression rates on equal terms.
-
-\tabref{tab:subtraction} shows the mixing loss roughly doubles usable
-subtraction quality at $7.66\times$ ($+3.4\!\to\!+5.7$\,dB overall) and cuts
-the linearity tax from $5.2$ to $3.0$\,dB, with the largest gain on bass
-($+0.4\!\to\!+4.9$\,dB). Adding disc-on-mix is comparable rather than better
-($+6.0$\,dB, tax $2.6$), consistent with \secref{sec:ablation}.
-
-\textbf{How much of this is measurement noise?} Every model is scored on the
-same $5{,}880$ (track, stem, chunk) units from $49$ tracks, so we compare
-models pairwise on identical units. Because units from one recording are
-correlated, the resampling unit is the \emph{track}: a paired cluster bootstrap
-draws the $49$ tracks with replacement ($10^4$ resamples) and recomputes the
-mean paired difference. The gains sit far outside this evaluation variance:
-$\Ldec$ over the no-mixing control is $+2.33$\,dB (95\% CI $[+2.11,+2.54]$)
-and at $15.3\times$ the matched-control gain is $+4.02$\,dB
-($[+3.71,+4.34]$); each improves \emph{all 49 tracks}. Disc-on-mix beats
-$\Ldec$ alone by only $+0.31$\,dB ($[+0.27,+0.36]$) here while scoring
-$0.36$\,dB \emph{lower} on ground-truth equivariance (\tabref{tab:ablation}):
-the two differ little, and in opposite directions depending on the metric.
-Resampling units instead of tracks gives intervals about three times narrower;
-we report the track-level ones. They cover evaluation variance at the tested
-initialization, not variation across training runs.
-
-The effect is
-starkest against the matched from-scratch control at $15.3\times$: without the
-mixing loss, latent subtraction is essentially unusable ($+1.2$\,dB overall,
-and $-1.6$\,dB on bass, worse than emitting the unmodified mixture), while
-the same architecture trained with it reaches $+5.2$\,dB and the \emph{lowest}
-tax of any model ($2.5$\,dB). The two settings differ in training history as
-well as compression (from scratch versus fine-tuned), so our design does not
-separate which of the two makes the control's arithmetic fail; what each
-matched pair isolates is that the loss restores it.
+the shortfall against the model's own encode--decode ceiling.
 
 \begin{table}[t]
   \centering\small
@@ -432,10 +404,34 @@ matched pair isolates is that the loss restores it.
   \input{tables/subtraction.tex}
   \caption{Stem removal via latent subtraction (SI-SDR, dB; MUSDB18 test).
   Higher is better; ``gap'' is the linearity tax against each model's own
-  encode--decode ceiling (lower is better). Paired bootstrap CIs for the
-  matched contrasts are in the text.}
+  encode--decode ceiling (lower is better). ``$+f(0)$'' rows add the encoded
+  silence to the subtracted latent (origin correction).}
   \label{tab:subtraction}
 \end{table}
+
+\textbf{Raw subtraction favours the mixing loss; origin correction removes the
+difference.} Raw, $\Ldec$ roughly doubles subtraction quality at $7.66\times$
+($+3.4\!\to\!+5.7$\,dB) and the matched $15.3\times$ pair goes from $+1.2$ to
+$+5.2$\,dB. Adding $f(0)$, one encode of silence, lifts \emph{every} model to
+within $0.5$\,dB of its ceiling (\tabref{tab:subtraction}): $+2.0$ to
+$+6.0$\,dB per model, on all 49 tracks. With the origin corrected the loss no
+longer helps subtraction: $\Ldec$ versus no mixing is $-0.03$\,dB (95\%
+track-cluster CI $[-0.15,+0.11]$) and the $15.3\times$ pair $+0.01$\,dB
+($[-0.19,+0.21]$). The raw advantage was the no-mixing models' larger latent
+offset ($\lVert f(0)\rVert$ $6.6$ versus $5.4$ at $7.66\times$, $18.1$ versus
+$14.8$ at $15.3\times$), which coefficient-sum-zero arithmetic pays for. What
+the loss buys is convex equivariance (Tables~\ref{tab:ablation}
+and~\ref{tab:persource}); subtraction needs the origin, a free post-hoc fix.
+
+\textbf{How much of this is measurement noise?} Units from one recording are
+correlated, so the resampling unit is the track: a paired cluster bootstrap
+draws the 49 tracks with replacement ($10^4$ resamples). Raw contrasts sit far
+outside evaluation variance ($\Ldec$: $+2.33$\,dB $[+2.11,+2.54]$;
+$15.3\times$: $+4.02$\,dB $[+3.71,+4.34]$; all 49 tracks), and the corrected
+contrasts are indistinguishable from zero, as above. Unit-level resampling
+gives intervals about three times narrower; we report track-level ones. They
+cover evaluation variance at the tested initialization, not variation across
+training runs.
 
 \subsection{Equivariance across mixing ratios}\label{sec:alpha}
 Sweeping $\alpha$ on a source-balanced subsample (\figref{fig:alpha}), the
@@ -463,10 +459,14 @@ property of that metric, distinct from the phase-variance confound discussed in
 \section{Conclusion}\label{sec:conclusion}
 A controlled study identifies an explicit decode-mixing loss as the training
 signal responsible for mixing-equivariance in a waveform autoencoder, obtained
-at no reconstruction cost and enabling latent-arithmetic audio editing. The
+at no measured reconstruction cost. The
 loss itself, not an adversarial term on the mixed path, is the active
-ingredient, and the effect transfers across compression rates and to a
-consistency-model autoencoder under a continued-training control.
+ingredient for convex equivariance, and the effect transfers across
+compression rates. Raw stem subtraction is governed by the latent offset, which
+one encode of silence removes for every model, with or without the loss. On a
+consistency-model autoencoder the loss improves latent geometry under a
+continued-training control without yielding usable waveform arithmetic, so
+practical claims are confined to the deterministic GAN decoder.
 \textbf{Limitations.} Every comparison is matched at a single initialization;
 this identifies the effect of each factor at that initialization but not its
 variation across training runs. Our confidence intervals cover evaluation

@@ -67,7 +67,11 @@
     &middot; <a href="https://github.com/nurdauletakhanov/musicgen">code &amp; paper</a>.
     Each example removes one stem from a MUSDB18 test mixture entirely in
     latent space: <code>g(f(mix) − f(stem))</code>. No separation model is
-    involved — only the autoencoder’s latent arithmetic.
+    involved — only the autoencoder’s latent arithmetic. <strong>Note:</strong> these clips use
+    <em>raw</em> subtraction <code>g(f(mix) − f(stem))</code>; the paper additionally reports
+    the origin-corrected form <code>g(f(mix) − f(stem) + f(0))</code>, which brings every model,
+    with or without the mixing loss, to within ~0.5 dB of its reconstruction ceiling. The
+    differences you hear here are largely a latent-offset effect.
   </p>
   <p id="status">Loading examples…</p>
   <div id="examples"></div>

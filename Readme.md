@@ -44,9 +44,17 @@ Downstream — **stem removal by latent subtraction** (MUSDB18 test, SI-SDR dB):
 | 15.3× no mix | +1.2 | −1.6 | +3.0 | +2.1 | +1.2 |
 | 15.3× +mix | +5.4 | +4.7 | +6.9 | +3.9 | **+5.2** |
 
-At 15.3× compression the no-mixing control is *unusable* for latent subtraction
-(−1.6 dB on bass — worse than passing the mixture through untouched). The loss
-is what makes the operation viable, not merely better.
+**Update (Sep 2026, after review):** the subtraction advantage above is a
+*latent-offset* effect, not a property of the loss. Subtraction uses
+coefficients (1, −1), which mixing-equivariance (coefficient sum 1) does not
+cover, so an affine offset in the latent map survives it. Adding the encoded
+silence f(0) — `g(f(mix) − f(stem) + f(0))`, exact for affine maps — lifts
+**every** model to within ~0.5 dB of its own reconstruction ceiling (all
+≈ +8.3 dB at 7.66×, ≈ +7.3 dB at 15.3×, on all 49 test tracks), and the
+mixing-loss advantage on subtraction vanishes (−0.03 dB [−0.15, +0.11]). The
+loss's demonstrated effect is on *convex* mixing (the tables above); stem
+subtraction needs the origin, which is a free post-hoc fix
+(`python -m evaluation.compute_subtraction --origin-correct`).
 
 **Listen:** [audio examples](https://nurdauletakhanov.github.io/musicgen/) —
 stem removal on MUSDB18 test mixtures, all four models side by side.
