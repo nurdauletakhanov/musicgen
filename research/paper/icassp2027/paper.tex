@@ -139,16 +139,15 @@ gain for homogeneity, which we do not study). Our $\Ldec$ is the explicit-loss
 form of that additivity supervision: the same input (averaged latents) and
 target (true mix), differing in loss family (multi-resolution STFT and mel
 versus consistency), mixing coefficient ($\alpha\sim U[0,1]$ versus $0.5$),
-and decoder class (deterministic GAN versus consistency model). What we add is
-not the principle but its analysis: which ingredient carries the effect, a
+and decoder class (deterministic GAN versus consistency model). We add the
+analysis: which ingredient carries the effect, a
 matched re-run of the principle on their architecture with a
 continued-training control (\secref{sec:general}), and ground-truth-referenced
 metrics. Their decoder-additivity and separation scores compare two decodes
 (decoded latent sum versus the \emph{autoencoded} mix or source), the
 protocol \secref{sec:metrics} shows to be confounded, and their
 latent-arithmetic separation is negative on every stem ($-0.3$ to $-1.8$\,dB
-SI-SDR), which is what our phase-coherence finding predicts for a consistency
-decoder.
+SI-SDR), as our phase-coherence finding predicts.
 
 \section{Method}\label{sec:method}
 
@@ -266,9 +265,8 @@ computed over the full multi-source test set; the $\alpha$-sweep
 (25k-step fine-tunes from a shared converged baseline). Each row differs from
 its comparator in exactly one factor: $\Ldec$ and $\Lenc$ against the
 baseline (the loss), $\Ldec{+}$disc against $\Ldec$ (the adversarial term),
-and frozen-encoder $\Ldec$ against $\Ldec$ (the encoder's freedom to adapt).
-Conclusions below are conditional on those comparators; the design is not a
-full factorial. Three observations drive the rest of the paper.
+and frozen-encoder $\Ldec$ against $\Ldec$ (the encoder's freedom to adapt);
+the design is not a full factorial. Three observations drive the paper.
 
 \begin{table}[t]
   \centering\small
@@ -304,8 +302,8 @@ variant $\Lenc$ drives $\ell_\mathrm{lat}$ lowest but leaves MixRate high
 equivariant. Conversely, training only the decoder under $\Ldec$ with the
 encoder frozen retains most of the gain ($9.5$\,dB versus $10.2$ joint and
 $8.0$ baseline) while leaving encoder linearity unimproved
-($\ell_\mathrm{lat}$ $0.072$). Joint training performs best among the tested
-configurations; the decoder alone recovers most of the effect.
+($\ell_\mathrm{lat}$ $0.072$). Joint training is best among the tested
+configurations.
 
 \subsection{Intervening on compression and architecture}\label{sec:general}
 \tabref{tab:crossarch} extends the recipe along two axes. \textbf{Compression:}
