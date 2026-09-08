@@ -350,7 +350,21 @@ and so compares models at different compression rates on equal terms.
 subtraction quality at $7.66\times$ ($+3.4\!\to\!+5.7$\,dB overall) and cuts
 the linearity tax from $5.2$ to $3.0$\,dB, with the largest gain on bass
 ($+0.4\!\to\!+4.9$\,dB). Adding disc-on-mix is comparable rather than better
-($+6.0$\,dB, tax $2.6$), consistent with \secref{sec:ablation}. The effect is
+($+6.0$\,dB, tax $2.6$), consistent with \secref{sec:ablation}.
+
+\textbf{How much of this is measurement noise?} Every model is scored on the
+same $5{,}880$ (track, stem, chunk) units, so we compare them pairwise and
+bootstrap the mean difference ($10^4$ resamples). The gains sit far outside
+evaluation variance: $\Ldec$ over the no-mixing control is $+2.33$\,dB
+(95\% CI $[+2.26,+2.39]$, improving $77\%$ of units), and at $15.3\times$ the
+matched-control gain is $+4.02$\,dB ($[+3.93,+4.11]$, $90\%$ of units).
+Disc-on-mix beats $\Ldec$ alone by only $+0.31$\,dB ($[+0.29,+0.33]$) here
+while scoring $0.36$\,dB \emph{lower} on ground-truth equivariance
+(\tabref{tab:ablation}): the two differ little, and in opposite directions
+depending on the metric. These intervals cover evaluation variance only, not
+variation across training seeds.
+
+The effect is
 starkest against the matched from-scratch control at $15.3\times$: without the
 mixing loss, latent subtraction is essentially unusable ($+1.2$\,dB overall,
 and $-1.6$\,dB on bass, worse than emitting the unmodified mixture), while
@@ -365,7 +379,8 @@ outright, and the loss is what restores it.
   \input{tables/subtraction.tex}
   \caption{Stem removal via latent subtraction (SI-SDR, dB; MUSDB18 test).
   Higher is better; ``gap'' is the linearity tax against each model's own
-  encode--decode ceiling (lower is better).}
+  encode--decode ceiling (lower is better). Paired bootstrap CIs for the
+  matched contrasts are in the text.}
   \label{tab:subtraction}
 \end{table}
 
@@ -399,9 +414,10 @@ at no reconstruction cost and enabling latent-arithmetic audio editing. The
 loss itself, not an adversarial term on the mixed path, is the active
 ingredient, and the effect transfers across compression rates and to a
 consistency-model autoencoder under a continued-training control.
-\textbf{Limitations.} All results use a single training seed; small
-differences (e.g.\ $\Ldec$ vs.\ $\Ldec{+}$disc) are within plausible seed
-variance, and we report them as ``comparable.'' Experiments are mono;
+\textbf{Limitations.} All results use a single training seed. Our confidence
+intervals cover evaluation variance, not variation across initializations, so
+small differences (e.g.\ $\Ldec$ vs.\ $\Ldec{+}$disc, $0.31$\,dB) remain
+within plausible seed variance and we report them as ``comparable.'' Experiments are mono;
 consistency-decoder latent arithmetic remains phase-limited; and we conduct no
 listening test. Stereo, multi-seed estimates, and latent-diffusion composition
 are future work.
