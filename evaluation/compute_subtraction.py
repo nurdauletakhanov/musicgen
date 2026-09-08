@@ -143,7 +143,7 @@ def _process_track(model, stems: Dict[str, np.ndarray], chunk_starts: List[int],
     x_stem_all = {st: torch.from_numpy(stem_arr[st]).to(device)
                   for st in STEMS}
 
-    out = {st: {"sub": [], "ceil": [], "dd": []} for st in STEMS}
+    out = {st: {"sub": [], "ceil": [], "dd": [], "identity": [], "aemix": [], "wavsub": []} for st in STEMS}
 
     for st in STEMS:
         for i in range(0, n, batch_size):
@@ -171,14 +171,26 @@ def _process_track(model, stems: Dict[str, np.ndarray], chunk_starts: List[int],
             x_ceil, _ = model.decoder(z_tg)
             x_ceil = x_ceil.squeeze(1)
 
+            # Comparators (no latent arithmetic):
+            #   identity: return the unchanged mixture              xm
+            #   aemix:    autoencode the mixture, do nothing        g(f(xm))
+            #   wavsub:   decode both, subtract in the waveform     g(f(xm)) - g(f(xs))
+            torch.manual_seed(seed)
+            x_mixdec, _ = model.decoder(z_full); x_mixdec = x_mixdec.squeeze(1)
+            torch.manual_seed(seed)
+            x_stemdec, _ = model.decoder(z_stem); x_stemdec = x_stemdec.squeeze(1)
+
             # Crop to shortest length (M2L decoder is 42496; v2 is 44100)
-            L = min(x_sub.size(1), tg.size(1), x_ceil.size(1))
+            L = min(x_sub.size(1), tg.size(1), x_ceil.size(1), x_mixdec.size(1), x_stemdec.size(1))
             sub_sdr = _si_sdr_batch(x_sub[:, :L], tg[:, :L]).cpu().tolist()
             ceil_sdr = _si_sdr_batch(x_ceil[:, :L], tg[:, :L]).cpu().tolist()
             dd_sdr = _si_sdr_batch(x_sub[:, :L], x_ceil[:, :L]).cpu().tolist()
             out[st]["sub"].extend(sub_sdr)
             out[st]["ceil"].extend(ceil_sdr)
             out[st]["dd"].extend(dd_sdr)
+            out[st]["identity"].extend(_si_sdr_batch(xm[:, :L], tg[:, :L]).cpu().tolist())
+            out[st]["aemix"].extend(_si_sdr_batch(x_mixdec[:, :L], tg[:, :L]).cpu().tolist())
+            out[st]["wavsub"].extend(_si_sdr_batch((x_mixdec - x_stemdec)[:, :L], tg[:, :L]).cpu().tolist())
 
     return out
 
@@ -208,7 +220,7 @@ def run_eval(model, musdb_dir: str, chunks_per_track: int, batch_size: int,
         tracks = tracks[:max_tracks]
     print(f"eval over {len(tracks)} tracks under {root}")
 
-    aggregates = {st: {"sub": [], "ceil": [], "dd": []} for st in STEMS}
+    aggregates = {st: {"sub": [], "ceil": [], "dd": [], "identity": [], "aemix": [], "wavsub": []} for st in STEMS}
     skipped: List[Dict] = []
     n_chunks_seen = 0
 
@@ -234,13 +246,18 @@ def run_eval(model, musdb_dir: str, chunks_per_track: int, batch_size: int,
             aggregates[st]["sub"].extend(per_stem[st]["sub"])
             aggregates[st]["ceil"].extend(per_stem[st]["ceil"])
             aggregates[st]["dd"].extend(per_stem[st]["dd"])
+            for k in ("identity", "aemix", "wavsub"):
+                aggregates[st][k].extend(per_stem[st][k])
             if per_chunk is not None:
                 for i, start in enumerate(chunk_starts):
                     per_chunk.append({
                         "track": t.name, "stem": st, "chunk": i, "start": int(start),
                         "sub": per_stem[st]["sub"][i],
                         "ceil": per_stem[st]["ceil"][i],
-                        "dd": per_stem[st]["dd"][i]})
+                        "dd": per_stem[st]["dd"][i],
+                        "identity": per_stem[st]["identity"][i],
+                        "aemix": per_stem[st]["aemix"][i],
+                        "wavsub": per_stem[st]["wavsub"][i]})
         n_chunks_seen += len(chunk_starts)
         # Free track audio before next
         del stems
@@ -262,6 +279,9 @@ def run_eval(model, musdb_dir: str, chunks_per_track: int, batch_size: int,
             "sdr_dd": float(np.mean(dd_vals)),
             "gap": s_ceil - s_sub,
             "n": len(sub_vals),
+            "sdr_identity": float(np.mean(aggregates[st]["identity"])),
+            "sdr_aemix": float(np.mean(aggregates[st]["aemix"])),
+            "sdr_wavsub": float(np.mean(aggregates[st]["wavsub"])),
         }
 
     all_sub = [v for st in STEMS for v in aggregates[st]["sub"]]
@@ -276,6 +296,9 @@ def run_eval(model, musdb_dir: str, chunks_per_track: int, batch_size: int,
             "sdr_dd": float(np.mean(all_dd)),
             "gap": a_ceil - a_sub,
             "n": len(all_sub),
+            "sdr_identity": float(np.mean([v for st in STEMS for v in aggregates[st]["identity"]])),
+            "sdr_aemix": float(np.mean([v for st in STEMS for v in aggregates[st]["aemix"]])),
+            "sdr_wavsub": float(np.mean([v for st in STEMS for v in aggregates[st]["wavsub"]])),
         }
     else:
         summary["all"] = {"sdr_sub": 0.0, "sdr_ceil": 0.0, "sdr_dd": 0.0,
@@ -287,12 +310,14 @@ def run_eval(model, musdb_dir: str, chunks_per_track: int, batch_size: int,
 def print_summary(summary: Dict, n_seen: int, skipped: List[Dict]):
     print(f"\n=== subtraction summary (n_chunks_seen={n_seen}, "
           f"{len(skipped)} tracks skipped) ===")
-    print(f"{'stem':9s}  {'sdr_sub':>10s}  {'sdr_ceil':>10s}  {'sdr_dd':>10s}  "
-          f"{'gap':>7s}  {'n':>6s}")
+    print(f"{'stem':9s}  {'sdr_sub':>8s}  {'ceil':>7s}  {'dd':>7s}  {'gap':>6s}  "
+          f"{'identity':>8s}  {'aemix':>7s}  {'wavsub':>7s}  {'n':>5s}")
     for st in STEMS + ["all"]:
         s = summary[st]
-        print(f"{st:9s}  {s['sdr_sub']:>+10.3f}  {s['sdr_ceil']:>+10.3f}  "
-              f"{s.get('sdr_dd', 0.0):>+10.3f}  {s['gap']:>+7.3f}  {s['n']:>6d}")
+        print(f"{st:9s}  {s['sdr_sub']:>+8.2f}  {s['sdr_ceil']:>+7.2f}  "
+              f"{s.get('sdr_dd', 0.0):>+7.2f}  {s['gap']:>+6.2f}  "
+              f"{s.get('sdr_identity', float('nan')):>+8.2f}  {s.get('sdr_aemix', float('nan')):>+7.2f}  "
+              f"{s.get('sdr_wavsub', float('nan')):>+7.2f}  {s['n']:>5d}")
 
 
 def main():

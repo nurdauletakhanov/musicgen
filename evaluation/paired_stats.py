@@ -53,6 +53,14 @@ CONTRASTS = [
               "v3.0-baseline-d64", "v3.1-decmix-disc-d64")
 ]
 KEY = "sub"          # metric of record: latent subtraction vs ground truth
+
+# Comparators recorded alongside "sub" in the same per-chunk files (when the
+# eval was run with the comparator code): latent subtraction vs ...
+COMPARATOR_CONTRASTS = [
+    ("wavsub", "latent subtraction vs decode-then-subtract g(f(mix))-g(f(stem))"),
+    ("aemix", "latent subtraction vs autoencoded unchanged mixture g(f(mix))"),
+    ("identity", "latent subtraction vs unchanged raw mixture"),
+]
 N_BOOT = 10000
 SEED = 0
 
@@ -144,6 +152,26 @@ def main():
         star = "*" if (clo > 0 or chi < 0) else " "
         print(f"  {star} {label:34s} {m:+.2f} dB  track-CI [{clo:+.2f}, {chi:+.2f}] "
               f"(unit-CI [{lo:+.2f}, {hi:+.2f}])  {win*100:.0f}% units, {tw*100:.0f}% of {nt} tracks improved")
+
+    print("\ncomparators (same units; positive = latent subtraction better):")
+    out["comparators"] = {}
+    for name, recs in sorted(models.items()):
+        keys = sorted(recs)
+        if not keys or "wavsub" not in recs[keys[0]]:
+            continue
+        tracks = [k[0] for k in keys]
+        for field, label in COMPARATOR_CONTRASTS:
+            diff = np.array([recs[k][KEY] - recs[k][field] for k in keys])
+            m, lo, hi = ci(diff, rng, a.n_boot)
+            _, clo, chi, nt = cluster_ci(diff, tracks, rng, a.n_boot)
+            base = float(np.mean([recs[k][field] for k in keys]))
+            out["comparators"][f"{name}__{field}"] = {
+                "label": label, "model": name, "comparator": field,
+                "comparator_mean": base, "mean_diff": m,
+                "track_lo": clo, "track_hi": chi, "unit_lo": lo, "unit_hi": hi,
+                "n_pairs": len(keys), "n_tracks": nt}
+            star = "*" if (clo > 0 or chi < 0) else " "
+            print(f"  {star} {name:22s} vs {field:8s} (={base:+.2f} dB): {m:+.2f} dB  track-CI [{clo:+.2f}, {chi:+.2f}]")
 
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     json.dump(out, open(a.out, "w"), indent=2)
