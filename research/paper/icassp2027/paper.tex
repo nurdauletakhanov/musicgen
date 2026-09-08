@@ -4,8 +4,6 @@
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage{booktabs}
-\usepackage{tikz}
-\usetikzlibrary{positioning}
 \usepackage{cite}
 \usepackage{url}
 
@@ -41,9 +39,10 @@ adversarial term on the mixed path adds nothing beyond inflating a
 decode-consistency metric, exposing that metric as a confounded proxy; on a
 consistency-model autoencoder the loss improves latent geometry but not
 waveform arithmetic. Latent stem subtraction, in contrast, is governed by the
-latent origin, not the loss: adding the encoded silence $f(0)$ brings every
-evaluated GAN configuration to within $0.5$\,dB of its reconstruction ceiling
-in aggregate, removing the loss's mean subtraction advantage.
+latent origin, not the loss: adding the encoded silence $f(0)$ recovers the
+residual's own latent for an affine encoder, and brings every evaluated GAN
+configuration to within $0.5$\,dB of its reconstruction ceiling in aggregate,
+removing the loss's mean subtraction advantage.
 Comparisons are single-run, matched at one initialization.
 \end{abstract}
 
@@ -60,12 +59,16 @@ For an autoencoder with encoder $f$ and decoder $g$, we call the latent space
   g\!\left(\alpha f(x_1)+(1{-}\alpha)f(x_2)\right)\approx \alpha x_1+(1{-}\alpha)x_2 .
   \label{eq:equiv}
 \end{equation}
-Eq.~\ref{eq:equiv} constrains combinations whose coefficients sum to one.
-Latent \emph{subtraction}, $g(f(x_\mathrm{mix}){-}f(x_\mathrm{stem}))$, uses
-coefficients $(1,-1)$ and so is not implied by it: an offset $f(x)=x+b$,
-$g(z)=z-b$ satisfies Eq.~\ref{eq:equiv} exactly yet subtracts to
-$x_\mathrm{res}-b$. Subtraction additionally needs the latent map to have no
-offset, which we treat empirically (\secref{sec:downstream}). Where it holds,
+Eq.~\ref{eq:equiv} constrains combinations whose coefficients sum to one, so
+latent \emph{subtraction} $g(f(x_\mathrm{mix}){-}f(x_\mathrm{stem}))$, with
+coefficients $(1,-1)$, is not implied by it: an offset $f(x)=x+b$, $g(z)=z-b$
+satisfies Eq.~\ref{eq:equiv} exactly yet subtracts to $x_\mathrm{res}-b$. For
+an affine $f(x)=Ax+b$, adding the encoded silence restores the sum to one and
+$f(x_\mathrm{mix}){-}f(x_\mathrm{stem}){+}f(0)=f(x_\mathrm{res})$, so the decode
+is the model's own reconstruction of the residual, whatever the decoder;
+matching the residual waveform additionally requires exact reconstruction. How
+far real encoders depart from affine is empirical
+(\secref{sec:downstream}). Where it holds,
 latent arithmetic becomes audio editing without a dedicated separation or
 synthesis model, and it is a prerequisite for latent-diffusion systems
 \cite{liu2023audioldm,evans2024stable} that compose independently modeled
@@ -220,40 +223,6 @@ steps (v3.x). All runs use a single NVIDIA RTX~5090. Unless noted, metrics are
 computed over the full multi-source test set; the $\alpha$-sweep
 (\secref{sec:alpha}) uses a source-balanced subsample.
 
-\begin{figure}[t]
-  \centering
-  \resizebox{0.92\linewidth}{!}{%
-  \begin{tikzpicture}[
-    node distance=1.0cm and 1.2cm,
-    box/.style={draw, rounded corners, minimum height=0.6cm, minimum width=0.9cm, fill=#1},
-    box/.default=gray!10, arr/.style={-stealth, thick},
-    redarr/.style={-stealth, thick, red!70!black, dashed}]
-    \node (x1) {$x_i$};
-    \node[below=0.7cm of x1] (x2) {$x_j$};
-    \node[box, right=0.8cm of x1] (enc1) {$f$};
-    \node[box, right=0.8cm of x2] (enc2) {$f$};
-    \node[right=0.6cm of enc1] (z1) {$z_i$};
-    \node[right=0.6cm of enc2] (z2) {$z_j$};
-    \node[box=blue!10, right=1.1cm of z1, yshift=-0.35cm] (interp) {$\bar{z}=\alpha z_i{+}(1{-}\alpha)z_j$};
-    \node[box, right=1.1cm of interp] (dec) {$g$};
-    \node[right=0.6cm of dec] (out) {$g(\bar{z})$};
-    \node[box=green!10, below=1.2cm of interp] (target) {$\bar{x}=\alpha x_i{+}(1{-}\alpha)x_j$};
-    \node[box=red!10, right=0.8cm of target, yshift=0.35cm] (loss) {$\Ldec$};
-    \draw[arr] (x1) -- (enc1); \draw[arr] (x2) -- (enc2);
-    \draw[arr] (enc1) -- (z1); \draw[arr] (enc2) -- (z2);
-    \draw[arr] (z1) -- (interp); \draw[arr] (z2) -- (interp);
-    \draw[arr] (interp) -- (dec); \draw[arr] (dec) -- (out);
-    \draw[redarr] (out.south) -- (loss.north east);
-    \draw[redarr] (target.east) -- (loss.south west);
-    \draw[arr, gray] (x1.south) |- (target.west);
-    \draw[arr, gray] (x2.south) |- (target.west);
-  \end{tikzpicture}}
-  \caption{Decode-mixing loss: encode a pair, interpolate latents, decode, and
-  compare to the true waveform mix. Gradients (dashed) flow through the decoder
-  and back into the encoder via $\bar{z}$.}
-  \label{fig:method}
-\end{figure}
-
 \section{Results}\label{sec:results}
 
 \subsection{Which signal causes equivariance? An interventional ablation}\label{sec:ablation}
@@ -371,10 +340,10 @@ arithmetic, not blind separation; its use is latent-domain editing when stem
 codes exist, as in a pipeline that stores compressed stems or a latent
 generative model that composes sources without decoding each. Subtraction
 uses coefficients $(1,-1)$, which Eq.~\ref{eq:equiv} does not cover
-(\secref{sec:intro}), so we report raw subtraction and the origin-corrected
-form $g(f(x_\mathrm{mix})-f(x_\mathrm{stem})+f(0))$, exact for affine $f,g$.
-We also report the \emph{linearity tax}, the shortfall of $\hat{x}$ against the
-model's own encode--decode ceiling on the residual.
+(\secref{sec:intro}), so we also report the origin-corrected form
+$g(f(x_\mathrm{mix})-f(x_\mathrm{stem})+f(0))$, which for an affine encoder
+decodes exactly $f(x_\mathrm{res})$ (\secref{sec:intro}). We therefore report
+the \emph{linearity tax}, the shortfall against that encode--decode ceiling.
 
 \begin{table}[t]
   \centering\small
@@ -401,7 +370,9 @@ $[-0.15,+0.11]$), the $15.3\times$ pair $+0.01$ ($[-0.19,+0.21]$). The raw advan
 offset ($\lVert f(0)\rVert$ $6.6$ versus $5.4$ at $7.66\times$, $18.1$ versus
 $14.8$ at $15.3\times$), which coefficient-sum-zero arithmetic pays for. What
 the loss buys is convex equivariance (Tables~\ref{tab:ablation}
-and~\ref{tab:persource}), which the correction leaves intact.
+and~\ref{tab:persource}), which the correction leaves intact. The residual
+$0.4$--$0.5$\,dB is the encoder's departure from affinity; absolute quality
+stays bounded by reconstruction.
 
 \textbf{Baselines without latent arithmetic.} The unchanged mixture scores
 $+17.1$\,dB against the residual, above every autoencoder's ceiling, since the
@@ -437,16 +408,16 @@ only at the trained operating point.
 \end{figure}
 \section{Conclusion}\label{sec:conclusion}
 A controlled study identifies the decode-mixing loss, not an adversarial term
-on the mixed path, as the signal responsible for convex mixing-equivariance,
-at no measured reconstruction cost and across compression rates. Raw stem
-subtraction is instead governed by the latent offset, which one encode of
-silence removes for every evaluated GAN configuration. On a consistency-model autoencoder the loss
-improves latent geometry but not waveform arithmetic, so practical claims are
-confined to the GAN autoencoder we test.
-\textbf{Limitations.} Comparisons are matched at a single initialization, so
-they identify each factor's effect there but not its variation across runs;
-experiments are mono and we conduct no listening test. Stereo, multi-seed
-estimates, and latent-diffusion composition are future work.
+on the mixed path, as the signal responsible for convex mixing-equivariance, at
+no measured reconstruction cost and across compression rates. Raw stem
+subtraction is instead governed by the latent offset: one encode of silence
+recovers the residual's own latent and, for every evaluated GAN configuration,
+the model's reconstruction of it. On a consistency-model autoencoder the loss
+improves latent geometry but not waveform arithmetic.
+\textbf{Limitations.} Comparisons are matched at a single initialization,
+identifying each factor's effect there but not across runs; experiments are
+mono with no listening test. Stereo, multi-seed estimates, and latent-diffusion
+composition are future work.
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}
