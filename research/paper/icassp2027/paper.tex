@@ -336,7 +336,14 @@ established at $7.66\times$ (\tabref{tab:ablation}) and only for
 SDR$_\mathrm{rec}$ at $15.3\times$. Because v3.0 is
 a matched control (same architecture, compression, and schedule, mixing
 disabled), this isolates the loss's contribution and shows the effect is not
-an artifact of the looser $7.66\times$ rate or of warm-starting. \textbf{Architecture:} we fine-tune the published
+an artifact of the looser $7.66\times$ rate or of warm-starting.
+\textbf{Level preservation.} SI-SDR discards gain, so we also report the gain
+it fits (source-balanced subsample): the decoded mix comes out $1.6$\,dB too
+quiet for the no-mixing model but $0.9$\,dB for $\Ldec$, the same as each
+model's plain-reconstruction level error ($0.8$\,dB); at $15.3\times$,
+$1.8$ versus $1.0$\,dB against $0.9$. The loss thus restores level as well as
+shape, so Eq.~\ref{eq:equiv} holds beyond scale up to the decoder's own
+reconstruction bias. \textbf{Architecture:} we fine-tune the published
 Music2Latent \cite{pasini2024music2latent} consistency autoencoder with the
 decode-mixing objective, the additivity supervision of
 \cite{torres2026linearity} on its own architecture, using its native
