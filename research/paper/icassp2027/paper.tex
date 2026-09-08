@@ -150,7 +150,8 @@ and decoder class (deterministic GAN versus consistency model). We add the
 analysis: which ingredient carries the effect, a
 matched re-run of the principle on their architecture with a
 continued-training control (\secref{sec:general}), and ground-truth-referenced
-metrics. Their decoder-additivity and separation scores compare two decodes
+metrics. Their decoder-additivity scores (SNR, spectral distance) and
+separation SI-SDR compare two decodes
 (decoded latent sum versus the \emph{autoencoded} mix or source), the
 protocol \secref{sec:metrics} shows to be confounded, and their
 latent-arithmetic separation is negative on every stem ($-0.3$ to $-1.8$\,dB
@@ -187,14 +188,18 @@ two equivariance views at $\alpha{=}0.5$:
   model's \emph{own} reconstruction of the mix.
   \item \textbf{SI-SDR$_\mathrm{lin}^\mathrm{gt}$} (vs.\ ground truth):
   $\mathrm{SISDR}(g(\bar{z}),\bar{x})$, the quantity in
-  Eq.~\ref{eq:equiv}, comparable across models.
+  Eq.~\ref{eq:equiv} up to scale, comparable across models. SI-SDR fits a gain
+  before scoring, so it does not assess level preservation; we report the
+  fitted gain separately (\secref{sec:general}).
 \end{itemize}
 We also report $\ell_\mathrm{lat}=\lVert\bar{z}-f(\bar{x})\rVert^2/\lVert f(\bar{x})\rVert^2$
 (encoder linearity) and MixRate
 $=\mathcal{L}_\mathrm{recon}(g(\bar{z}),\bar{x})/\mathcal{L}_\mathrm{recon}(g(f(\bar{x})),\bar{x})$
 (decoder equivariance; $<1$ is better than the encode-then-decode path).
-SI-SDR$_\mathrm{lin}$ is the metric used by prior work, but it is
-\emph{gameable}: a decoder driven onto a common realistic manifold raises the
+SI-SDR$_\mathrm{lin}$ shares the decode-vs-decode structure of prior work's
+decoder-additivity metrics (SNR and spectral distance between two decodes
+\cite{torres2026linearity}), and it is \emph{gameable}: we hypothesize that
+a decoder driven onto a common realistic manifold raises the
 mutual SI-SDR of its two decode paths without bringing either closer to
 $\bar{x}$ (\secref{sec:ablation}). It is also confounded for stochastic
 decoders: a consistency-model decoder \cite{pasini2024music2latent} draws fresh
@@ -202,8 +207,10 @@ noise per call, so two decodes of the same latent differ in phase and
 SI-SDR$_\mathrm{lin}$ collapses unless the noise is shared. \figref{fig:protocol}
 shows the same Music2Latent checkpoints scoring $\approx{-}8$\,dB under
 independent-noise decoding (the protocol implied by prior reports) and
-\emph{positive} under shared-noise decoding, a $12$\,dB swing driven purely by
-the eval protocol, not the model. We therefore treat
+\emph{positive} under shared-noise decoding, a $12$\,dB swing driven by the
+eval protocol rather than the model. This shows protocol sensitivity; decoding
+the same latent twice with independent noise isolates how much of the
+disagreement arises without any latent arithmetic (\secref{sec:general}). We therefore treat
 SI-SDR$_\mathrm{lin}^\mathrm{gt}$ and MixRate as the equivariance metrics of
 record, and use shared decode noise everywhere.
 
@@ -213,7 +220,8 @@ record, and use shared decode noise everywhere.
   \caption{Decode-noise protocol confound (Music2Latent, MUSDB18,
   $\alpha{=}0.5$). The same checkpoints score deeply negative under
   independent-noise decoding and positive under shared-noise decoding; the
-  $\approx{-}8$\,dB figure is a phase artifact, not a linearity measurement.}
+  $\approx{-}8$\,dB figure reflects decoder noise, consistent with phase
+  variance, not latent linearity.}
   \label{fig:protocol}
 \end{figure}
 
@@ -297,7 +305,7 @@ MixRate $<1$ ($0.97$). Adding an adversarial term to the mixed path
 (``+disc-on-mix'') does \emph{not} improve ground-truth equivariance
 ($9.9$\,dB, MixRate $1.05$), yet it dramatically inflates the decode-vs-decode
 SDR$_\mathrm{lin}$ ($12.1\!\to\!16.0$\,dB). The discriminator pulls the two
-decode paths onto a common realistic manifold, raising their mutual SI-SDR
+decode paths onto a common realistic manifold (our hypothesis), raising their mutual SI-SDR
 without moving either toward $\bar{x}$. This is direct evidence that
 SDR$_\mathrm{lin}$ is gameable, and that given $\Ldec$ no adversarial term is
 needed; whether the discriminator has an effect on its own, without $\Ldec$,
@@ -318,7 +326,10 @@ trained \emph{from scratch} at $15.3\times$ (v3.1), the mixing model matches its
 no-mixing control (v3.0) on reconstruction ($9.9$ vs.\ $10.0$\,dB) while
 improving ground-truth equivariance by $+1.7$\,dB
 (SDR$_\mathrm{lin}^\mathrm{gt}$ $6.8\!\to\!8.6$), MixRate ($1.19\!\to\!1.05$),
-and encoder linearity ($\ell_\mathrm{lat}$ $0.078\!\to\!0.057$). Because v3.0 is
+and encoder linearity ($\ell_\mathrm{lat}$ $0.078\!\to\!0.057$). FAD, however, rises from $0.052$ to $0.061$ (\tabref{tab:crossarch});
+whether that is perceptible is untested, so ``no quality cost'' is
+established at $7.66\times$ (\tabref{tab:ablation}) and only for
+SDR$_\mathrm{rec}$ at $15.3\times$. Because v3.0 is
 a matched control (same architecture, compression, and schedule, mixing
 disabled), this isolates the loss's contribution and shows the effect is not
 an artifact of the looser $7.66\times$ rate or of warm-starting. \textbf{Architecture:} we fine-tune the published
