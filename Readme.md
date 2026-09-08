@@ -48,13 +48,24 @@ Downstream — **stem removal by latent subtraction** (MUSDB18 test, SI-SDR dB):
 *latent-offset* effect, not a property of the loss. Subtraction uses
 coefficients (1, −1), which mixing-equivariance (coefficient sum 1) does not
 cover, so an affine offset in the latent map survives it. Adding the encoded
-silence f(0) — `g(f(mix) − f(stem) + f(0))`, exact for affine maps — lifts
-**every** model to within ~0.5 dB of its own reconstruction ceiling (all
-≈ +8.3 dB at 7.66×, ≈ +7.3 dB at 15.3×, on all 49 test tracks), and the
-mixing-loss advantage on subtraction vanishes (−0.03 dB [−0.15, +0.11]). The
-loss's demonstrated effect is on *convex* mixing (the tables above); stem
-subtraction needs the origin, which is a free post-hoc fix
-(`python -m evaluation.compute_subtraction --origin-correct`).
+silence f(0) restores it. For an **affine** encoder f(x) = Ax + b the identity
+is exact:
+
+```
+f(mix) − f(stem) + f(0) = f(res)
+```
+
+so the corrected decode is the model's own reconstruction of the residual, for
+any decoder; matching the residual waveform additionally needs exact
+reconstruction. Empirically this lifts **every evaluated GAN configuration** to
+within 0.4–0.5 dB of its ceiling in aggregate (≈ +8.3 dB at 7.66×, ≈ +7.3 dB at
+15.3×; per track the tail is wider — worst 2.2 dB, 29–32 of 49 tracks within
+0.5 dB), and the mixing-loss advantage on subtraction vanishes
+(−0.03 dB, 95% track-cluster CI [−0.15, +0.11]).
+
+**So: the loss's demonstrated effect is on _convex_ mixing (the tables above).
+Stem subtraction is governed by the latent origin, not by the loss.** Reproduce
+with `python -m evaluation.compute_subtraction --origin-correct`.
 
 **Listen:** [audio examples](https://nurdauletakhanov.github.io/musicgen/) —
 stem removal on MUSDB18 test mixtures, all four models side by side.
@@ -63,14 +74,18 @@ Example selection is deterministic and independent of model outputs
 
 Two findings worth flagging for anyone building on this:
 
-- **The decode-mixing loss is the active ingredient.** Adding a discriminator on
-  the mixed path inflates the decode-vs-decode metric (12.1 → 16.0 dB) while
-  giving *no* ground-truth gain. No adversarial machinery is required.
+- **The decode-mixing loss is the active ingredient** for convex mixing. Adding
+  a discriminator on the mixed path inflates the decode-vs-decode metric
+  (12.1 → 16.0 dB) while giving *no* ground-truth gain. (Whether the
+  discriminator does anything on its own, without the loss, is untested.)
 - **The commonly used decode-vs-decode SI-SDR_lin is confounded** by decoder
   phase variance. On a consistency-model decoder the same checkpoint scores
   ≈ −8 dB or *positive* depending purely on whether decode noise is shared.
-  Report the ground-truth-referenced variant. See
-  [`scripts/_diag_old_vs_new_eval.py`](scripts/_diag_old_vs_new_eval.py).
+  Report the ground-truth-referenced variant. Decoding the *same* latent twice —
+  no latent arithmetic at all — already scores −1.8 dB under independent noise,
+  so the decoder's own sampling accounts for most of the collapse. See
+  [`scripts/_diag_old_vs_new_eval.py`](scripts/_diag_old_vs_new_eval.py) and
+  [`scripts/_diag_same_latent.py`](scripts/_diag_same_latent.py).
 
 ---
 

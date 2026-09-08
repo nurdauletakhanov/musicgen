@@ -67,11 +67,17 @@
     &middot; <a href="https://github.com/nurdauletakhanov/musicgen">code &amp; paper</a>.
     Each example removes one stem from a MUSDB18 test mixture entirely in
     latent space: <code>g(f(mix) − f(stem))</code>. No separation model is
-    involved — only the autoencoder’s latent arithmetic. <strong>Note:</strong> these clips use
-    <em>raw</em> subtraction <code>g(f(mix) − f(stem))</code>; the paper additionally reports
-    the origin-corrected form <code>g(f(mix) − f(stem) + f(0))</code>, which brings every model,
-    with or without the mixing loss, to within ~0.5 dB of its reconstruction ceiling. The
-    differences you hear here are largely a latent-offset effect.
+    involved — only the autoencoder’s latent arithmetic.
+  </p>
+  <p class="sub" style="border-left:3px solid var(--bad); padding-left:12px">
+    <strong>Read this before listening.</strong> These clips use <em>raw</em> subtraction,
+    <code>g(f(mix) − f(stem))</code>. The paper’s later analysis shows the audible gap between
+    the models here is mostly a <em>latent-offset</em> artifact, not the mixing loss: subtraction
+    has coefficients (1, −1) summing to zero, so the encoder’s offset <code>f(0)</code> drops out.
+    Adding it back, <code>g(f(mix) − f(stem) + f(0))</code>, equals the model’s own reconstruction
+    of the residual for an affine encoder, and brings every evaluated configuration — with or
+    without the loss — to within ~0.5 dB of its ceiling. Regenerating these examples with the
+    correction is pending; treat the differences you hear as offset, not loss.
   </p>
   <p id="status">Loading examples…</p>
   <div id="examples"></div>

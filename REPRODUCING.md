@@ -50,6 +50,11 @@ placed at `checkpoints/<run>/best.pth`.
 | **Table IV** (stem subtraction) | `python -m scripts.run_subtraction` | `*_subtraction.json` |
 | **Fig. 1** (decode-noise protocol confound) | `python -m scripts._diag_old_vs_new_eval` | `_diag_old_vs_new_eval.log` |
 | **Fig. 3** (α sweep) | `python -m scripts.run_alpha_sweep` | `alpha_sweep/`, `alpha_sweep_summary.json` |
+| **Table IV `+f(0)` rows** (origin correction) | `sbatch scripts/slurm_origin_ablation.sh`<br>or `python -m evaluation.compute_subtraction --origin-correct ...` | `*_subtraction_origin.json`, `per_chunk/*+origin_*.json` |
+| **Confidence intervals** (paired track-cluster bootstrap) | `python -m evaluation.paired_stats --per-chunk 'evaluation/v2_metrics/per_chunk/*.json' --out evaluation/v2_metrics/paired_stats.json` | `paired_stats.json` |
+| **No-arithmetic baselines** (unchanged mix / autoencoded mix / decode-then-subtract) | `sbatch scripts/slurm_comparators.sh` | per-chunk `identity`, `aemix`, `wavsub` fields |
+| **Level preservation** (the gain SI-SDR discards) | `sbatch scripts/slurm_gain_eval.sh` | `gain/*_mixing_gain.json` |
+| **Same-latent control** (Fig. 1 confound) | `sbatch scripts/slurm_same_latent.sh` | `same_latent_control.json` |
 
 Every driver skips already-existing outputs unless `--force` is passed, and
 every one takes `--only <run> [...]` to run a subset.
@@ -109,6 +114,8 @@ For a pair (x₁, x₂), z̄ = α·f(x₁) + (1−α)·f(x₂) and x̄ = α·x�
 | `l_lat` | ‖z̄ − f(x̄)‖² / ‖f(x̄)‖² | encoder linearity (normalized) |
 | `mix_rate` | L_recon(g(z̄), x̄) / L_recon(g(f(x̄)), x̄) | decoder equivariance; <1 beats encode-then-decode |
 | `gap` | ceiling − subtraction SI-SDR | "linearity tax" vs the model's own ceiling |
+| `identity` / `aemix` / `wavsub` | SI-SDR of the unchanged mixture / autoencoded mixture / decode-then-subtract, vs the residual | no-arithmetic baselines |
+| `gain_lin_gt` | 20 log10 of the scale SI-SDR fits for g(z̄) vs x̄ | level error SI-SDR ignores; 0 dB = right level |
 | `fad` | Fréchet Audio Distance | LAION-CLAP backbone, 10 s clips @ 48 kHz |
 
 Two traps worth knowing before you compare against other papers:
@@ -118,7 +125,13 @@ Two traps worth knowing before you compare against other papers:
    a common realistic manifold raises it without moving g(z̄) toward x̄ — exactly
    what the discriminator-on-mix ablation does (12.1 → 16.0 dB with *no*
    ground-truth gain). Use `sdr_lin_gt`.
-2. **Stochastic decoders need shared decode noise.** A consistency-model decoder
+2. **Latent subtraction needs the origin.** Subtraction has coefficients
+   (1, −1), summing to 0, so an affine offset in the encoder survives it. For
+   affine f(x) = Ax + b, `f(mix) − f(stem) + f(0) = f(res)` exactly, so the
+   corrected decode is the model's own reconstruction of the residual. Raw
+   subtraction numbers mostly reflect each model's latent offset; use
+   `--origin-correct` before comparing models on this task.
+3. **Stochastic decoders need shared decode noise.** A consistency-model decoder
    draws fresh noise per call, which sets output phase. Two decodes of the same
    latent then differ in phase and `sdr_lin` collapses to ≈ −8 dB regardless of
    real linearity. All evals here share the noise across the two decode calls;
