@@ -301,6 +301,11 @@ _FMA_WORKER: Dict = {}
 def _fma_init_worker(
     out: str, chunk_samples: int, sample_rate: int, min_peak: float, force: bool,
 ):
+    # multiprocessing.Pool workers inherit torch's default intra-op pool of
+    # nproc threads each (PyTorch's DataLoader resets this; Pool does not).
+    # With 22 workers on a 24-core node that is ~530 threads fighting over
+    # tiny per-chunk ops and a 100x slowdown. One thread per worker.
+    torch.set_num_threads(1)
     _ensure_ffmpeg_on_path()
     _FMA_WORKER["out"] = out
     _FMA_WORKER["chunk_samples"] = chunk_samples
