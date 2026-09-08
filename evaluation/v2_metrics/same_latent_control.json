@@ -1,0 +1,25 @@
+{
+  "checkpoint": "checkpoints/m2l/music2latent.pt",
+  "results": {
+    "same_latent_indep": {
+      "mean": -1.766294682379036,
+      "std": 3.851039776987981,
+      "n": 240
+    },
+    "same_latent_shared": {
+      "mean": 114.51972662607828,
+      "std": 1.9533850747862274,
+      "n": 240
+    },
+    "lin_shared": {
+      "mean": 3.552025898732245,
+      "std": 2.4571951042113884,
+      "n": 240
+    },
+    "lin_indep": {
+      "mean": -9.059818888703981,
+      "std": 3.6300397027995124,
+      "n": 240
+    }
+  }
+}

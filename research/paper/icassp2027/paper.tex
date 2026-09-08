@@ -31,7 +31,7 @@ Mixing is linear on waveforms, so a latent space in which interpolating two
 codes and decoding reproduces the waveform mix is an \emph{equivariant}
 representation. Recent work induces this in a consistency autoencoder by
 decoding averaged latents against the true mix. We ask which part of that
-supervision is responsible, whether the decoder class limits what it delivers,
+supervision is responsible, whether the target architecture limits what it delivers,
 and whether the certifying metrics measure it at all, through a controlled
 study in which each experiment intervenes on one factor. An explicit
 decode-mixing loss suffices: on a waveform GAN autoencoder it makes the latent
@@ -180,8 +180,9 @@ a decoder driven onto a common realistic manifold raises the
 mutual SI-SDR of its two decode paths without bringing either closer to
 $\bar{x}$ (\secref{sec:ablation}). It is also confounded for stochastic
 decoders: a consistency-model decoder \cite{pasini2024music2latent} draws fresh
-noise per call, so two decodes of the same latent differ in phase and
-SI-SDR$_\mathrm{lin}$ collapses unless the noise is shared. \figref{fig:protocol}
+noise per call. Decoding the \emph{same} latent twice, with no latent operation
+at all, scores $-1.8$\,dB under independent noise and $+114$\,dB under shared
+noise, so the decoder's sampling alone accounts for most of the collapse. \figref{fig:protocol}
 shows the same Music2Latent checkpoints scoring $\approx{-}8$\,dB under
 independent-noise decoding (the protocol implied by prior reports) and
 \emph{positive} under shared-noise decoding, a $12$\,dB swing driven by the
@@ -318,18 +319,17 @@ restores level as well as shape. \textbf{Architecture:} we fine-tune the publish
 Music2Latent \cite{pasini2024music2latent} consistency autoencoder with the
 decode-mixing objective, the additivity supervision of
 \cite{torres2026linearity} on its own architecture, using its native
-consistency loss on the mixed pair in place of the discriminator; this is the
-matched comparison in which only the decoder class differs from the GAN
-autoencoder. A continued-training control, the same
-fine-tune with the mixing terms disabled, moves equivariance by
-$<0.2$\,dB and \emph{worsens} FAD, so the mixing model's gain is attributable
-to the loss, not to domain adaptation. Both decode-vs-decode and ground-truth
-metrics agree on the improvement, confirming it is not a measurement artifact.
-Absolute SDR$_\mathrm{lin}^\mathrm{gt}$ remains negative on Music2Latent because
-its consistency decoder is phase-incoherent with raw waveforms; the latent
-\emph{geometry} improves (MixRate, $\ell_\mathrm{lat}$) but a consistency
-decoder does not convert this into clean waveform arithmetic as the GAN decoder
-does, so we report the GAN autoencoder as the primary result.
+consistency loss on the mixed pair in place of the discriminator. A
+continued-training control, the same
+fine-tune with mixing disabled, moves equivariance by $<0.2$\,dB and
+\emph{worsens} FAD, so the gain is the loss, not domain adaptation. Both metric families agree on the improvement.
+Absolute SDR$_\mathrm{lin}^\mathrm{gt}$ nevertheless stays negative: this
+configuration improves latent \emph{geometry} (MixRate, $\ell_\mathrm{lat}$)
+without reaching usable waveform arithmetic. The systems differ in encoder,
+representation, loss family, compression and training data as well as decoder
+class, so the contrast isolates none of them as the cause; we report the GAN
+autoencoder as the primary result and treat this as a limit on transfer, not
+an explanation of it.
 
 \begin{table}[t]
   \centering\small
@@ -440,7 +440,7 @@ no measured reconstruction cost and across compression rates. Raw stem
 subtraction is instead governed by the latent offset, which one encode of
 silence removes for every model. On a consistency-model autoencoder the loss
 improves latent geometry but not waveform arithmetic, so practical claims are
-confined to the deterministic GAN decoder.
+confined to the GAN autoencoder we test.
 \textbf{Limitations.} Every comparison is matched at a single initialization,
 identifying each factor's effect there but not its variation across training
 runs; experiments are mono; and we conduct no listening test. Stereo,
