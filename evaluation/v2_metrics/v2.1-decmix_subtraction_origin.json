@@ -1,0 +1,54 @@
+{
+  "checkpoint": "checkpoints/v2.1-decmix/best.pth",
+  "step": 25000,
+  "config": {
+    "musdb_dir": "dataset/musdb18/test",
+    "chunks_per_track": 30,
+    "n_chunks_seen": 1470,
+    "seed": 0
+  },
+  "skipped_tracks": [
+    {
+      "track": "PR - Oh No",
+      "reason": "sanity=18.47"
+    }
+  ],
+  "origin_corrected": true,
+  "subtraction": {
+    "drums": {
+      "sdr_sub": 8.45747528435523,
+      "sdr_ceil": 9.213989850716917,
+      "sdr_dd": 15.044325950852798,
+      "gap": 0.7565145663616875,
+      "n": 1470
+    },
+    "bass": {
+      "sdr_sub": 6.905660945645273,
+      "sdr_ceil": 7.296080864977953,
+      "sdr_dd": 23.383536029672946,
+      "gap": 0.39041991933267983,
+      "n": 1470
+    },
+    "vocals": {
+      "sdr_sub": 9.35744884241195,
+      "sdr_ceil": 9.68447821240945,
+      "sdr_dd": 25.839495623760484,
+      "gap": 0.32702936999750065,
+      "n": 1470
+    },
+    "other": {
+      "sdr_sub": 8.33262320277883,
+      "sdr_ceil": 8.685323644758892,
+      "sdr_dd": 14.10182457509495,
+      "gap": 0.3527004419800619,
+      "n": 1470
+    },
+    "all": {
+      "sdr_sub": 8.26330206879782,
+      "sdr_ceil": 8.719968143215803,
+      "sdr_dd": 19.592295544845296,
+      "gap": 0.4566660744179831,
+      "n": 5880
+    }
+  }
+}

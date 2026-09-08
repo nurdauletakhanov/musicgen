@@ -187,7 +187,7 @@ def _process_batch(
     # Gain error SI-SDR ignores: 20 log10 of the fitted scale of g(z̄) vs x̄.
     gain_lin_gt = gain_lin_gt_t.cpu().tolist()
     # Same for plain reconstruction, as the reference level error of the AE.
-    gain_rec = _si_sdr_and_gain(g_zrec, x)[1].cpu().tolist()
+    gain_rec = _si_sdr_and_gain(g_recon, x)[1].cpu().tolist()
 
     # Per-sample ℓ_lat = ||z̄ - z_real||^2 / ||z_real||^2
     diff = (z_interp - z_real).reshape(B, -1)
