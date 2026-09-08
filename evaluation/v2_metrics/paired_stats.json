@@ -4,33 +4,48 @@
   "models": {
     "v2.0-continued": {
       "mean": 3.445250562541357,
-      "lo": 3.1988457093609495,
-      "hi": 3.6966743514813625,
-      "n": 5880
+      "lo": 3.194926741627041,
+      "hi": 3.6883818357378084,
+      "n": 5880,
+      "track_lo": 2.605544662976695,
+      "track_hi": 4.25550451595631,
+      "n_tracks": 49
     },
     "v2.1-decmix": {
       "mean": 5.771456297125816,
-      "lo": 5.518913455075091,
-      "hi": 6.016152856626706,
-      "n": 5880
+      "lo": 5.521595945819718,
+      "hi": 6.020337633248165,
+      "n": 5880,
+      "track_lo": 4.924724429556611,
+      "track_hi": 6.638882145764806,
+      "n_tracks": 49
     },
     "v2.2-decmix-disc": {
       "mean": 6.081506177082462,
-      "lo": 5.818045306080334,
-      "hi": 6.326693985186759,
-      "n": 5880
+      "lo": 5.825757328045838,
+      "hi": 6.329693453296489,
+      "n": 5880,
+      "track_lo": 5.232349465714592,
+      "track_hi": 6.940631041417902,
+      "n_tracks": 49
     },
     "v3.0-baseline-d64": {
       "mean": 1.2214142475061778,
-      "lo": 0.9605986980908391,
-      "hi": 1.4684149374129496,
-      "n": 5880
+      "lo": 0.9601715322472785,
+      "hi": 1.4806686393332649,
+      "n": 5880,
+      "track_lo": 0.4163500261544147,
+      "track_hi": 2.0251333417823787,
+      "n_tracks": 49
     },
     "v3.1-decmix-disc-d64": {
       "mean": 5.244107115596244,
-      "lo": 4.982409596555912,
-      "hi": 5.498513970519214,
-      "n": 5880
+      "lo": 4.985299673440867,
+      "hi": 5.499311276928911,
+      "n": 5880,
+      "track_lo": 4.3705343125359315,
+      "track_hi": 6.12259689549426,
+      "n_tracks": 49
     }
   },
   "contrasts": {
@@ -39,44 +54,64 @@
       "treatment": "v2.1-decmix",
       "control": "v2.0-continued",
       "mean_diff": 2.3262057345844593,
-      "lo": 2.2566706667371776,
-      "hi": 2.3946315268496208,
       "n_pairs": 5880,
-      "frac_improved": 0.7663265306122449,
-      "excludes_zero": true
+      "n_tracks": 49,
+      "track_lo": 2.107678048520503,
+      "track_hi": 2.5444855159338697,
+      "track_excludes_zero": true,
+      "unit_lo": 2.2572736036688257,
+      "unit_hi": 2.3955083783299136,
+      "unit_excludes_zero": true,
+      "frac_units_improved": 0.7663265306122449,
+      "frac_tracks_improved": 1.0
     },
     "v2.2-decmix-disc__vs__v2.0-continued": {
       "label": "L_dec+disc vs no mix (7.66x)",
       "treatment": "v2.2-decmix-disc",
       "control": "v2.0-continued",
       "mean_diff": 2.6362556145411045,
-      "lo": 2.5643829791654538,
-      "hi": 2.711116603401646,
       "n_pairs": 5880,
-      "frac_improved": 0.8034013605442177,
-      "excludes_zero": true
+      "n_tracks": 49,
+      "track_lo": 2.4141662267256585,
+      "track_hi": 2.858736634919276,
+      "track_excludes_zero": true,
+      "unit_lo": 2.5633228005955533,
+      "unit_hi": 2.7114579384688318,
+      "unit_excludes_zero": true,
+      "frac_units_improved": 0.8034013605442177,
+      "frac_tracks_improved": 1.0
     },
     "v2.2-decmix-disc__vs__v2.1-decmix": {
       "label": "disc-on-mix vs L_dec alone",
       "treatment": "v2.2-decmix-disc",
       "control": "v2.1-decmix",
       "mean_diff": 0.3100498799566452,
-      "lo": 0.2898337161962971,
-      "hi": 0.3287283439162764,
       "n_pairs": 5880,
-      "frac_improved": 0.7539115646258503,
-      "excludes_zero": true
+      "n_tracks": 49,
+      "track_lo": 0.26635000801177583,
+      "track_hi": 0.3556990129865138,
+      "track_excludes_zero": true,
+      "unit_lo": 0.29019322988324553,
+      "unit_hi": 0.3289852230736592,
+      "unit_excludes_zero": true,
+      "frac_units_improved": 0.7539115646258503,
+      "frac_tracks_improved": 0.9795918367346939
     },
     "v3.1-decmix-disc-d64__vs__v3.0-baseline-d64": {
       "label": "mix vs no mix (15.3x)",
       "treatment": "v3.1-decmix-disc-d64",
       "control": "v3.0-baseline-d64",
       "mean_diff": 4.022692868090067,
-      "lo": 3.934376235123914,
-      "hi": 4.1107656898972795,
       "n_pairs": 5880,
-      "frac_improved": 0.8967687074829932,
-      "excludes_zero": true
+      "n_tracks": 49,
+      "track_lo": 3.714807263955614,
+      "track_hi": 4.33702619252628,
+      "track_excludes_zero": true,
+      "unit_lo": 3.933508467963701,
+      "unit_hi": 4.112690776654213,
+      "unit_excludes_zero": true,
+      "frac_units_improved": 0.8967687074829932,
+      "frac_tracks_improved": 1.0
     }
   }
 }

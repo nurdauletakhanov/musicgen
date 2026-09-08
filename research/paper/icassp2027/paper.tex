@@ -40,10 +40,11 @@ architecture, data, initialization, and schedule fixed. An explicit
 \emph{decode-mixing loss}, which requires decoded latent interpolations to
 match true waveform mixes, at the cost of one extra decoder pass, is
 sufficient: on a waveform GAN autoencoder it makes the latent space
-mixing-equivariant \emph{at no reconstruction cost}, and latent subtraction
+mixing-equivariant \emph{at no measured reconstruction cost}, and latent subtraction
 removes a stem at $+5.7$\,dB SI-SDR versus $+3.4$\,dB without it. At $2\times$
 tighter compression, against a matched from-scratch control, the loss is what
-makes the operation viable at all ($+1.2\!\to\!+5.2$\,dB). The interventions
+makes the operation viable at all ($+1.2\!\to\!+5.2$\,dB), on every test
+track. All comparisons are single-run, matched at one initialization. The interventions
 also identify what is \emph{not} responsible: an adversarial term on the mixed
 path inflates a decode-consistency metric without improving ground-truth
 equivariance, exposing that metric as a confounded proxy; an encoder-only
@@ -389,16 +390,20 @@ the linearity tax from $5.2$ to $3.0$\,dB, with the largest gain on bass
 ($+6.0$\,dB, tax $2.6$), consistent with \secref{sec:ablation}.
 
 \textbf{How much of this is measurement noise?} Every model is scored on the
-same $5{,}880$ (track, stem, chunk) units, so we compare them pairwise and
-bootstrap the mean difference ($10^4$ resamples). The gains sit far outside
-evaluation variance: $\Ldec$ over the no-mixing control is $+2.33$\,dB
-(95\% CI $[+2.26,+2.39]$, improving $77\%$ of units), and at $15.3\times$ the
-matched-control gain is $+4.02$\,dB ($[+3.93,+4.11]$, $90\%$ of units).
-Disc-on-mix beats $\Ldec$ alone by only $+0.31$\,dB ($[+0.29,+0.33]$) here
-while scoring $0.36$\,dB \emph{lower} on ground-truth equivariance
-(\tabref{tab:ablation}): the two differ little, and in opposite directions
-depending on the metric. These intervals cover evaluation variance only, not
-variation across training seeds.
+same $5{,}880$ (track, stem, chunk) units from $49$ tracks, so we compare
+models pairwise on identical units. Because units from one recording are
+correlated, the resampling unit is the \emph{track}: a paired cluster bootstrap
+draws the $49$ tracks with replacement ($10^4$ resamples) and recomputes the
+mean paired difference. The gains sit far outside this evaluation variance:
+$\Ldec$ over the no-mixing control is $+2.33$\,dB (95\% CI $[+2.11,+2.54]$)
+and at $15.3\times$ the matched-control gain is $+4.02$\,dB
+($[+3.71,+4.34]$); each improves \emph{all 49 tracks}. Disc-on-mix beats
+$\Ldec$ alone by only $+0.31$\,dB ($[+0.27,+0.36]$) here while scoring
+$0.36$\,dB \emph{lower} on ground-truth equivariance (\tabref{tab:ablation}):
+the two differ little, and in opposite directions depending on the metric.
+Resampling units instead of tracks gives intervals about three times narrower;
+we report the track-level ones. They cover evaluation variance at the tested
+initialization, not variation across training runs.
 
 The effect is
 starkest against the matched from-scratch control at $15.3\times$: without the
@@ -451,9 +456,10 @@ at no reconstruction cost and enabling latent-arithmetic audio editing. The
 loss itself, not an adversarial term on the mixed path, is the active
 ingredient, and the effect transfers across compression rates and to a
 consistency-model autoencoder under a continued-training control.
-\textbf{Limitations.} All results use a single training seed. Our confidence
-intervals cover evaluation variance, not variation across initializations, so
-small differences (e.g.\ $\Ldec$ vs.\ $\Ldec{+}$disc, $0.31$\,dB) remain
+\textbf{Limitations.} Every comparison is matched at a single initialization;
+this identifies the effect of each factor at that initialization but not its
+variation across training runs. Our confidence intervals cover evaluation
+variance (new tracks), so small differences (e.g.\ $\Ldec$ vs.\ $\Ldec{+}$disc, $0.31$\,dB) remain
 within plausible seed variance and we report them as ``comparable.'' Experiments are mono;
 consistency-decoder latent arithmetic remains phase-limited; and we conduct no
 listening test. Stereo, multi-seed estimates, and latent-diffusion composition
