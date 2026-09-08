@@ -33,7 +33,7 @@ SI-SDR(g(z̄), x̄) — equivariance against the **ground-truth** mix.
 | GAN AE, no mix (v2.0) | 7.66× | +11.3 | +8.0 | 1.203 | 0.045 |
 | **GAN AE, +ℒ_dec (v2.1)** | 7.66× | +11.4 | **+10.2** | **0.972** | 0.044 |
 | GAN AE, no mix (v3.0) | 15.3× | +10.0 | +6.8 | 1.187 | 0.052 |
-| **GAN AE, +mix (v3.1)** | 15.3× | +9.9 | **+8.6** | **1.046** | 0.061 |
+| **GAN AE, +ℒ_dec+disc (v3.1)** | 15.3× | +9.9 | **+8.6** | **1.046** | 0.061 |
 
 Downstream — **stem removal by latent subtraction** (MUSDB18 test, SI-SDR dB):
 
@@ -42,7 +42,7 @@ Downstream — **stem removal by latent subtraction** (MUSDB18 test, SI-SDR dB):
 | 7.66× no mix | +4.2 | +0.4 | +5.2 | +3.9 | +3.4 |
 | 7.66× +ℒ_dec | +5.7 | +4.9 | +7.2 | +5.1 | **+5.7** |
 | 15.3× no mix | +1.2 | −1.6 | +3.0 | +2.1 | +1.2 |
-| 15.3× +mix | +5.4 | +4.7 | +6.9 | +3.9 | **+5.2** |
+| 15.3× +ℒ_dec+disc | +5.4 | +4.7 | +6.9 | +3.9 | **+5.2** |
 
 **Update (Sep 2026, after review):** the subtraction advantage above is a
 *latent-offset* effect, not a property of the loss. Subtraction uses
@@ -100,7 +100,7 @@ Two findings worth flagging for anyone building on this:
 | `v2.3–2.5` | ℒ_enc only (γ = 5 / 10 / 20) | v1.1 | 128 | 7.66× | +25k |
 | `v2.6` | ℒ_dec, frozen encoder | v1.1 | 128 | 7.66× | +25k |
 | `v3.0` | matched from-scratch control (no mixing) | scratch | 64 | 15.3× | 250k |
-| `v3.1` | from-scratch + mixing | scratch | 64 | 15.3× | 250k |
+| `v3.1` | from-scratch + ℒ_dec + disc-on-mix | scratch | 64 | 15.3× | 250k |
 
 Configs for every run are tracked under [`configs/experiments/`](configs/experiments/).
 

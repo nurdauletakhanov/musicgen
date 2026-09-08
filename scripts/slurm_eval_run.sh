@@ -15,7 +15,7 @@ RUN="${1:?run name under checkpoints/}"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 [ -f "checkpoints/$RUN/best.pth" ] || { echo "no checkpoints/$RUN/best.pth"; exit 1; }
 [ -f checkpoints/clap/music_audioset_epoch_15_esc_90.14.pt ] || { echo "CLAP checkpoint missing"; exit 1; }
-.venv/bin/python -m scripts.run_v2_mixing_metrics --only "$RUN"
-.venv/bin/python -m scripts.run_v2_fad --only "$RUN"
-.venv/bin/python -m scripts.run_subtraction --only "$RUN"
+.venv/bin/python -m scripts.run_v2_mixing_metrics --only "$RUN" --checkpoint-name step_25000.pth
+.venv/bin/python -m scripts.run_v2_fad --only "$RUN" --checkpoint-name step_25000.pth
+.venv/bin/python -m scripts.run_subtraction --only "$RUN" --checkpoint-name step_25000.pth
 ls -la evaluation/v2_metrics/"$RUN"_*.json

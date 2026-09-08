@@ -113,6 +113,7 @@ class Trainer:
             persistent_workers=(num_workers > 0),
             prefetch_factor=train_cfg.get("prefetch_factor", 2) if num_workers > 0 else None,
             cache_size=int(train_cfg.get("dataset_cache_size", 8)),
+            val_split=str(data_cfg.get("val_split", "test")),
         )
         self.logs.info(
             f"train: {len(self.train_dataset):,} chunks across "

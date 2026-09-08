@@ -34,7 +34,8 @@ and whether the certifying metrics measure it at all, through a controlled
 study in which each experiment intervenes on one factor. An explicit
 decode-mixing loss suffices: on a waveform GAN autoencoder it makes the latent
 space mixing-equivariant with reconstruction SI-SDR approximately preserved, at $2\times$
-tighter compression too, and it restores level as well as shape. An
+tighter compression the combined recipe (with the adversarial term) transfers,
+and the loss restores level as well as shape. An
 adversarial term on the mixed path adds nothing beyond inflating a
 decode-consistency metric, exposing that metric as a confounded proxy; on a
 consistency-model autoencoder it improves latent geometry and ground-truth
@@ -93,8 +94,9 @@ time. Our contributions are:
   autoencoder: the decode-mixing loss alone is sufficient, an adversarial term
   on the mixed path adds no ground-truth gain, and an encoder-only penalty or a
   frozen encoder identify the decoder as the locus (\secref{sec:ablation}).
-  \item Generalization against matched controls: from-scratch training at
-  $2\times$ tighter compression, and a re-run on a consistency-model
+  \item Generalization against matched controls: the combined
+  $\Ldec{+}$disc recipe trained from scratch at $2\times$ tighter compression,
+  and a re-run on a consistency-model
   autoencoder where latent geometry improves but waveform arithmetic does not
   (\secref{sec:general}).
   \item A downstream analysis showing latent stem removal is limited by the
@@ -149,8 +151,10 @@ match the true mix:
   \Ldec=\mathcal{L}_\mathrm{recon}\!\left(g(\bar{z}),\,\bar{x}\right),
   \label{eq:ldec}
 \end{equation}
-where $\mathcal{L}_\mathrm{recon}$ is the multi-resolution STFT + mel loss also
-used for reconstruction. Gradients flow through $g$ and back into $f$ via
+where, as implemented, the mixed path uses the multi-resolution STFT + mel
+reconstruction loss \emph{plus} an unweighted waveform $\ell_1$ term,
+$\mathcal{L}_\mathrm{recon}+\lVert g(\bar{z})-\bar{x}\rVert_1$; the ordinary
+reconstruction path has no waveform term. Gradients flow through $g$ and back into $f$ via
 $\bar{z}$, so a single term constrains both networks; it costs one extra
 decoder pass per step. We also study an \emph{encoder-only} variant that
 penalizes encoder nonlinearity directly,
@@ -174,7 +178,9 @@ two equivariance views at $\alpha{=}0.5$:
 \end{itemize}
 We also report $\ell_\mathrm{lat}=\lVert\bar{z}-f(\bar{x})\rVert^2/\lVert f(\bar{x})\rVert^2$
 (encoder linearity) and MixRate
-$=\mathcal{L}_\mathrm{recon}(g(\bar{z}),\bar{x})/\mathcal{L}_\mathrm{recon}(g(f(\bar{x})),\bar{x})$
+$=\mathcal{L}_\mathrm{mix}(g(\bar{z}),\bar{x})/\mathcal{L}_\mathrm{mix}(g(f(\bar{x})),\bar{x})$,
+with $\mathcal{L}_\mathrm{mix}$ the three-term mixed-path loss above in both
+numerator and denominator,
 (decoder equivariance; $<1$ is better than the encode-then-decode path).
 SI-SDR$_\mathrm{lin}$ shares the decode-vs-decode structure of prior work's
 decoder-additivity metrics (SNR and spectral distance between two decodes
@@ -217,7 +223,13 @@ weights, every metric reported here, and audio examples:
 \url{https://github.com/nurdauletakhanov/musicgen}} Two compression regimes are used: $7.66\times$
 ($d{=}128$) and $15.3\times$ ($d{=}64$). Mixing losses are added either as a
 25k-step fine-tune over a converged baseline (v2.x) or from scratch over 250k
-steps (v3.x). All runs use a single NVIDIA RTX~5090. Unless noted, metrics are
+steps (v3.x). \textbf{Checkpoint selection.} The released weights are the
+checkpoint with the lowest validation training loss, and the validation loader
+read the test split; for every v2.x run this coincides with the final step, so
+selection did not alter those weights, while both v3.x runs were selected at
+step 240k of 250k. Contrasts are therefore between matched configurations
+under identical selection, but absolute generalization claims should be read
+with this in mind; the code now supports a held-out validation split. All runs use a single NVIDIA RTX~5090. Unless noted, metrics are
 computed over the full multi-source test set; the $\alpha$-sweep
 (\secref{sec:alpha}) uses a source-balanced subsample.
 
@@ -270,7 +282,9 @@ configurations.
 
 \subsection{Intervening on compression and architecture}\label{sec:general}
 \tabref{tab:crossarch} extends the recipe along two axes. \textbf{Compression:}
-trained \emph{from scratch} at $15.3\times$ (v3.1), the mixing model matches its
+trained \emph{from scratch} at $15.3\times$ (v3.1, which uses the combined
+$\Ldec{+}$disc recipe, so it tests that combination rather than $\Ldec$ alone),
+the mixing model matches its
 no-mixing control (v3.0) on reconstruction ($9.9$ vs.\ $10.0$\,dB) while
 improving ground-truth equivariance by $+1.7$\,dB
 (SDR$_\mathrm{lin}^\mathrm{gt}$ $6.8\!\to\!8.6$), MixRate ($1.19\!\to\!1.05$),
@@ -305,7 +319,7 @@ an explanation of it.
 
 \begin{table}[t]
   \centering\small
-  \setlength{\tabcolsep}{2.6pt}
+  \setlength{\tabcolsep}{2.0pt}
   \input{tables/crossarch.tex}
   \caption{Generalization across compression and architecture (full test set,
   $\alpha{=}0.5$, EMA weights for Music2Latent). The M2L ``fine-tune control''

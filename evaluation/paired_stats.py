@@ -55,6 +55,15 @@ CONTRASTS = [
 ]
 KEY = "sub"          # metric of record: latent subtraction vs ground truth
 
+# The paper's corrected comparisons: matched contrasts on origin-corrected
+# subtraction, and corrected latent subtraction against the no-arithmetic
+# comparators recorded in the raw files (same units).
+CORRECTED_CONTRASTS = [
+    ("v2.1-decmix+origin", "v2.0-continued+origin", "corrected: L_dec vs no mix (7.66x)"),
+    ("v2.2-decmix-disc+origin", "v2.0-continued+origin", "corrected: L_dec+disc vs no mix (7.66x)"),
+    ("v3.1-decmix-disc-d64+origin", "v3.0-baseline-d64+origin", "corrected: mix vs no mix (15.3x)"),
+]
+
 # Comparators recorded alongside "sub" in the same per-chunk files (when the
 # eval was run with the comparator code): latent subtraction vs ...
 COMPARATOR_CONTRASTS = [
@@ -153,6 +162,33 @@ def main():
         star = "*" if (clo > 0 or chi < 0) else " "
         print(f"  {star} {label:34s} {m:+.2f} dB  track-CI [{clo:+.2f}, {chi:+.2f}] "
               f"(unit-CI [{lo:+.2f}, {hi:+.2f}])  {win*100:.0f}% units, {tw*100:.0f}% of {nt} tracks improved")
+
+    print("\ncorrected matched contrasts (origin-corrected subtraction):")
+    for treat, ctrl, label in CORRECTED_CONTRASTS:
+        if treat not in models or ctrl not in models:
+            print(f"  [skip] {label}: missing per-chunk data"); continue
+        keys = sorted(set(models[treat]) & set(models[ctrl]))
+        diff = np.array([models[treat][k][KEY] - models[ctrl][k][KEY] for k in keys])
+        tracks = [k[0] for k in keys]
+        m, lo, hi = ci(diff, rng, a.n_boot); _, clo, chi, nt = cluster_ci(diff, tracks, rng, a.n_boot)
+        out["contrasts"][f"{treat}__vs__{ctrl}"] = {"label": label, "treatment": treat, "control": ctrl,
+            "mean_diff": m, "n_pairs": len(keys), "n_tracks": nt, "track_lo": clo, "track_hi": chi,
+            "track_excludes_zero": bool(clo > 0 or chi < 0), "unit_lo": lo, "unit_hi": hi}
+        print(f"  {'*' if (clo>0 or chi<0) else ' '} {label:40s} {m:+.2f} dB  track-CI [{clo:+.2f}, {chi:+.2f}]")
+
+    print("\ncorrected latent subtraction vs comparators (same units):")
+    out["corrected_comparators"] = {}
+    for name, recs in sorted(models.items()):
+        if not name.endswith("+origin") or name[:-7] not in models: continue
+        raw = models[name[:-7]]; keys = sorted(set(recs) & set(raw))
+        if not keys or "wavsub" not in raw[keys[0]]: continue
+        tracks = [k[0] for k in keys]
+        for field, label in COMPARATOR_CONTRASTS:
+            diff = np.array([recs[k][KEY] - raw[k][field] for k in keys])
+            m, lo, hi = ci(diff, rng, a.n_boot); _, clo, chi, nt = cluster_ci(diff, tracks, rng, a.n_boot)
+            out["corrected_comparators"][f"{name}__{field}"] = {"label": label, "model": name, "comparator": field,
+                "mean_diff": m, "track_lo": clo, "track_hi": chi, "n_pairs": len(keys), "n_tracks": nt}
+            print(f"  {'*' if (clo>0 or chi<0) else ' '} {name:30s} vs {field:8s}: {m:+.2f} dB  track-CI [{clo:+.2f}, {chi:+.2f}]")
 
     print("\ncomparators (same units; positive = latent subtraction better):")
     out["comparators"] = {}

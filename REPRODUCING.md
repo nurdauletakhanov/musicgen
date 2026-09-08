@@ -42,6 +42,16 @@ checkpoints from
 [`SoMa25/mixing-equivariant-ae-checkpoints`](https://huggingface.co/SoMa25/mixing-equivariant-ae-checkpoints),
 placed at `checkpoints/<run>/best.pth`.
 
+**Checkpoint selection (disclosure).** `best.pth` is the checkpoint with the
+lowest validation loss, and in the published runs the validation loader read
+the *test* split (`data.val_split` defaulted to `test`). For every v2.x run the
+best checkpoint is the final step (25000), so selection did not change those
+weights; v3.0 and v3.1 were selected at step 240k of 250k. Seed re-runs
+(`scripts/slurm_eval_run.sh`) evaluate `step_25000.pth` with no selection. To
+train with a proper held-out split, run `python -m scripts.make_val_split`
+once (carves a per-source validation subset out of `train` in `index.json`)
+and set `data.val_split: val` in the config.
+
 | Paper element | Command | Writes |
 |---|---|---|
 | **Table I** (mechanism ablation) | `python -m scripts.run_v2_mixing_metrics`<br>`python -m scripts.run_v2_fad` | `v2.*_mixing.json`, `v2.*_fad.json` |
@@ -88,7 +98,11 @@ export MUSICGEN_M2L_CHECKPOINT=/path/to/phase2_ema.pt       # our fine-tune
 ## Level 3 — retrain from scratch
 
 ```bash
-python -m training.train --config configs/experiments/v2/v2.1_decmix.yaml
+# v2.x are warm-started from the converged v1.1 baseline:
+python -m training.train --config configs/experiments/v2/v2.1_decmix.yaml \
+    --warm-start checkpoints/v1.1/best.pth
+# v1/v3 train from scratch (no --warm-start):
+python -m training.train --config configs/experiments/v3/v3.1_decmix_disc_d64.yaml
 ```
 
 Configs for all eleven runs are under [`configs/experiments/`](configs/experiments/).

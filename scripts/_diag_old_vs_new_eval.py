@@ -61,6 +61,9 @@ def patch_adapter_random_noise(adapter):
             super().__init__()
             self.gen = gen
             self.target_length = target_length
+            # Dedicated stream: independent per call, but it does not consume
+            # the global RNG that mixing-pair selection would otherwise share.
+            self.noise_gen = torch.Generator(device=next(gen.parameters()).device).manual_seed(12345)
 
         def forward(self, z):
             B = z.size(0)
@@ -68,7 +71,7 @@ def patch_adapter_random_noise(adapter):
             T_stft = int(z.shape[-1] * downscaling)
             initial_noise = torch.randn(
                 (B, hp.data_channels, hp.hop * 2, T_stft),
-                device=z.device, dtype=torch.float32,
+                device=z.device, dtype=torch.float32, generator=self.noise_gen,
             ) * hp.sigma_max
             if z.dtype != torch.float32:
                 initial_noise = initial_noise.to(z.dtype)
@@ -101,7 +104,8 @@ def run_eval(checkpoint_path, protocol, val_loader, device, max_batches, source_
             x_wave = x_wave[keep]
             sources = [sources[i] for i in keep]
         if x_wave.size(0) < 2: continue
-        out = _process_batch(adapter, x_wave, list(sources), alpha=0.5)
+        pg = torch.Generator(device=device).manual_seed(100_000 + bi)  # same pairs in every protocol
+        out = _process_batch(adapter, x_wave, list(sources), alpha=0.5, perm_generator=pg)
         for src, val in out['sdr_rec']: sdr_rec_all.append(val)
         for src, val in out['sdr_lin']: sdr_lin_all.append(val)
 

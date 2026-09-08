@@ -140,7 +140,9 @@ def table_persource():
     srcs = ["fma", "maestro", "musdb", "all"]
     lines = []
     for rate, ctrl, mixed in pairs:
-        for name, tag in ((ctrl, "no mix"), (mixed, "+mix")):
+        # v3.1 is the combined recipe (decode-mixing + disc-on-mix); v2.1 is L_dec alone.
+        mix_tag = "+$\\mathcal{L}_\\mathrm{dec}$+disc" if mixed.endswith("-disc-d64") else "+$\\mathcal{L}_\\mathrm{dec}$"
+        for name, tag in ((ctrl, "no mix"), (mixed, mix_tag)):
             cells = " & ".join(f(mix(name, "sdr_lin_gt", s), 1, 1) for s in srcs)
             lines.append(f"    {rate}, {tag} & {cells} \\\\")
         deltas = []
@@ -163,10 +165,10 @@ def table_persource():
 # Table 2 — cross-architecture / M2L (EMA-consistent) + v3 from-scratch.
 def table_crossarch():
     rows = [
-        ("v2.0-continued",       "GAN AE, 7.66$\\times$, no mix",  "mix", None),
-        ("v2.1-decmix",          "GAN AE, 7.66$\\times$, +mix",    "mix", None),
-        ("v3.0-baseline-d64",    "GAN AE, 15.3$\\times$, no mix",  "mix", None),
-        ("v3.1-decmix-disc-d64", "GAN AE, 15.3$\\times$, +mix",    "mix", None),
+        ("v2.0-continued",       "GAN, 7.66$\\times$, no mix",  "mix", None),
+        ("v2.1-decmix",          "GAN, 7.66$\\times$, +$\\mathcal{L}_\\mathrm{dec}$",    "mix", None),
+        ("v3.0-baseline-d64",    "GAN, 15.3$\\times$, no mix",  "mix", None),
+        ("v3.1-decmix-disc-d64", "GAN, 15.3$\\times$, +$\\mathcal{L}_\\mathrm{dec}$+disc", "mix", None),
         ("m2l_phase0_ema",       "M2L, no mix (baseline)",         "m2l", "fad0"),
         # mixing metrics are under *_ema, FAD under *_control (different runs)
         ("m2l_phase05_ema",      "M2L, fine-tune control",         "m2l", "fad05"),
@@ -200,7 +202,7 @@ def table_subtraction():
         ("v2.1-decmix",            "7.66$\\times$ $+\\mathcal{L}_\\mathrm{dec}$", False),
         ("v2.2-decmix-disc",       "7.66$\\times$ $+\\mathcal{L}_\\mathrm{dec}$+disc", False),
         ("v3.0-baseline-d64",      "15.3$\\times$ no mix",   True),
-        ("v3.1-decmix-disc-d64",   "15.3$\\times$ +mix",     False),
+        ("v3.1-decmix-disc-d64",   "15.3$\\times$ $+\\mathcal{L}_\\mathrm{dec}$+disc", False),
         ("m2l_phase2_ema",         "M2L +mix",               True),
     ]
     stems = ["drums", "bass", "vocals", "other", "all"]

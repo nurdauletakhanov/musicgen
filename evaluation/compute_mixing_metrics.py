@@ -69,11 +69,17 @@ def _si_sdr_and_gain(x_hat: torch.Tensor, x: torch.Tensor, eps: float = 1e-8):
     return sdr, gain_db
 
 
-def _no_fixed_point_perm(B: int, device, max_tries: int = 5) -> torch.Tensor:
-    """Random permutation with no i -> i. Falls back to a cyclic shift."""
+def _no_fixed_point_perm(B: int, device, max_tries: int = 5,
+                         generator: "torch.Generator | None" = None) -> torch.Tensor:
+    """Random permutation with no i -> i. Falls back to a cyclic shift.
+
+    Pass a dedicated `generator` when the surrounding code draws other random
+    numbers (e.g. decoder noise) from the global stream, so that the pairing is
+    reproducible independently of those draws.
+    """
     arange = torch.arange(B, device=device)
     for _ in range(max_tries):
-        perm = torch.randperm(B, device=device)
+        perm = torch.randperm(B, device=device, generator=generator)
         if not (perm == arange).any():
             return perm
     return torch.roll(arange, shifts=max(1, B // 2))
@@ -147,6 +153,7 @@ def _process_batch(
     x_wave: torch.Tensor,
     sources: List[str],
     alpha: float = 0.5,
+    perm_generator: "torch.Generator | None" = None,
 ) -> Dict[str, List]:
     """Compute per-sample metrics for one batch. Returns lists of (source, value)."""
     device = x_wave.device
@@ -155,7 +162,7 @@ def _process_batch(
     B = x_wave.size(0)
     if B < 2:
         return {}
-    perm = _no_fixed_point_perm(B, device)
+    perm = _no_fixed_point_perm(B, device, generator=perm_generator)
 
     tgt = model.decoder.target_length
     x = x_wave[:, :, :tgt] if x_wave.size(2) > tgt else x_wave

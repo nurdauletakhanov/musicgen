@@ -180,9 +180,14 @@ def build_dataloaders(
     val_shuffle: bool = False,
     val_seed: int = 0,
     val_per_source: Optional[int] = None,
+    val_split: str = "test",
 ) -> Tuple[DataLoader, DataLoader, WaveformDataset, WaveformDataset, FileGroupedSampler]:
+    """`val_split` names the index split used for validation and hence for
+    best.pth selection. The released runs used "test" (see REPRODUCING.md,
+    "Checkpoint selection"); pass "val" after scripts/make_val_split.py to keep
+    the test split untouched."""
     train_ds = WaveformDataset(chunks_dir, split="train", cache_size=cache_size)
-    val_ds = WaveformDataset(chunks_dir, split="test", cache_size=cache_size)
+    val_ds = WaveformDataset(chunks_dir, split=val_split, cache_size=cache_size)
     train_sampler = FileGroupedSampler(train_ds, shuffle=True)
     # val is stored source-contiguous (all fma, then maestro, then musdb).
     #   val_per_source: balanced quota per source (preferred for subsampling).
