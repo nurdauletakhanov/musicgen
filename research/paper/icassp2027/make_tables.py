@@ -168,12 +168,15 @@ def table_crossarch():
         ("v3.0-baseline-d64",    "GAN AE, 15.3$\\times$, no mix",  "mix", None),
         ("v3.1-decmix-disc-d64", "GAN AE, 15.3$\\times$, +mix",    "mix", None),
         ("m2l_phase0_ema",       "M2L, no mix (baseline)",         "m2l", "fad0"),
-        ("m2l_phase05_ema",      "M2L, fine-tune control",         "m2l", None),
+        # mixing metrics are under *_ema, FAD under *_control (different runs)
+        ("m2l_phase05_ema",      "M2L, fine-tune control",         "m2l", "fad05"),
         ("m2l_phase2_ema",       "M2L, +mix",                      "m2l", None),
     ]
     lines = []
     for name, label, kind, flag in rows:
-        fad_name = "m2l_phase0_fad.json" if flag == "fad0" else f"{name}_fad.json"
+        fad_name = ("m2l_phase0_fad.json" if flag == "fad0"
+                    else "m2l_phase05_control_fad.json" if flag == "fad05"
+                    else f"{name}_fad.json")
         fd = load(fad_name)
         fadv = (fd.get("fad/all") if fd else None)
         lines.append(
