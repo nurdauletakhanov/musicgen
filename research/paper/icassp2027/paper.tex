@@ -96,11 +96,12 @@ time. Our contributions are:
   (\secref{sec:downstream}), which a consistency decoder does not deliver
   \cite{torres2026linearity}.
   \item An interventional ablation isolating the mechanism: the decode-mixing
-  loss is the active ingredient; an adversarial term on the mixed path
+  loss alone is sufficient; adding an adversarial term on the mixed path
   inflates a decode-consistency metric with no ground-truth gain, exposing the
-  metric as a confounded proxy; and an encoder-only penalty or a frozen
-  encoder both fail, showing the property must be enforced through the decoder
-  with both networks adapting.
+  metric as a confounded proxy; an encoder-only penalty linearizes the encoder
+  without making the decoder equivariant; and freezing the encoder retains
+  most of the gain, so the effect is carried through the decoder and is
+  largest when both networks adapt.
   \item Evidence that the recipe generalizes, each against a matched control:
   from-scratch training at $2\times$ tighter compression, where the loss is
   what makes latent subtraction viable at all, and transfer to a
@@ -262,9 +263,12 @@ computed over the full multi-source test set; the $\alpha$-sweep
 
 \subsection{Which signal causes equivariance? An interventional ablation}\label{sec:ablation}
 \tabref{tab:ablation} ablates the loss on the $7.66\times$ GAN autoencoder
-(25k-step fine-tunes from a shared converged baseline). Every row differs from
-the baseline in exactly one factor, so each comparison isolates that factor's
-effect. Three observations drive the rest of the paper.
+(25k-step fine-tunes from a shared converged baseline). Each row differs from
+its comparator in exactly one factor: $\Ldec$ and $\Lenc$ against the
+baseline (the loss), $\Ldec{+}$disc against $\Ldec$ (the adversarial term),
+and frozen-encoder $\Ldec$ against $\Ldec$ (the encoder's freedom to adapt).
+Conclusions below are conditional on those comparators; the design is not a
+full factorial. Three observations drive the rest of the paper.
 
 \begin{table}[t]
   \centering\small
@@ -290,15 +294,18 @@ MixRate $<1$ ($0.97$). Adding an adversarial term to the mixed path
 SDR$_\mathrm{lin}$ ($12.1\!\to\!16.0$\,dB). The discriminator pulls the two
 decode paths onto a common realistic manifold, raising their mutual SI-SDR
 without moving either toward $\bar{x}$. This is direct evidence that
-SDR$_\mathrm{lin}$ is gameable and that no adversarial machinery is required for
-equivariance.
+SDR$_\mathrm{lin}$ is gameable, and that given $\Ldec$ no adversarial term is
+needed; whether the discriminator has an effect on its own, without $\Ldec$,
+is not tested here.
 
-\textbf{(3) Direct decoder gradient matters.} The encoder-only variant $\Lenc$
-drives $\ell_\mathrm{lat}$ lowest but leaves MixRate high ($1.15$--$1.18$): it
-linearizes the encoder without making the decoder equivariant. Freezing the
-encoder and training only the decoder is the single worst run on the
-ground-truth metric relative to its reconstruction, confirming both networks
-must adapt.
+\textbf{(3) The effect is carried through the decoder.} The encoder-only
+variant $\Lenc$ drives $\ell_\mathrm{lat}$ lowest but leaves MixRate high
+($1.15$--$1.18$): it linearizes the encoder without making the decoder
+equivariant. Conversely, training only the decoder under $\Ldec$ with the
+encoder frozen retains most of the gain ($9.5$\,dB versus $10.2$ joint and
+$8.0$ baseline) while leaving encoder linearity unimproved
+($\ell_\mathrm{lat}$ $0.072$). Joint training performs best among the tested
+configurations; the decoder alone recovers most of the effect.
 
 \subsection{Intervening on compression and architecture}\label{sec:general}
 \tabref{tab:crossarch} extends the recipe along two axes. \textbf{Compression:}
@@ -390,9 +397,10 @@ starkest against the matched from-scratch control at $15.3\times$: without the
 mixing loss, latent subtraction is essentially unusable ($+1.2$\,dB overall,
 and $-1.6$\,dB on bass, worse than emitting the unmodified mixture), while
 the same architecture trained with it reaches $+5.2$\,dB and the \emph{lowest}
-tax of any model ($2.5$\,dB). Tighter compression therefore does not merely
-cost a little subtraction quality: it is what makes the property fail
-outright, and the loss is what restores it.
+tax of any model ($2.5$\,dB). The two settings differ in training history as
+well as compression (from scratch versus fine-tuned), so our design does not
+separate which of the two makes the control's arithmetic fail; what each
+matched pair isolates is that the loss restores it.
 
 \begin{table}[t]
   \centering\small
