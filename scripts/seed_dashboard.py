@@ -85,9 +85,14 @@ def remote_cmd():
          f"ls {REMOTE}/chunks-44k-1s/test 2>/dev/null | wc -l",
          "echo '===DL==='", "[ -f ~/raw/.downloads_done ] && echo done || echo pending"]
     for r in RUNS:
+        base = r.rsplit("-", 1)[0]; tag = BASES[base][1] + r.rsplit("-", 1)[1]
         p += [f"echo '===RUN {r}==='",
               f"tail -n 2 {REMOTE}/checkpoints/{r}/train_log.jsonl 2>/dev/null",
-              f"[ -f {REMOTE}/checkpoints/{r}/step_25000.pth ] && echo FINAL"]
+              f"[ -f {REMOTE}/checkpoints/{r}/step_25000.pth ] && echo FINAL",
+              # per-step tqdm bar from the newest Slurm log (updates every step,
+              # whereas train_log.jsonl only lands every log_every_steps=100)
+              f"f=$(ls -t {REMOTE}/slurm-{tag}-*.out 2>/dev/null | head -1); "
+              f"[ -n \"$f\" ] && tail -c 400 \"$f\" | tr '\\r' '\\n' | grep -oE '[0-9]+/25000 \\[[^]]*\\]' | tail -1 | sed 's/^/BAR /'"]
     p += ["echo '===EVALS==='",
           f"cd {REMOTE}/evaluation/v2_metrics 2>/dev/null && for f in *-s[0-9]_mixing.json *-s[0-9]_fad.json *-s[0-9]_subtraction.json; do [ -f \"$f\" ] && echo \"===JSON $f===\" && cat \"$f\"; done",
           "echo '===LAUNCH==='", "tail -n 8 ~/seeds_launch.log 2>/dev/null", "true"]
@@ -137,6 +142,13 @@ def parse(text):
         job = next((q for q in queue if q["name"] == tag), None)
         step = last["step"] if last else 0
         sps = last.get("steps_per_sec") if last else None
+        bar = next((l for l in lines if l.startswith("BAR ")), None)
+        if bar:
+            m = re.search(r"(\d+)/25000 \[.*?,\s*([\d.]+)(s/it|it/s)\]", bar)
+            if m and int(m.group(1)) >= step:
+                step = int(m.group(1))
+                v = float(m.group(2))
+                sps = (1.0 / v if m.group(3) == "s/it" else v) if v > 0 else sps
         eta_h = ((MAX_STEPS - step) / sps / 3600) if (sps and step < MAX_STEPS) else None
         status = "finished" if final else ("running" if job and job["state"] == "RUNNING"
                  else ("queued" if job else ("stalled" if step else "waiting")))
