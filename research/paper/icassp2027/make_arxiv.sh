@@ -24,7 +24,7 @@ PAGES=$(grep -oE 'Output written on paper.pdf \([0-9]+' "$STAGE"/build.log | gre
 echo "staged build OK: $PAGES pages"
 # ICASSP: page 5 may hold references only. Force a break before the bibliography;
 # if the body already fits in 4 pages the count is unchanged, otherwise it grows.
-sed 's/\\bibliography{references}/\\newpage\\bibliography{references}/' "$STAGE"/paper.tex > "$STAGE"/_p5.tex
+sed 's/\\bibliography{references}/\\clearpage\\bibliography{references}/' "$STAGE"/paper.tex > "$STAGE"/_p5.tex
 ( cd "$STAGE" && latexmk -pdf -interaction=nonstopmode -jobname=_p5 _p5.tex > _p5.log 2>&1 ) || true
 P5=$(grep -oE 'Output written on _p5.pdf \([0-9]+' "$STAGE"/_p5.log | grep -oE '[0-9]+$' | tail -1)
 [ "${P5:-0}" -le 5 ] || { echo "ERROR: body text spills onto page 5 (forced-break build has $P5 pages)"; exit 1; }

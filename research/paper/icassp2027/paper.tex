@@ -27,36 +27,23 @@ nurdaulet.akhanov@mbzuai.ac.ae}}
 \maketitle
 
 \begin{abstract}
-Mixing is a linear operation on waveforms, so a latent space that respects
-it, one in which interpolating two codes and decoding reproduces the
-waveform mix, is an \emph{equivariant} representation. Neural audio
-autoencoders do not learn this structure on their own. Recent work induces it
-in a consistency autoencoder by decoding averaged latents against the true
-mix; we ask which part of such supervision is actually responsible, whether
-the decoder class limits what it delivers, and whether the metrics used to
-certify it measure it at all. We answer with a controlled
-study in which each experiment intervenes on a single factor while holding
-architecture, data, initialization, and schedule fixed. An explicit
-\emph{decode-mixing loss}, which requires decoded latent interpolations to
-match true waveform mixes, at the cost of one extra decoder pass, is
-sufficient: on a waveform GAN autoencoder it makes the latent space
-mixing-equivariant \emph{at no measured reconstruction cost}, and at $2\times$ tighter compression the
-same holds against a matched from-scratch control. Raw latent subtraction of a
-stem improves from $+3.4$ to $+5.7$\,dB SI-SDR with the loss, but this
-advantage is a latent-offset effect: adding the encoded silence $f(0)$, exact
-for affine maps, brings every model, with or without the loss, to within
-$0.5$\,dB of its reconstruction ceiling on all 49 test tracks. What the loss
-buys is convex equivariance; subtraction needs only the origin.
-All comparisons are single-run, matched at one initialization. The interventions
-also identify what is \emph{not} responsible: an adversarial term on the mixed
-path inflates a decode-consistency metric without improving ground-truth
-equivariance, exposing that metric as a confounded proxy; an encoder-only
-penalty linearizes the encoder without making the decoder equivariant; and on
-a consistency-model autoencoder (Music2Latent) a continued-training control
-shows the loss improves latent geometry, although absolute waveform arithmetic
-stays poor there: the decoder class sets what linearity can deliver. Finally, the widely used decode-vs-decode
-linearity metric is shown to be confounded by decoder phase variance, and a
-ground-truth-referenced variant is reported throughout.
+Mixing is linear on waveforms, so a latent space in which interpolating two
+codes and decoding reproduces the waveform mix is an \emph{equivariant}
+representation. Recent work induces this in a consistency autoencoder by
+decoding averaged latents against the true mix. We ask which part of that
+supervision is responsible, whether the decoder class limits what it delivers,
+and whether the certifying metrics measure it at all, through a controlled
+study in which each experiment intervenes on one factor. An explicit
+decode-mixing loss suffices: on a waveform GAN autoencoder it makes the latent
+space mixing-equivariant at no measured reconstruction cost, at $2\times$
+tighter compression too, and it restores level as well as shape. An
+adversarial term on the mixed path adds nothing beyond inflating a
+decode-consistency metric, exposing that metric as a confounded proxy; on a
+consistency-model autoencoder the loss improves latent geometry but not
+waveform arithmetic. Latent stem subtraction, in contrast, is governed by the
+latent origin, not the loss: adding the encoded silence $f(0)$ brings every
+model to within $0.5$\,dB of its reconstruction ceiling on all 49 test tracks.
+Comparisons are single-run, matched at one initialization.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -77,9 +64,9 @@ Latent \emph{subtraction}, $g(f(x_\mathrm{mix}){-}f(x_\mathrm{stem}))$, uses
 coefficients $(1,-1)$ and so is not implied by it: an offset $f(x)=x+b$,
 $g(z)=z-b$ satisfies Eq.~\ref{eq:equiv} exactly yet subtracts to
 $x_\mathrm{res}-b$. Subtraction additionally needs the latent map to have no
-offset, and we treat it as an empirical question (\secref{sec:downstream}). If
-it holds, latent vector arithmetic becomes audio editing, removing, adding, and
-remixing sources without a dedicated separation or synthesis model. It is also a prerequisite for latent-diffusion systems
+offset, which we treat empirically (\secref{sec:downstream}). Where it holds,
+latent arithmetic becomes audio editing without a dedicated separation or
+synthesis model, and it is a prerequisite for latent-diffusion systems
 \cite{liu2023audioldm,evans2024stable} that compose independently modeled
 sources. Yet standard autoencoders do not satisfy
 Eq.~\ref{eq:equiv}: their objectives reward reconstruction fidelity, not
@@ -98,27 +85,19 @@ written as an explicit loss (\secref{sec:method}) on a waveform GAN
 autoencoder, whose effect we then isolate by intervening on one factor at a
 time. Our contributions are:
 \begin{enumerate}
-  \item A controlled study of mixed-latent supervision, instantiated as an
-  explicit decode-mixing loss on a waveform GAN autoencoder, where it yields
-  mixing-equivariance \emph{without degrading reconstruction}
-  (\secref{sec:ablation}); a downstream analysis shows latent stem removal is
-  limited by the latent origin rather than by the loss: adding $f(0)$ brings
-  every model to its reconstruction ceiling (\secref{sec:downstream}).
-  \item An interventional ablation isolating the mechanism: the decode-mixing
-  loss alone is sufficient; adding an adversarial term on the mixed path
-  inflates a decode-consistency metric with no ground-truth gain, exposing the
-  metric as a confounded proxy; an encoder-only penalty linearizes the encoder
-  without making the decoder equivariant; and freezing the encoder retains
-  most of the gain, so the effect is carried through the decoder and is
-  largest when both networks adapt.
-  \item Evidence that the recipe generalizes, each against a matched control:
-  from-scratch training at $2\times$ tighter compression, and a matched re-run
-  on a consistency-model autoencoder with a continued-training control ruling
-  out domain adaptation, where latent geometry improves but waveform-level
-  arithmetic does not become usable. The gain holds on all three test domains.
+  \item A controlled study of mixed-latent supervision on a waveform GAN
+  autoencoder: the decode-mixing loss alone is sufficient, an adversarial term
+  on the mixed path adds no ground-truth gain, and an encoder-only penalty or a
+  frozen encoder identify the decoder as the locus (\secref{sec:ablation}).
+  \item Generalization against matched controls: from-scratch training at
+  $2\times$ tighter compression, and a re-run on a consistency-model
+  autoencoder where latent geometry improves but waveform arithmetic does not
+  (\secref{sec:general}).
+  \item A downstream analysis showing latent stem removal is limited by the
+  latent origin rather than the loss (\secref{sec:downstream}).
   \item A methodological correction: the widely used decode-vs-decode
-  SI-SDR$_\mathrm{lin}$ metric is confounded by decoder phase variance; we
-  report a ground-truth-referenced variant.
+  SI-SDR$_\mathrm{lin}$ is confounded by decoder phase variance; we report a
+  ground-truth-referenced variant.
 \end{enumerate}
 
 \section{Related Work}\label{sec:related}
@@ -131,16 +110,13 @@ RAVE \cite{caillon2021rave} learns a variational latent space but does not
 target mixing equivariance, and disentanglement regularizers
 \cite{higgins2017betavae} encourage generic smoothness rather than a specific
 algebraic identity.
-\textbf{Equivariant representations.} Mixing-equivariance is an instance
-of the symmetry-based view of representation learning, in which a
-representation is characterized by how it transforms under known operations
-on the data \cite{higgins2018towards}; convex mixing is an affine combination
-rather than a group action (it has no inverses), so we borrow the framing, not
-the group formalism. Verma and Berger
-\cite{verma2021framework} build equivariance to audio transformations into the
-architecture. We instead treat equivariance to the linear mixing operation as
-a property to be \emph{induced} by supervision, and isolate by intervention
-which supervision induces it.
+\textbf{Equivariant representations.} Mixing-equivariance follows the
+symmetry-based view of representation learning \cite{higgins2018towards},
+though convex mixing is an affine combination, not a group action, so we
+borrow the framing and not the formalism. Verma and Berger
+\cite{verma2021framework} build equivariance into the architecture; we treat
+it as a property to be \emph{induced} by supervision and isolate which
+supervision induces it.
 \textbf{Linear audio representations.} Music2Latent \cite{pasini2024music2latent}
 is a consistency autoencoder with partial linearity as a byproduct.
 Torres et al.~\cite{torres2026linearity} make it approximately linear by
@@ -151,15 +127,12 @@ form of that additivity supervision: the same input (averaged latents) and
 target (true mix), differing in loss family (multi-resolution STFT and mel
 versus consistency), mixing coefficient ($\alpha\sim U[0,1]$ versus $0.5$),
 and decoder class (deterministic GAN versus consistency model). We add the
-analysis: which ingredient carries the effect, a
-matched re-run of the principle on their architecture with a
-continued-training control (\secref{sec:general}), and ground-truth-referenced
-metrics. Their decoder-additivity scores (SNR, spectral distance) and
-separation SI-SDR compare two decodes
-(decoded latent sum versus the \emph{autoencoded} mix or source), the
-protocol \secref{sec:metrics} shows to be confounded, and their
-latent-arithmetic separation is negative on every stem ($-0.3$ to $-1.8$\,dB
-SI-SDR), as our phase-coherence finding predicts.
+analysis: which ingredient carries the effect, a matched re-run on their
+architecture with a continued-training control (\secref{sec:general}), and
+ground-truth-referenced metrics. Their additivity (SNR, spectral distance) and
+separation scores compare two decodes, the protocol \secref{sec:metrics} shows
+to be confounded, and their separation is negative on every stem ($-0.3$ to
+$-1.8$\,dB), as our phase-coherence finding predicts.
 
 \section{Method}\label{sec:method}
 
@@ -338,12 +311,10 @@ a matched control (same architecture, compression, and schedule, mixing
 disabled), this isolates the loss's contribution and shows the effect is not
 an artifact of the looser $7.66\times$ rate or of warm-starting.
 \textbf{Level preservation.} SI-SDR discards gain, so we also report the gain
-it fits (source-balanced subsample): the decoded mix comes out $1.6$\,dB too
-quiet for the no-mixing model but $0.9$\,dB for $\Ldec$, the same as each
-model's plain-reconstruction level error ($0.8$\,dB); at $15.3\times$,
-$1.8$ versus $1.0$\,dB against $0.9$. The loss thus restores level as well as
-shape, so Eq.~\ref{eq:equiv} holds beyond scale up to the decoder's own
-reconstruction bias. \textbf{Architecture:} we fine-tune the published
+it fits: the decoded mix is $1.6$\,dB too quiet without the loss and
+$0.9$\,dB with it, matching the model's own reconstruction level error
+($0.8$\,dB); at $15.3\times$, $1.8$ versus $1.0$ against $0.9$. The loss
+restores level as well as shape. \textbf{Architecture:} we fine-tune the published
 Music2Latent \cite{pasini2024music2latent} consistency autoencoder with the
 decode-mixing objective, the additivity supervision of
 \cite{torres2026linearity} on its own architecture, using its native
@@ -430,27 +401,19 @@ $14.8$ at $15.3\times$), which coefficient-sum-zero arithmetic pays for. What
 the loss buys is convex equivariance (Tables~\ref{tab:ablation}
 and~\ref{tab:persource}); subtraction needs the origin, a free post-hoc fix.
 
-\textbf{Baselines without latent arithmetic.} Returning the unchanged mixture
-scores $+17.1$\,dB against the residual (the removed stem is a small share of
-the energy), above every autoencoder's ceiling, so this metric cannot certify
-removal in absolute terms; it measures arithmetic relative to the model's own
-reconstruction. Within the model, autoencoding the mixture and doing nothing
-scores $+2.2$\,dB ($+1.7$ at $15.3\times$), and decoding mixture and stem
-separately and subtracting waveforms scores $+7.5$ ($+6.5$). Raw latent
-subtraction is below waveform subtraction for every model (by $1.3$ to
-$5.2$\,dB); origin-corrected latent subtraction is above it for every model,
-by $+0.7$ to $+0.9$\,dB (track-cluster CIs exclude zero; $80$--$92\%$ of
-tracks), with or without the mixing loss.
+\textbf{Baselines without latent arithmetic.} The unchanged mixture scores
+$+17.1$\,dB against the residual, above every autoencoder's ceiling, since the
+removed stem is a small share of the energy: this metric cannot certify removal
+in absolute terms, only arithmetic relative to the model's own reconstruction.
+Within the model, autoencoding the mixture and doing nothing scores $+2.2$\,dB
+($+1.7$ at $15.3\times$); decoding both signals and subtracting waveforms
+scores $+7.5$ ($+6.5$). Raw latent subtraction is below waveform subtraction
+for every model, origin-corrected latent subtraction above it by $+0.7$ to
+$+0.9$\,dB (track-cluster CIs exclude zero), with or without the loss.
 
-\textbf{How much of this is measurement noise?} Units from one recording are
-correlated, so the resampling unit is the track: a paired cluster bootstrap
-draws the 49 tracks with replacement ($10^4$ resamples). Raw contrasts sit far
-outside evaluation variance ($\Ldec$: $+2.33$\,dB $[+2.11,+2.54]$;
-$15.3\times$: $+4.02$\,dB $[+3.71,+4.34]$; all 49 tracks), and the corrected
-contrasts are indistinguishable from zero, as above. Unit-level resampling
-gives intervals about three times narrower; we report track-level ones. They
-cover evaluation variance at the tested initialization, not variation across
-training runs.
+All intervals here come from a paired cluster bootstrap over the 49 tracks
+($10^4$ resamples), the correlated unit; they cover evaluation variance at the
+tested initialization.
 
 \subsection{Equivariance across mixing ratios}\label{sec:alpha}
 Sweeping $\alpha$ on a source-balanced subsample (\figref{fig:alpha}), the
@@ -463,37 +426,25 @@ only at the trained operating point.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.82\linewidth]{figures/fig_alpha.pdf}
+  \includegraphics[width=0.74\linewidth]{figures/fig_alpha.pdf}
   \caption{Ground-truth equivariance vs.\ mixing coefficient $\alpha$
   (source-balanced subsample). The no-mixing baseline sags at the hardest
   balanced mix ($\alpha{=}0.5$); the decode-mixing loss flattens and lifts the
   curve across all $\alpha$.}
   \label{fig:alpha}
 \end{figure}
-We caution that the decode-vs-decode SDR$_\mathrm{lin}$ is U-shaped in $\alpha$
-for \emph{all} models (near-identity mixes are trivially easy), which is a
-property of that metric, distinct from the phase-variance confound discussed in
-\secref{sec:metrics}.
-
 \section{Conclusion}\label{sec:conclusion}
-A controlled study identifies an explicit decode-mixing loss as the training
-signal responsible for mixing-equivariance in a waveform autoencoder, obtained
-at no measured reconstruction cost. The
-loss itself, not an adversarial term on the mixed path, is the active
-ingredient for convex equivariance, and the effect transfers across
-compression rates. Raw stem subtraction is governed by the latent offset, which
-one encode of silence removes for every model, with or without the loss. On a
-consistency-model autoencoder the loss improves latent geometry under a
-continued-training control without yielding usable waveform arithmetic, so
-practical claims are confined to the deterministic GAN decoder.
-\textbf{Limitations.} Every comparison is matched at a single initialization;
-this identifies the effect of each factor at that initialization but not its
-variation across training runs. Our confidence intervals cover evaluation
-variance (new tracks), so small differences (e.g.\ $\Ldec$ vs.\ $\Ldec{+}$disc, $0.31$\,dB) remain
-within plausible seed variance and we report them as ``comparable.'' Experiments are mono;
-consistency-decoder latent arithmetic remains phase-limited; and we conduct no
-listening test. Stereo, multi-seed estimates, and latent-diffusion composition
-are future work.
+A controlled study identifies the decode-mixing loss, not an adversarial term
+on the mixed path, as the signal responsible for convex mixing-equivariance, at
+no measured reconstruction cost and across compression rates. Raw stem
+subtraction is instead governed by the latent offset, which one encode of
+silence removes for every model. On a consistency-model autoencoder the loss
+improves latent geometry but not waveform arithmetic, so practical claims are
+confined to the deterministic GAN decoder.
+\textbf{Limitations.} Every comparison is matched at a single initialization,
+identifying each factor's effect there but not its variation across training
+runs; experiments are mono; and we conduct no listening test. Stereo,
+multi-seed estimates, and latent-diffusion composition are future work.
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}
