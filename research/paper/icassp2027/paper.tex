@@ -67,10 +67,14 @@ For an autoencoder with encoder $f$ and decoder $g$, we call the latent space
   g\!\left(\alpha f(x_1)+(1{-}\alpha)f(x_2)\right)\approx \alpha x_1+(1{-}\alpha)x_2 .
   \label{eq:equiv}
 \end{equation}
-This property turns latent vector arithmetic into audio editing: subtracting a
-stem's latent removes it from a mixture, adding latents mixes sources, and
-weighted combinations remix, all without a dedicated separation or synthesis
-model. It is also a prerequisite for latent-diffusion systems
+Eq.~\ref{eq:equiv} constrains combinations whose coefficients sum to one.
+Latent \emph{subtraction}, $g(f(x_\mathrm{mix}){-}f(x_\mathrm{stem}))$, uses
+coefficients $(1,-1)$ and so is not implied by it: an offset $f(x)=x+b$,
+$g(z)=z-b$ satisfies Eq.~\ref{eq:equiv} exactly yet subtracts to
+$x_\mathrm{res}-b$. Subtraction additionally needs the latent map to have no
+offset, and we treat it as an empirical question (\secref{sec:downstream}). If
+it holds, latent vector arithmetic becomes audio editing, removing, adding, and
+remixing sources without a dedicated separation or synthesis model. It is also a prerequisite for latent-diffusion systems
 \cite{liu2023audioldm,evans2024stable} that compose independently modeled
 sources. Yet standard autoencoders do not satisfy
 Eq.~\ref{eq:equiv}: their objectives reward reconstruction fidelity, not
@@ -124,8 +128,10 @@ target mixing equivariance, and disentanglement regularizers
 algebraic identity.
 \textbf{Equivariant representations.} Mixing-equivariance is an instance
 of the symmetry-based view of representation learning, in which a
-representation is characterized by how it transforms under a known group
-action on the data \cite{higgins2018towards}; Verma and Berger
+representation is characterized by how it transforms under known operations
+on the data \cite{higgins2018towards}; convex mixing is an affine combination
+rather than a group action (it has no inverses), so we borrow the framing, not
+the group formalism. Verma and Berger
 \cite{verma2021framework} build equivariance to audio transformations into the
 architecture. We instead treat equivariance to the linear mixing operation as
 a property to be \emph{induced} by supervision, and isolate by intervention
@@ -365,7 +371,11 @@ preserved by the mixing loss.
 We remove a stem by latent subtraction,
 $\hat{x}=g(f(x_\mathrm{mix})-f(x_\mathrm{stem}))$, and measure SI-SDR against
 the true residual on the MUSDB18 test set. This tests \emph{extrapolation}
-beyond the convex range $\alpha\in[0,1]$ seen in training. Alongside the
+beyond the convex range $\alpha\in[0,1]$ seen in training and beyond what
+Eq.~\ref{eq:equiv} guarantees (\secref{sec:intro}); we therefore also report
+the origin-corrected variant $g(f(x_\mathrm{mix}){-}f(x_\mathrm{stem}){+}f(0))$,
+exact for affine $f,g$, to test whether a latent offset contributes to the
+error. Alongside the
 subtraction score we report the \emph{linearity tax}
 $\mathrm{gap}=\mathrm{SISDR}(g(f(x_\mathrm{res})),x_\mathrm{res})-\mathrm{SISDR}(\hat{x},x_\mathrm{res})$,
 the shortfall of latent arithmetic against the same model's own encode--decode
