@@ -192,11 +192,11 @@ decoders: a consistency-model decoder \cite{pasini2024music2latent} draws fresh
 noise per call. Decoding the \emph{same} latent twice is deterministic under
 shared noise but scores $-1.8$\,dB under independent noise: decoder sampling
 substantially affects decode-vs-decode scores even when no latent arithmetic is
-performed. \figref{fig:protocol}
-shows the same Music2Latent checkpoints scoring $\approx{-}8$\,dB under
-independent-noise decoding (the protocol implied by prior reports) and
-\emph{positive} under shared-noise decoding, a $12$\,dB swing driven by the
-eval protocol rather than the model. This shows protocol sensitivity; decoding
+performed. On identical pairs, \figref{fig:protocol} shows the same Music2Latent
+checkpoints scoring $-9.1$ and $-7.3$\,dB under independent-noise decoding
+(the protocol implied by prior reports) and $+3.6$ and $+5.9$\,dB under
+shared-noise decoding, a $13$\,dB swing driven by the eval protocol rather
+than the model. This shows protocol sensitivity; decoding
 the same latent twice with independent noise isolates how much of the
 disagreement arises without any latent arithmetic (\secref{sec:general}). We therefore treat
 SI-SDR$_\mathrm{lin}^\mathrm{gt}$ and MixRate as the equivariance metrics of
