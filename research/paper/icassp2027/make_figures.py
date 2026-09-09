@@ -87,9 +87,9 @@ def fig_protocol():
             r"^(shared|random)\s+(P[02])\s+([-+0-9.]+)\s+([-+0-9.]+)$", log, re.M):
         vals[(a, b)] = float(lin)
     data = {
-        "shared noise (phase cancelled)":     {"M2L base": vals[("shared", "P0")],
+        "shared decode noise":     {"M2L base": vals[("shared", "P0")],
                                                "M2L +mix": vals[("shared", "P2")]},
-        "independent noise (prior protocol)": {"M2L base": vals[("random", "P0")],
+        "independent decode noise": {"M2L base": vals[("random", "P0")],
                                                "M2L +mix": vals[("random", "P2")]},
     }
     models = ["M2L base", "M2L +mix"]

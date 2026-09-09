@@ -36,8 +36,9 @@ decode-mixing loss suffices: on a waveform GAN autoencoder it makes the latent
 space mixing-equivariant with reconstruction SI-SDR approximately preserved, at $2\times$
 tighter compression the combined recipe (with the adversarial term) transfers,
 and the loss restores level as well as shape. An
-adversarial term on the mixed path adds nothing beyond inflating a
-decode-consistency metric, exposing that metric as a confounded proxy; on a
+adversarial term on the mixed path adds no ground-truth gain while raising a
+decode-consistency metric by $4$\,dB, so the two metrics rank the same
+models differently; on a
 consistency-model autoencoder it improves latent geometry and ground-truth
 mixing, both far from usable waveform arithmetic. Latent stem subtraction, in contrast, is governed by the
 latent origin, not the loss: adding the encoded silence $f(0)$ recovers the
@@ -92,8 +93,9 @@ time. Our contributions are:
 \begin{enumerate}
   \item A controlled study of mixed-latent supervision on a waveform GAN
   autoencoder: the decode-mixing loss alone is sufficient, an adversarial term
-  on the mixed path adds no ground-truth gain, and an encoder-only penalty or a
-  frozen encoder identify the decoder as the locus (\secref{sec:ablation}).
+  on the mixed path adds no ground-truth gain on the tested contrast, and
+decoder-only adaptation retains most of the improvement while joint
+adaptation is best among the tested configurations (\secref{sec:ablation}).
   \item Generalization against matched controls: the combined
   $\Ldec{+}$disc recipe trained from scratch at $2\times$ tighter compression,
   and a re-run on a consistency-model
@@ -103,8 +105,8 @@ time. Our contributions are:
   latent origin rather than the loss, for every evaluated GAN configuration
   (\secref{sec:downstream}).
   \item A methodological correction: the widely used decode-vs-decode
-  SI-SDR$_\mathrm{lin}$ is confounded by decoder phase variance; we report a
-  ground-truth-referenced variant.
+  SI-SDR$_\mathrm{lin}$ is sensitive to the decode-noise protocol and to an
+adversarial term; we report a ground-truth-referenced variant.
 \end{enumerate}
 
 \section{Related Work}\label{sec:related}
@@ -184,19 +186,20 @@ numerator and denominator,
 (decoder equivariance; $<1$ is better than the encode-then-decode path).
 SI-SDR$_\mathrm{lin}$ shares the decode-vs-decode structure of prior work's
 decoder-additivity metrics (SNR and spectral distance between two decodes
-\cite{torres2026linearity}), and it is \emph{gameable}: we hypothesize that
-a decoder driven onto a common realistic manifold raises the
-mutual SI-SDR of its two decode paths without bringing either closer to
-$\bar{x}$ (\secref{sec:ablation}). It is also confounded for stochastic
+\cite{torres2026linearity}), and the two views can be moved apart: an adversarial term on the mixed path
+raises the mutual SI-SDR of the two decode paths without bringing either
+closer to $\bar{x}$ (\secref{sec:ablation}). We do not identify the
+mechanism; one candidate is that both decodes are driven onto a common
+realistic manifold. It is also confounded for stochastic
 decoders: a consistency-model decoder \cite{pasini2024music2latent} draws fresh
 noise per call. Decoding the \emph{same} latent twice is deterministic under
 shared noise but scores $-1.8$\,dB under independent noise: decoder sampling
 substantially affects decode-vs-decode scores even when no latent arithmetic is
 performed. On identical pairs, \figref{fig:protocol} shows the same Music2Latent
-checkpoints scoring $-9.1$ and $-7.3$\,dB under independent-noise decoding
-(the protocol implied by prior reports) and $+3.6$ and $+5.9$\,dB under
-shared-noise decoding, a $13$\,dB swing driven by the eval protocol rather
-than the model. This shows protocol sensitivity; decoding
+checkpoints scoring $-9.1$ and $-7.3$\,dB when the two decodes draw
+independent noise and $+3.6$ and $+5.9$\,dB when they share it, a $13$\,dB
+swing driven by the evaluation protocol rather than the model. Which
+protocol prior work used is not stated in enough detail for us to determine. This shows protocol sensitivity; decoding
 the same latent twice with independent noise isolates how much of the
 disagreement arises without any latent arithmetic (\secref{sec:general}). We therefore treat
 SI-SDR$_\mathrm{lin}^\mathrm{gt}$ and MixRate as the equivariance metrics of
@@ -253,10 +256,12 @@ the design is not a full factorial. Three observations drive the paper.
   \label{tab:ablation}
 \end{table}
 
-\textbf{(1) Reconstruction is unaffected.} SDR$_\mathrm{rec}$ is flat across all
-configurations ($11.2$--$11.4$\,dB), and so is FAD ($0.044$--$0.046$): the
-mixing loss buys equivariance for free, on both a sample-wise and a
-distributional measure of quality.
+\textbf{(1) Reconstruction is similar across configurations.}
+SDR$_\mathrm{rec}$ spans $11.2$--$11.4$\,dB and FAD $0.044$--$0.046$ at this
+initialization, so we observe no reconstruction cost at $7.66\times$ on
+either a sample-wise or a distributional measure. These are single runs, so
+the absence of a difference this small is not established beyond seed
+variance.
 
 \textbf{(2) The decode-mixing loss is the active ingredient; the discriminator
 on the mixed path is not.} On the ground-truth metric, $\Ldec$ alone improves
@@ -267,18 +272,21 @@ MixRate $<1$ ($0.97$). Adding an adversarial term to the mixed path
 SDR$_\mathrm{lin}$ ($12.1\!\to\!16.0$\,dB). The discriminator pulls the two
 decode paths onto a common realistic manifold (our hypothesis), raising their mutual SI-SDR
 without moving either toward $\bar{x}$. This is direct evidence that
-SDR$_\mathrm{lin}$ is gameable, and that given $\Ldec$ no adversarial term is
-needed; whether the discriminator has an effect on its own, without $\Ldec$,
+SDR$_\mathrm{lin}$ can rise without ground-truth equivariance rising, and
+that given $\Ldec$ no adversarial term improved the ground-truth metric
+here; whether the discriminator has an effect on its own, without $\Ldec$,
 is not tested here.
 
-\textbf{(3) The effect is carried through the decoder.} The encoder-only
+\textbf{(3) Decoder-only adaptation retains most of the improvement.} The encoder-only
 variant $\Lenc$ drives $\ell_\mathrm{lat}$ lowest but leaves MixRate high
 ($1.15$--$1.18$): it linearizes the encoder without making the decoder
 equivariant. Conversely, training only the decoder under $\Ldec$ with the
 encoder frozen retains most of the gain ($9.5$\,dB versus $10.2$ joint and
 $8.0$ baseline) while leaving encoder linearity unimproved
 ($\ell_\mathrm{lat}$ $0.072$). Joint training is best among the tested
-configurations.
+configurations. This shows decoder adaptation is largely sufficient here; it
+does not show the decoder is necessary, nor that the encoder plays no part,
+which would need a decoder-frozen counterpart we did not train.
 
 \subsection{Intervening on compression and architecture}\label{sec:general}
 \tabref{tab:crossarch} extends the recipe along two axes. \textbf{Compression:}
@@ -327,12 +335,10 @@ an explanation of it.
   \label{tab:crossarch}
 \end{table}
 
-\textbf{The gain is not domain-driven.} Broken out by test domain (indie
-production, solo piano, studio mixes) against the matched control at each rate,
-the SDR$_\mathrm{lin}^\mathrm{gt}$ improvement appears on all three at both
-rates ($+2.0$ to $+3.1$\,dB at $7.66\times$; $+1.2$ to $+3.2$ at
-$15.3\times$), so it is a property of the latent space, not of one recording
-style.
+\textbf{The gain is not domain-driven.} Against the matched control at each
+rate, the SDR$_\mathrm{lin}^\mathrm{gt}$ improvement appears on all three
+test domains at both rates ($+2.0$ to $+3.1$\,dB at $7.66\times$, $+1.2$ to
+$+3.2$ at $15.3\times$), so it is not a property of one recording style.
 
 \subsection{Downstream: latent-arithmetic stem removal}\label{sec:downstream}
 We remove a stem by latent subtraction,
@@ -364,7 +370,7 @@ the \emph{linearity tax}, the shortfall against that encode--decode reference.
 
 \textbf{Raw subtraction favours the mixing loss; origin correction removes the
 difference.} Raw, $\Ldec$ raises subtraction quality at $7.66\times$
-($+3.4\!\to\!+5.7$\,dB) and the matched $15.3\times$ pair goes from $+1.2$ to
+($+3.4\!\to\!+5.8$\,dB) and the matched $15.3\times$ pair goes from $+1.2$ to
 $+5.2$\,dB. Adding $f(0)$ gains $+2.0$ to $+6.0$\,dB for every evaluated GAN
 configuration, leaving each within about $0.5$\,dB of that reference in aggregate
 (\tabref{tab:subtraction}); per track the tail is wider (worst $2.2$\,dB,
@@ -395,21 +401,12 @@ All intervals here come from a paired cluster bootstrap over the 49 tracks
 tested initialization.
 
 \subsection{Equivariance across mixing ratios}\label{sec:alpha}
-Sweeping $\alpha$ on a source-balanced subsample (\figref{fig:alpha}), the
-mixing loss flattens the equivariance curve: the
+Sweeping $\alpha$ on a source-balanced subsample, the mixing loss flattens the
+equivariance curve: the
 SDR$_\mathrm{lin}^\mathrm{gt}$ swing across $\alpha$ is $1.2$\,dB for
 $\Ldec{+}$disc against $3.2$\,dB for the baseline, so the property holds
 across mixing ratios.
 
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=0.74\linewidth]{figures/fig_alpha.pdf}
-  \caption{Ground-truth equivariance vs.\ mixing coefficient $\alpha$
-  (source-balanced subsample). The no-mixing baseline sags at the hardest
-  balanced mix ($\alpha{=}0.5$); the decode-mixing loss flattens and lifts the
-  curve across all $\alpha$.}
-  \label{fig:alpha}
-\end{figure}
 \section{Conclusion}\label{sec:conclusion}
 A controlled study identifies the decode-mixing loss, not an adversarial term
 on the mixed path, as the signal responsible for convex mixing-equivariance,
@@ -418,10 +415,10 @@ Raw stem subtraction is instead governed by the latent offset: one encode of
 silence recovers the residual's own latent and, for every evaluated GAN
 configuration, the model's reconstruction of it. On a consistency-model
 autoencoder it improves latent geometry and ground-truth mixing, both far from
-usable waveform arithmetic. \textbf{Limitations.} Comparisons are matched at a
-single initialization, identifying each factor's effect there but not across
-runs; experiments are mono with no listening test. Stereo, multi-seed
-estimates, and latent-diffusion composition are future work.
+usable waveform arithmetic. \textbf{Limitations.} Comparisons are matched at one initialization, so each
+factor's effect is identified there and not across runs; checkpoint
+selection used the test split (\secref{sec:setup}); experiments are mono
+with no listening test.
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}

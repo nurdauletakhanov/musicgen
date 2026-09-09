@@ -38,7 +38,42 @@ def fad(name):
     return d.get("fad/all") or d.get("metrics", {}).get("fad", {}).get("all")
 
 
+_PER_CHUNK_CACHE = {}
+
+
+def _per_chunk(name):
+    """The identified per-unit records for a run: [{track, stem, chunk, sub, ceil, ...}].
+
+    Tables and the statistical comparisons must come from the SAME evaluation
+    records. The summary *_subtraction.json files were written by an earlier
+    run of the same eval and disagree with the per-unit records by a few
+    hundredths of a dB, which is enough to move a rounded table cell. The
+    per-unit files carry (track, stem, chunk) identity and are what
+    paired_stats and origin_effect consume, so they are the source of truth
+    here too.
+    """
+    if name not in _PER_CHUNK_CACHE:
+        p = os.path.join(M, "per_chunk", f"{name}_per_chunk.json")
+        _PER_CHUNK_CACHE[name] = (json.load(open(p))["records"]
+                                  if os.path.exists(p) else None)
+    return _PER_CHUNK_CACHE[name]
+
+
 def sub(name, stem="all", field="sdr_sub"):
+    """Mean subtraction metric, pooled over the identified per-unit records.
+
+    field: 'sdr_sub' (the subtraction score) or 'gap' (linearity tax against
+    the model's own reconstruction of the residual).
+    """
+    recs = _per_chunk(name)
+    if recs is not None:
+        rows = recs if stem == "all" else [r for r in recs if r["stem"] == stem]
+        if not rows:
+            return None
+        if field == "gap":
+            return float(sum(r["ceil"] - r["sub"] for r in rows) / len(rows))
+        return float(sum(r["sub"] for r in rows) / len(rows))
+    # Runs without per-unit records (e.g. the M2L phases) keep the summary.
     d = load(f"{name}_subtraction.json")
     if not d:
         return None
@@ -214,8 +249,12 @@ def table_subtraction():
         cells = " & ".join(fs([sub(r, st) for r in runs], 1, 1) for st in stems)
         lines.append(f"    {label} & {cells} & {fs([sub(r,'all','gap') for r in runs],1)} \\\\")
         # Origin-corrected variant g(f(mix) - f(stem) + f(0)), when evaluated.
-        o = load(f"{name}_subtraction_origin.json")
-        if o:
+        if _per_chunk(f"{name}+origin") is not None:
+            oc = " & ".join(f(sub(f"{name}+origin", st), 1, 1) for st in stems)
+            lines.append(f"    \\quad $+f(0)$ & {oc} & "
+                         f"{f(sub(f'{name}+origin', 'all', 'gap'), 1)} \\\\")
+        elif load(f"{name}_subtraction_origin.json"):
+            o = load(f"{name}_subtraction_origin.json")
             oc = " & ".join(f(o["subtraction"][st]["sdr_sub"], 1, 1) for st in stems)
             lines.append(f"    \\quad $+f(0)$ & {oc} & {f(o['subtraction']['all']['gap'],1)} \\\\")
     body = (

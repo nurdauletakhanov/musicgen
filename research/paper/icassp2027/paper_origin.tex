@@ -215,9 +215,9 @@ and MixRate $=\mathcal{L}_\mathrm{mix}(g(\bar{z}),\bar{x})/
 $\mathcal{L}_\mathrm{mix}$ the three-term mixed-path loss of
 Eq.~\ref{eq:ldec} in both numerator and denominator ($<1$ beats the
 encode-then-decode path). SI-SDR$_\mathrm{lin}$ shares the decode-vs-decode
-structure of prior additivity metrics \cite{torres2026linearity} and is
-gameable (\secref{sec:mixing}); SI-SDR$_\mathrm{lin}^\mathrm{gt}$ and MixRate
-are our metrics of record. SI-SDR fits a gain before scoring, so it does not
+structure of prior additivity metrics \cite{torres2026linearity} and can be moved without ground-truth equivariance moving
+(\secref{sec:mixing}); SI-SDR$_\mathrm{lin}^\mathrm{gt}$ and MixRate are our
+metrics of record. SI-SDR fits a gain before scoring, so it does not
 assess level preservation; we report the fitted gain separately.
 
 \subsection{Protocol and what the intervals cover}\label{sec:protocol-setup}
@@ -278,7 +278,7 @@ units, same audio.}
 \end{table}
 
 \textbf{In raw coordinates the supervision looks decisive.} Mixing
-supervision raises subtraction quality from $+3.4$ to $+5.7$\,dB at
+supervision raises subtraction quality from $+3.4$ to $+5.8$\,dB at
 $7.66\times$ and from $+1.2$ to $+5.2$\,dB at $15.3\times$
 (\tabref{tab:subtraction}), advantages of $+2.33$ and $+4.02$\,dB on paired
 units (\tabref{tab:origin}).
@@ -319,22 +319,22 @@ is wider (worst $2.2$\,dB, $29$--$32$ of $49$ tracks within $0.5$\,dB).
 \textbf{Baselines without latent arithmetic.} The unchanged mixture scores
 $+17.1$\,dB against the residual, above every model's reconstruction
 reference, because the removed stem is a small share of the energy: the
-metric certifies arithmetic only relative to the model's own reconstruction,
-never removal in absolute terms. Autoencoding the mixture and doing nothing
-scores $+2.2$\,dB ($+1.7$ at $15.3\times$); decoding both signals and
-subtracting waveforms scores $+7.5$ ($+6.5$). Raw latent subtraction falls
-below waveform subtraction for every configuration, recentered latent
-subtraction beats it by $+0.7$ to $+0.9$\,dB (intervals exclude zero), with
-or without the loss.
+metric certifies arithmetic only relative to the model's own reconstruction.
+Autoencoding the mixture unchanged scores $+2.2$\,dB ($+1.7$ at
+$15.3\times$), decoding both signals and subtracting waveforms $+7.5$
+($+6.5$). Recentered latent subtraction beats waveform subtraction by $+0.7$
+to $+0.9$\,dB (intervals exclude zero), raw subtraction loses to it
+everywhere.
 
 \subsection{Convex mixing tells a different story}\label{sec:mixing}
 By part (ii) of the proposition, recentering cannot change any quantity in
 Eq.~\ref{eq:equiv}. The mixing probe therefore reports on the autoencoder
 itself, and there the supervision does something (\tabref{tab:crossarch}). At
-$7.66\times$, $\Ldec$ improves ground-truth equivariance from $8.0$ to
-$10.2$\,dB and is the only configuration with MixRate $<1$; reconstruction
-SI-SDR ($11.2$--$11.4$\,dB) and FAD ($0.044$--$0.046$) are flat, so the
-property is bought without a measured quality cost at this rate. Trained from
+$7.66\times$, $\Ldec$ improves ground-truth equivariance from $8.0$ to $10.2$\,dB and is
+the only configuration with MixRate $<1$; reconstruction SI-SDR spans
+$11.2$--$11.4$\,dB and FAD $0.044$--$0.046$, so we observe no reconstruction
+cost at this rate, on single runs that cannot establish the absence of a
+difference this small. Trained from
 scratch at $15.3\times$ against a matched control, the combined
 $\Ldec{+}$disc recipe improves SI-SDR$_\mathrm{lin}^\mathrm{gt}$ from $6.8$
 to $8.6$\,dB, MixRate from $1.19$ to $1.05$ and encoder linearity
@@ -363,10 +363,9 @@ $0.8$\,dB; at $15.3\times$, $1.8$ versus $1.0$ against $0.9$.
 \textbf{The mixed-path discriminator buys the metric, not the property.} At
 $7.66\times$, adding an adversarial term on the mixed path leaves ground-truth
 equivariance unchanged ($10.2\!\to\!9.9$\,dB, MixRate $0.97\!\to\!1.05$) while
-raising decode-vs-decode SI-SDR$_\mathrm{lin}$ from $12.1$ to $16.0$\,dB. The
-discriminator pulls the two decode paths onto a common realistic manifold
-without moving either toward $\bar{x}$, which is direct evidence that
-SI-SDR$_\mathrm{lin}$ is gameable. Whether the discriminator has an effect
+raising decode-vs-decode SI-SDR$_\mathrm{lin}$ from $12.1$ to $16.0$\,dB. The two decode paths move toward each other without either moving toward
+$\bar{x}$, so the two metrics rank these configurations differently. We do
+not identify the mechanism. Whether the discriminator has an effect
 without $\Ldec$ is not tested here.
 
 \textbf{Architecture.} Fine-tuning the published Music2Latent
@@ -383,9 +382,10 @@ way. A consistency-model decoder \cite{pasini2024music2latent} draws fresh noise
 deterministic under shared noise but scores $-1.8$\,dB under independent
 noise, with no latent arithmetic at all. On identical pairs
 (\figref{fig:protocol}) the same checkpoints score $-9.1$ and $-7.3$\,dB
-under independent-noise decoding, the protocol implied by prior reports, and
-$+3.6$ and $+5.9$\,dB under shared-noise decoding: a $13$\,dB swing driven
-by the protocol rather than the model. We use shared decode noise
+when the two decodes draw independent noise and $+3.6$ and $+5.9$\,dB when
+they share it: a $13$\,dB swing driven by the evaluation protocol rather
+than the model. Which protocol prior work used is not stated in enough
+detail for us to determine. We use shared decode noise
 everywhere.
 
 \begin{figure}[t]
@@ -394,8 +394,8 @@ everywhere.
   \caption{Decode-noise protocol confound (Music2Latent, MUSDB18,
   $\alpha{=}0.5$). The same checkpoints score deeply negative under
   independent-noise decoding and positive under shared-noise decoding; the
-  negative scores reflect decoder noise, consistent with phase variance, not
-  latent linearity.}
+  negative scores reflect decoder sampling noise rather than latent
+linearity.}
   \label{fig:protocol}
 \end{figure}
 
@@ -408,15 +408,12 @@ decibels and, on five fixed checkpoints, removes the entire aggregate
 advantage that mixing supervision appeared to have there, on all 49 test
 tracks. What the supervision does buy is convex equivariance, which the
 intervention provably cannot affect and which improves at both compression
-rates. We therefore recommend reporting latent arithmetic against a declared
-origin and against the model's own reconstruction of the target, and reading
-raw subtraction rankings as statements about coordinates until that is done.
+rates. We therefore recommend reporting latent arithmetic against a declared origin
+and against the model's own reconstruction of the target.
 \textbf{Limitations.} Comparisons are single-run at one initialization;
 checkpoint selection used the test split (\secref{sec:protocol-setup});
-intervals are conditional on these checkpoints; exact recovery of the
-residual latent holds only for an affine encoder; experiments are mono with
-no listening test. Multi-seed estimates, stereo and latent-diffusion
-composition are future work.
+intervals are conditional on these checkpoints; exact recovery holds only
+for an affine encoder; experiments are mono with no listening test.
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}
