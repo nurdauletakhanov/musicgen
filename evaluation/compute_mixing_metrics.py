@@ -243,6 +243,11 @@ def main():
                     help="Write one record per evaluated sample (with the "
                          "recording ids of BOTH members of the mixing pair) "
                          "so contrasts can be bootstrapped by recording.")
+    ap.add_argument("--chunks-dir", type=str, default=None,
+                    help="Override data.chunks_dir, e.g. to evaluate on a "
+                         "held-out corpus instead of the training index.")
+    ap.add_argument("--val-split", type=str, default=None,
+                    help="Override which index split is evaluated.")
     ap.add_argument("--config", type=str, required=True)
     ap.add_argument("--checkpoint", type=str, required=True)
     ap.add_argument("--out", type=str, required=True)
@@ -276,13 +281,14 @@ def main():
     #   --max-batches  : proportional shuffled draw (fma-dominated; legacy).
     #   neither        : full deterministic eval.
     _, val_loader, _, val_ds, _ = build_dataloaders(
-        chunks_dir=cfg["data"]["chunks_dir"],
+        chunks_dir=(args.chunks_dir or cfg["data"]["chunks_dir"]),
         batch_size=args.batch_size,
         num_workers=int(cfg.get("train", {}).get("num_workers", 4)),
         pin_memory=(device.type == "cuda"),
         val_per_source=args.per_source,
         val_shuffle=(args.per_source is None and args.max_batches is not None),
         val_seed=args.seed,
+        val_split=(args.val_split or "test"),
     )
     print(f"val: {len(val_ds):,} chunks across {len(val_ds.files)} files")
 
