@@ -19,7 +19,7 @@
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 PY=.venv/bin/python
-CORPUS="${1:-dataset/moisesdb_musdbform}"
+CORPUS="${1:-dataset/moisesdb_musdbform}"  # built by scripts/slurm_holdout_prep.sh
 OUT=evaluation/holdout_moisesdb
 mkdir -p "$OUT/per_chunk"
 
