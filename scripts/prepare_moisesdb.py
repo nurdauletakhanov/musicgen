@@ -28,6 +28,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import os
 import sys
@@ -40,8 +41,20 @@ SR = 44100
 TARGETS = ["drums", "bass", "vocals", "other"]
 
 
-def _load_tracks(src: Path):
-    """Yield (track_id, {group: [n, 2] float32}) using the official package."""
+def _complete(d: Path) -> bool:
+    """True if this track directory already holds all five non-empty files."""
+    return all((d / f"{s}.wav").exists() and (d / f"{s}.wav").stat().st_size > 44
+               for s in ["mixture"] + TARGETS)
+
+
+def _load_tracks(src: Path, out: Path):
+    """Yield (track_id, {group: [n, 2] float32}) using the official package.
+
+    Tracks already converted are yielded as (id, None) so the caller can skip
+    the audio work entirely: a long conversion that dies partway is resumed
+    rather than restarted, and mixing several multi-stem sources is the part
+    that peaks in memory.
+    """
     try:
         from moisesdb.dataset import MoisesDB
         from moisesdb.defaults import mix_4_stems
@@ -55,7 +68,11 @@ def _load_tracks(src: Path):
     for k, v in mix_4_stems.items():
         print(f"  {k:7s} <- {', '.join(v)}")
     for track in db:
+        if _complete(out / track.id):
+            yield track.id, None
+            continue
         yield track.id, track.mix_stems(mix_4_stems)
+        gc.collect()
 
 
 def _n_samples(x) -> int:
@@ -95,10 +112,18 @@ def main():
     src, out = Path(a.src), Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    manifest, n_done = [], 0
-    for tid, groups in _load_tracks(src):
+    manifest, n_done, n_skipped = [], 0, 0
+    for tid, groups in _load_tracks(src, out):
         if a.limit is not None and n_done >= a.limit:
             break
+        if groups is None:                      # already on disk from an earlier run
+            d = out / tid
+            n = sf.info(str(d / "mixture.wav")).frames
+            manifest.append({"track": tid, "samples": int(n),
+                             "seconds": round(n / SR, 2), "missing_groups": [],
+                             "mixture_peak": None, "resumed": True})
+            n_done += 1; n_skipped += 1
+            continue
         present = {g: v for g, v in groups.items() if v is not None and np.size(v)}
         if not present:
             print(f"  [skip] {tid}: no audio"); continue
@@ -128,9 +153,11 @@ def main():
                          "seconds": round(n / SR, 2),
                          "missing_groups": missing,
                          "mixture_peak": round(peak, 4)})
+        del stems, mixture, present, groups
+        gc.collect()
         n_done += 1
-        if n_done % 20 == 0:
-            print(f"  {n_done} tracks written")
+        if n_done % 10 == 0:
+            print(f"  {n_done} tracks done ({n_skipped} resumed)", flush=True)
 
     (out / "manifest.json").write_text(json.dumps(
         {"source": str(src), "sample_rate": SR, "targets": TARGETS,
@@ -138,7 +165,7 @@ def main():
          "grouping": "moisesdb.defaults.mix_4_stems",
          "n_tracks": len(manifest), "tracks": manifest}, indent=2))
     miss = [m for m in manifest if m["missing_groups"]]
-    print(f"\nwrote {len(manifest)} tracks to {out}")
+    print(f"\nwrote {len(manifest)} tracks to {out} ({n_skipped} already present)")
     print(f"tracks with an empty group: {len(miss)}"
           + (f" (e.g. {miss[0]['track']}: {miss[0]['missing_groups']})" if miss else ""))
     print(f"total audio: {sum(m['seconds'] for m in manifest) / 3600:.2f} h")

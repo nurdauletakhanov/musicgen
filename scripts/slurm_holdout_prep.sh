@@ -2,7 +2,7 @@
 #SBATCH --job-name=hprep
 #SBATCH --partition=gpu
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --mem=96G
 #SBATCH --time=8:00:00
 #SBATCH --output=slurm-%x-%j.out
 # Turn the raw MoisesDB download into the two things the held-out evaluation
