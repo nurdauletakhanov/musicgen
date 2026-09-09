@@ -113,6 +113,12 @@ def cluster_ci(vals, clusters, rng, n_boot=N_BOOT):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--per-chunk", nargs="+", required=True)
+    ap.add_argument("--activity", default=None,
+                    help="activity.json from evaluation.holdout_activity; when "
+                         "given, the pre-registered silent-target rule is "
+                         "applied (RMS >= -50 dBFS and target/mix >= -30 dB)")
+    ap.add_argument("--min-rms-dbfs", type=float, default=-50.0)
+    ap.add_argument("--min-target-to-mix-db", type=float, default=-30.0)
     ap.add_argument("--out", required=True)
     ap.add_argument("--n-boot", type=int, default=N_BOOT)
     a = ap.parse_args()
@@ -122,6 +128,19 @@ def main():
         raise SystemExit(f"no per-chunk files matched: {a.per_chunk}")
     print("loading:")
     models = load(paths)
+    if a.activity:
+        act = json.load(open(a.activity))
+        keep = {tuple(k.split("|")[:2]) + (int(k.split("|")[2]),) for k, v in act.items()
+                if v["rms_dbfs"] >= a.min_rms_dbfs
+                and v["target_to_mix_db"] >= a.min_target_to_mix_db}
+        before = sum(len(v) for v in M.values()) if "M" in dir() else sum(len(v) for v in models.values())
+        tgt = M if "M" in dir() else models
+        for name in list(tgt):
+            tgt[name] = {k: r for k, r in tgt[name].items() if k in keep}
+        after = sum(len(v) for v in tgt.values())
+        print(f"silent-target rule: kept {after}/{before} unit-measurements "
+              f"({100*after/max(before,1):.1f}%)")
+
     rng = np.random.default_rng(SEED)
 
     out = {"metric": KEY, "n_boot": a.n_boot, "models": {}, "contrasts": {}}

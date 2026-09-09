@@ -38,12 +38,31 @@ def cluster_ci(vals, tracks, rng, n_boot=N_BOOT):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--per-chunk", default="evaluation/v2_metrics/per_chunk/*_per_chunk.json")
+    ap.add_argument("--activity", default=None,
+                    help="activity.json from evaluation.holdout_activity; when "
+                         "given, the pre-registered silent-target rule is "
+                         "applied (RMS >= -50 dBFS and target/mix >= -30 dB)")
+    ap.add_argument("--min-rms-dbfs", type=float, default=-50.0)
+    ap.add_argument("--min-target-to-mix-db", type=float, default=-30.0)
     ap.add_argument("--out", default="evaluation/v2_metrics/origin_effect.json")
     a = ap.parse_args()
     M = {}
     for p in sorted(glob.glob(a.per_chunk)):
         name = re.sub(r"_per_chunk\.json$", "", os.path.basename(p))
         M[name] = {(r["track"], r["stem"], r["chunk"]): r for r in json.load(open(p))["records"]}
+    if a.activity:
+        act = json.load(open(a.activity))
+        keep = {tuple(k.split("|")[:2]) + (int(k.split("|")[2]),) for k, v in act.items()
+                if v["rms_dbfs"] >= a.min_rms_dbfs
+                and v["target_to_mix_db"] >= a.min_target_to_mix_db}
+        before = sum(len(v) for v in M.values()) if "M" in dir() else sum(len(v) for v in models.values())
+        tgt = M if "M" in dir() else models
+        for name in list(tgt):
+            tgt[name] = {k: r for k, r in tgt[name].items() if k in keep}
+        after = sum(len(v) for v in tgt.values())
+        print(f"silent-target rule: kept {after}/{before} unit-measurements "
+              f"({100*after/max(before,1):.1f}%)")
+
     rng = np.random.default_rng(SEED)
     out = {"n_boot": N_BOOT, "pairs": {}, "models": {}}
 
