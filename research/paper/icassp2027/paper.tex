@@ -175,9 +175,10 @@ two equivariance views at $\alpha{=}0.5$:
   model's \emph{own} reconstruction of the mix.
   \item \textbf{SI-SDR$_\mathrm{lin}^\mathrm{gt}$} (vs.\ ground truth):
   $\mathrm{SISDR}(g(\bar{z}),\bar{x})$, the quantity in
-  Eq.~\ref{eq:equiv} up to scale, comparable across models. SI-SDR fits a gain
-  before scoring, so it does not assess level preservation; we report the
-  fitted gain separately (\secref{sec:general}).
+  Eq.~\ref{eq:equiv} up to scale, comparable across models. SI-SDR fits a gain before scoring, so it does not assess level preservation;
+we report the fitted gain separately (\secref{sec:general}). FAD uses music-finetuned LAION-CLAP embeddings of non-overlapping 10\,s windows at 48\,kHz,
+not VGGish, so the values are not comparable with VGGish-based FAD; the
+fitted gain is measured on 3{,}000 samples.
 \end{itemize}
 We also report $\ell_\mathrm{lat}=\lVert\bar{z}-f(\bar{x})\rVert^2/\lVert f(\bar{x})\rVert^2$
 (encoder linearity) and MixRate
@@ -262,15 +263,13 @@ either a sample-wise or a distributional measure. These are single runs, so
 the absence of a difference this small is not established beyond seed
 variance.
 
-\textbf{(2) The decode-mixing loss is the active ingredient; the discriminator
-on the mixed path is not.} On the ground-truth metric, $\Ldec$ alone improves
+\textbf{(2) The decode-mixing loss is the active ingredient.} On the ground-truth metric, $\Ldec$ alone improves
 SDR$_\mathrm{lin}^\mathrm{gt}$ from $8.0$ to $10.2$\,dB and is the only run with
 MixRate $<1$ ($0.97$). Adding an adversarial term to the mixed path
 (``+disc-on-mix'') does \emph{not} improve ground-truth equivariance
 ($9.9$\,dB, MixRate $1.05$), yet it dramatically inflates the decode-vs-decode
-SDR$_\mathrm{lin}$ ($12.1\!\to\!16.0$\,dB). The discriminator pulls the two
-decode paths onto a common realistic manifold (our hypothesis), raising their mutual SI-SDR
-without moving either toward $\bar{x}$. This is direct evidence that
+SDR$_\mathrm{lin}$ ($12.1\!\to\!16.0$\,dB). The two decode paths move toward each other without either moving toward
+$\bar{x}$; one candidate mechanism is a common realistic manifold. This is direct evidence that
 SDR$_\mathrm{lin}$ can rise without ground-truth equivariance rising, and
 that given $\Ldec$ no adversarial term improved the ground-truth metric
 here; whether the discriminator has an effect on its own, without $\Ldec$,
@@ -343,12 +342,9 @@ of one recording style.
 We remove a stem by latent subtraction,
 $\hat{x}=g(f(x_\mathrm{mix})-f(x_\mathrm{stem}))$, and measure SI-SDR against
 the true residual on the MUSDB18 test set (49 of 50 tracks; one is excluded
-because its stems sum to the mixture at only $18.5$\,dB). This is an
-\emph{oracle} setting:
-the removed stem is available and encoded, so it tests the representation's
-arithmetic, not blind separation; its use is latent-domain editing when stem
-codes exist, as in a pipeline that stores compressed stems or a latent
-generative model that composes sources without decoding each. Subtraction
+because its stems sum to the mixture at only $18.5$\,dB). This is an \emph{oracle} setting: the removed stem is available and encoded,
+so it tests the representation's arithmetic, not blind separation; its use
+is latent-domain editing when stem codes exist. Subtraction
 uses coefficients $(1,-1)$, which Eq.~\ref{eq:equiv} does not cover
 (\secref{sec:intro}), so we also report the origin-corrected form
 $g(f(x_\mathrm{mix})-f(x_\mathrm{stem})+f(0))$, which for an affine encoder
