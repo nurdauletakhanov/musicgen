@@ -219,3 +219,36 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def dyadic_cluster_ci(vals, left, right, rng, n_boot=N_BOOT):
+    """Bootstrap CI for the mean of dyadic units (each unit involves TWO
+    recordings, e.g. a mixing pair).
+
+    A one-way cluster bootstrap is invalid here: resampling on one member of
+    the pair leaves the dependence through the other member unaccounted for.
+    We resample recordings with replacement and keep a pair only when BOTH of
+    its recordings were drawn, which is the dyadic ("pigeonhole") bootstrap.
+
+    vals  : per-unit values
+    left  : recording id of the first member of each pair
+    right : recording id of the second member
+    """
+    vals = np.asarray(vals, dtype=np.float64)
+    left = np.asarray(left)
+    right = np.asarray(right)
+    ids = np.unique(np.concatenate([left, right]))
+    pos = {c: i for i, c in enumerate(ids)}
+    li = np.array([pos[c] for c in left])
+    ri = np.array([pos[c] for c in right])
+    means = np.empty(n_boot)
+    for b in range(n_boot):
+        draw = rng.integers(0, len(ids), size=len(ids))
+        # multiplicity of each recording in this resample
+        mult = np.bincount(draw, minlength=len(ids))
+        w = mult[li] * mult[ri]          # a pair enters once per (copy, copy)
+        tot = w.sum()
+        means[b] = float((vals * w).sum() / tot) if tot else np.nan
+    means = means[~np.isnan(means)]
+    return (float(vals.mean()), float(np.percentile(means, 2.5)),
+            float(np.percentile(means, 97.5)), int(len(ids)))
