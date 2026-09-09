@@ -78,15 +78,21 @@ Decided now, applied mechanically, never revised on the basis of scores.
 
 ## 4. Stem mapping and silent-target policy
 
-MoisesDB has 11 top-level stems. They are mapped to the four MUSDB categories
-before any scoring:
+MoisesDB has 11 top-level stems. We use the grouping shipped by the dataset
+authors, `mix_4_stems` in `moisesdb/defaults.py`, which is exactly MUSDB18's
+four categories:
 
 | target | MoisesDB top-level stems |
 |---|---|
-| drums | `drums`, `percussion` |
-| bass | `bass` |
 | vocals | `vocals` |
-| other | `guitar`, `piano`, `other_keys`, `bowed_strings`, `wind`, `other_plucked`, `other` |
+| bass | `bass` |
+| drums | `drums` |
+| other | every remaining stem: `guitar`, `piano`, `other_keys`, `bowed_strings`, `wind`, `percussion`, `other_plucked`, `other` |
+
+Using the authors' own mapping rather than one of our choosing removes a
+judgment call from the pipeline. `scripts/prepare_moisesdb.py` applies it and
+writes the corpus in MUSDB18-HQ layout, so the existing evaluator runs
+unchanged.
 
 Rules:
 
@@ -162,4 +168,8 @@ validation split remains open, and this protocol is not a substitute for it.
 
 ## Deviations
 
-None yet.
+- **2026-09-09, before any audio was downloaded.** The stem mapping in
+  section 4 originally grouped `percussion` under drums. Replaced with the
+  dataset authors' own `mix_4_stems` grouping, which places `percussion`
+  under "other". Reason: it removes a judgment call of ours from the
+  pipeline. No audio existed on disk at the time of the change.
