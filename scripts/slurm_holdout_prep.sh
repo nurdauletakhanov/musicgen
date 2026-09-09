@@ -11,7 +11,7 @@
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 PY=.venv/bin/python
-SRC="${1:-$HOME/datasets/moisesdb/moisesdb/moisesdb_v0.1}"
+SRC="${1:-$HOME/datasets/moisesdb/moisesdb}"
 CORPUS=dataset/moisesdb_musdbform
 CHUNKS=chunks-holdout
 
