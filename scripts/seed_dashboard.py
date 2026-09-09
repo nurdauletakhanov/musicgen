@@ -150,8 +150,15 @@ def parse(text):
                 v = float(m.group(2))
                 sps = (1.0 / v if m.group(3) == "s/it" else v) if v > 0 else sps
         eta_h = ((MAX_STEPS - step) / sps / 3600) if (sps and step < MAX_STEPS) else None
-        status = "finished" if final else ("running" if job and job["state"] == "RUNNING"
-                 else ("queued" if job else ("stalled" if step else "waiting")))
+        # A run that reached MAX_STEPS is finished even without the step_25000.pth
+        # marker: that file is written after a final validation pass, which is
+        # an hour long and is the easiest thing to lose to a kill. latest.pth
+        # already holds the step-25000 weights in that case.
+        done = final or step >= MAX_STEPS
+        status = ("finished" if done else
+                  "running" if job and job["state"] == "RUNNING" else
+                  "queued" if job else
+                  "stalled" if step else "waiting")
         runs[r] = dict(name=r, base=base, seed=r.rsplit("-", 1)[1], label=BASES[base][0],
                        step=step, steps_per_sec=sps, eta_h=eta_h, status=status,
                        job=job, loss=(last.get("loss/total") if last else None))
