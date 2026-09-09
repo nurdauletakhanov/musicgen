@@ -91,12 +91,31 @@ for r in "${RUNS[@]}"; do
       --alpha 0.5
 done
 
-# --- 3. statistics --------------------------------------------------------
-$PY -m evaluation.paired_stats \
-    --per-chunk "$OUT/per_chunk/*_per_chunk.json" \
-    --out "$OUT/paired_stats.json" | tee "$OUT/paired_stats.txt"
+# --- 3. the pre-registered silent-target rule ------------------------------
+# Recovered from the corpus audio using each record's sample offset; no model,
+# no re-run. Thresholds are those fixed in HOLDOUT_PROTOCOL.md section 4.
+if [ ! -f "$OUT/activity.json" ]; then
+  $PY -m evaluation.holdout_activity \
+      --per-chunk "$OUT/per_chunk/v2.0-continued_per_chunk.json" \
+      --corpus "$CORPUS" --out "$OUT/activity.json" | tee "$OUT/activity.txt"
+fi
+
+# --- 4. statistics: pre-registered (filtered) and unfiltered ---------------
 $PY -m evaluation.origin_effect \
     --per-chunk "$OUT/per_chunk/*_per_chunk.json" \
+    --activity "$OUT/activity.json" \
     --out "$OUT/origin_effect.json" | tee "$OUT/origin_effect.txt"
+$PY -m evaluation.paired_stats \
+    --per-chunk "$OUT/per_chunk/*_per_chunk.json" \
+    --activity "$OUT/activity.json" \
+    --out "$OUT/paired_stats.json" | tee "$OUT/paired_stats.txt"
+
+echo "=== unfiltered, for comparison ==="
+$PY -m evaluation.paired_stats \
+    --per-chunk "$OUT/per_chunk/*_per_chunk.json" \
+    --out "$OUT/paired_stats_unfiltered.json" | tee "$OUT/paired_stats_unfiltered.txt"
+$PY -m evaluation.origin_effect \
+    --per-chunk "$OUT/per_chunk/*_per_chunk.json" \
+    --out "$OUT/origin_effect_unfiltered.json" | tee "$OUT/origin_effect_unfiltered.txt"
 
 echo "done. results in $OUT"

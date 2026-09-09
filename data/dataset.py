@@ -186,14 +186,22 @@ def build_dataloaders(
     val_seed: int = 0,
     val_per_source: Optional[int] = None,
     val_split: str = "test",
+    require_train: bool = True,
 ) -> Tuple[DataLoader, DataLoader, WaveformDataset, WaveformDataset, FileGroupedSampler]:
     """`val_split` names the index split used for validation and hence for
     best.pth selection. The released runs used "test" (see REPRODUCING.md,
     "Checkpoint selection"); pass "val" after scripts/make_val_split.py to keep
     the test split untouched."""
-    train_ds = WaveformDataset(chunks_dir, split="train", cache_size=cache_size)
+    # An evaluation-only corpus (a held-out test set) legitimately has no train
+    # split. Callers that never train pass require_train=False and get None
+    # back for the training objects instead of a crash.
+    with open(os.path.join(chunks_dir, "index.json")) as fh:
+        _splits = set(json.load(fh))
+    _want_train = require_train or "train" in _splits
+    train_ds = (WaveformDataset(chunks_dir, split="train", cache_size=cache_size)
+                if _want_train else None)
     val_ds = WaveformDataset(chunks_dir, split=val_split, cache_size=cache_size)
-    train_sampler = FileGroupedSampler(train_ds, shuffle=True)
+    train_sampler = FileGroupedSampler(train_ds, shuffle=True) if train_ds else None
     # val is stored source-contiguous (all fma, then maestro, then musdb).
     #   val_per_source: balanced quota per source (preferred for subsampling).
     #   val_shuffle:    proportional random draw (legacy; fma-dominated).
@@ -218,7 +226,8 @@ def build_dataloaders(
         if prefetch_factor is not None:
             common["prefetch_factor"] = prefetch_factor
 
-    train_loader = DataLoader(train_ds, sampler=train_sampler, **common)
+    train_loader = (DataLoader(train_ds, sampler=train_sampler, **common)
+                    if train_ds is not None else None)
     # For a stratified subsample, keep every picked chunk (no drop_last) so
     # the per-source quotas are exact.
     val_common = dict(common)

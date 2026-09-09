@@ -289,6 +289,7 @@ def main():
         val_shuffle=(args.per_source is None and args.max_batches is not None),
         val_seed=args.seed,
         val_split=(args.val_split or "test"),
+        require_train=False,      # this evaluator never trains
     )
     print(f"val: {len(val_ds):,} chunks across {len(val_ds.files)} files")
 
