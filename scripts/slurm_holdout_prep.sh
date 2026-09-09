@@ -16,13 +16,24 @@ CORPUS=dataset/moisesdb_musdbform
 CHUNKS=chunks-holdout
 
 [ -d "$SRC" ] || { echo "source not found: $SRC"; exit 1; }
-echo "source: $SRC ($(ls -1 "$SRC" | wc -l) track dirs)"
+NSRC=$(find "$SRC" -name data.json | wc -l)
+echo "source: $SRC ($NSRC tracks)"
+[ "$NSRC" -gt 0 ] || { echo "no tracks under $SRC"; exit 1; }
 
-if [ ! -f "$CORPUS/manifest.json" ]; then
-  echo "=== converting to MUSDB18 layout ==="
+# A manifest that merely EXISTS is not evidence of a built corpus: an earlier
+# dry run left a manifest with zero tracks and the job then skipped the real
+# conversion, chunked nothing, and passed a vacuous additivity check. Require
+# the manifest to account for every source track.
+NBUILT=0
+[ -f "$CORPUS/manifest.json" ] && NBUILT=$($PY -c "import json,sys;print(json.load(open('$CORPUS/manifest.json'))['n_tracks'])" 2>/dev/null || echo 0)
+if [ "$NBUILT" -lt "$NSRC" ]; then
+  echo "=== converting to MUSDB18 layout ($NBUILT/$NSRC present) ==="
+  rm -rf "$CORPUS" "$CHUNKS"
   $PY -m scripts.prepare_moisesdb --src "$SRC" --out "$CORPUS"
+  NBUILT=$($PY -c "import json;print(json.load(open('$CORPUS/manifest.json'))['n_tracks'])")
+  [ "$NBUILT" -eq "$NSRC" ] || { echo "FAIL: built $NBUILT of $NSRC tracks"; exit 1; }
 else
-  echo "corpus already built: $CORPUS"
+  echo "corpus already built: $CORPUS ($NBUILT tracks)"
 fi
 
 if [ ! -f "$CHUNKS/index.json" ]; then
@@ -37,6 +48,9 @@ echo "=== additivity check on a sample of the built corpus ==="
 $PY - <<'PY'
 import glob, numpy as np, soundfile as sf, random
 dirs = sorted(glob.glob("dataset/moisesdb_musdbform/*/"))
+if len(dirs) < 8:
+    raise SystemExit(f"FAIL: only {len(dirs)} converted tracks to check; "
+                     "a vacuous pass here is how an empty corpus slipped through before")
 random.Random(0).shuffle(dirs)
 worst = 0.0
 for d in dirs[:8]:
@@ -48,7 +62,9 @@ for d in dirs[:8]:
                      - sum(st[o][:n] for o in ("drums","bass","vocals","other") if o != t)).max())
         for t in ("drums","bass","vocals","other"))
     worst = max(worst, resid_err)
-print(f"max |mixture - target - residual| over {min(8,len(dirs))} tracks: {worst:.3e}")
-print("(must be at float32 rounding level; the subtraction test depends on it)")
+print(f"max |mixture - target - residual| over 8 tracks: {worst:.3e}")
+if worst > 1e-5:
+    raise SystemExit("FAIL: additivity broken; the subtraction test depends on it")
+print("additivity holds")
 PY
 echo "done"
