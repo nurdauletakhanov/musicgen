@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --time=12:00:00
+#SBATCH --time=08:00:00
 #SBATCH --output=slurm-%x-%j.out
 # Held-out evaluation on MoisesDB, exactly as pre-registered in
 # research/paper/icassp2027/HOLDOUT_PROTOCOL.md.
