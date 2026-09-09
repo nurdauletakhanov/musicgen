@@ -168,6 +168,16 @@ validation split remains open, and this protocol is not a substitute for it.
 
 ## Deviations
 
+- **2026-09-09, during conversion, before any scoring.** Some MoisesDB tracks
+  have no sources at all in one of the four groups (no bass, or nothing
+  outside the basic stems). The library's `mix_stems` raises on that case
+  rather than returning an empty group. The converter now performs the same
+  trim-and-sum the library does, per the authors' `mix_4_stems` grouping, and
+  writes silence for an absent group instead of dropping the track. The
+  mixture remains the exact sum of the four written files, and the
+  silent-target rule in section 4 removes those units at scoring time with
+  the counts reported. No model had been run at the time of this change.
+
 - **2026-09-09, before any audio was downloaded.** The stem mapping in
   section 4 originally grouped `percussion` under drums. Replaced with the
   dataset authors' own `mix_4_stems` grouping, which places `percussion`

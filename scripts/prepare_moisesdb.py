@@ -67,11 +67,35 @@ def _load_tracks(src: Path, out: Path):
     print("grouping (official mix_4_stems):")
     for k, v in mix_4_stems.items():
         print(f"  {k:7s} <- {', '.join(v)}")
+
+    def mix_group(track, names):
+        """The authors' trim-and-sum over one group, tolerating an empty group.
+
+        MoisesDBTrack.mix_stems raises ValueError when a group has no sources
+        at all (some tracks have no bass, and some have nothing outside the
+        four basic stems). The grouping and the arithmetic are unchanged from
+        the library: trim every source to the shortest and sum. An absent
+        group returns None and the caller writes silence for it, so the
+        mixture stays the exact sum of the four files we write.
+        """
+        parts = []
+        for name in names:
+            try:
+                a = track.stem_mixture(name)
+            except Exception:
+                a = None
+            if a is not None and np.size(a):
+                parts.append(a)
+        if not parts:
+            return None
+        n = min(p.shape[-1] for p in parts)
+        return np.stack([p[..., :n] for p in parts]).sum(0)
+
     for track in db:
         if _complete(out / track.id):
             yield track.id, None
             continue
-        yield track.id, track.mix_stems(mix_4_stems)
+        yield track.id, {g: mix_group(track, names) for g, names in mix_4_stems.items()}
         gc.collect()
 
 
