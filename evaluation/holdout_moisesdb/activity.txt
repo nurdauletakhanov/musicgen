@@ -1,0 +1,16 @@
+28800 units across 240 tracks
+  40 tracks
+  80 tracks
+  120 tracks
+  160 tracks
+  200 tracks
+  240 tracks
+
+wrote evaluation/holdout_moisesdb/activity.json  (28800 units)
+pre-registered rule (RMS >= -50 dBFS and target/mix >= -30 dB):
+  kept     24648 (85.6%)
+  dropped   4152 (4152 by RMS, 3716 by ratio)
+  bass     kept 6380/7200 (88.6%)
+  drums    kept 6222/7200 (86.4%)
+  other    kept 6975/7200 (96.9%)
+  vocals   kept 5071/7200 (70.4%)

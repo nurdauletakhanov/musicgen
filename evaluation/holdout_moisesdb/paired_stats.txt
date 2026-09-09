@@ -1,0 +1,93 @@
+loading:
+  v2.0-continued+origin: 28800 measurements
+  v2.0-continued: 28800 measurements
+  v2.1-decmix+origin: 28800 measurements
+  v2.1-decmix: 28800 measurements
+  v2.2-decmix-disc+origin: 28800 measurements
+  v2.2-decmix-disc: 28800 measurements
+  v3.0-baseline-d64+origin: 28800 measurements
+  v3.0-baseline-d64: 28800 measurements
+  v3.1-decmix-disc-d64+origin: 28800 measurements
+  v3.1-decmix-disc-d64: 28800 measurements
+silent-target rule: kept 246480/288000 unit-measurements (85.6%)
+v2.0-continued             +3.20 dB  track-CI [+2.90, +3.49] (unit-CI [+3.10, +3.30])  n=24648 units / 240 tracks
+v2.0-continued+origin      +7.85 dB  track-CI [+7.53, +8.17] (unit-CI [+7.79, +7.92])  n=24648 units / 240 tracks
+v2.1-decmix                +5.47 dB  track-CI [+5.13, +5.82] (unit-CI [+5.37, +5.57])  n=24648 units / 240 tracks
+v2.1-decmix+origin         +8.15 dB  track-CI [+7.76, +8.54] (unit-CI [+8.07, +8.22])  n=24648 units / 240 tracks
+v2.2-decmix-disc           +5.67 dB  track-CI [+5.31, +6.03] (unit-CI [+5.57, +5.76])  n=24648 units / 240 tracks
+v2.2-decmix-disc+origin    +7.97 dB  track-CI [+7.58, +8.36] (unit-CI [+7.90, +8.05])  n=24648 units / 240 tracks
+v3.0-baseline-d64          +0.57 dB  track-CI [+0.28, +0.85] (unit-CI [+0.47, +0.67])  n=24648 units / 240 tracks
+v3.0-baseline-d64+origin   +6.85 dB  track-CI [+6.54, +7.16] (unit-CI [+6.79, +6.92])  n=24648 units / 240 tracks
+v3.1-decmix-disc-d64       +5.08 dB  track-CI [+4.72, +5.43] (unit-CI [+4.98, +5.17])  n=24648 units / 240 tracks
+v3.1-decmix-disc-d64+origin +7.27 dB  track-CI [+6.87, +7.67] (unit-CI [+7.20, +7.34])  n=24648 units / 240 tracks
+
+paired contrasts (same chunks, same stems):
+  * L_dec vs no mix (7.66x)            +2.27 dB  track-CI [+2.15, +2.41] (unit-CI [+2.24, +2.31])  74% units, 100% of 240 tracks improved
+  * L_dec+disc vs no mix (7.66x)       +2.47 dB  track-CI [+2.34, +2.60] (unit-CI [+2.43, +2.51])  74% units, 100% of 240 tracks improved
+  * disc-on-mix vs L_dec alone         +0.20 dB  track-CI [+0.18, +0.22] (unit-CI [+0.18, +0.21])  63% units, 90% of 240 tracks improved
+  * mix vs no mix (15.3x)              +4.50 dB  track-CI [+4.33, +4.68] (unit-CI [+4.46, +4.55])  93% units, 100% of 240 tracks improved
+  * origin-corrected vs raw: v2.0-continued +4.66 dB  track-CI [+4.48, +4.84] (unit-CI [+4.59, +4.72])  96% units, 100% of 240 tracks improved
+  * origin-corrected vs raw: v2.1-decmix +2.68 dB  track-CI [+2.54, +2.83] (unit-CI [+2.62, +2.73])  100% units, 100% of 240 tracks improved
+  * origin-corrected vs raw: v2.2-decmix-disc +2.30 dB  track-CI [+2.17, +2.46] (unit-CI [+2.25, +2.36])  100% units, 100% of 240 tracks improved
+  * origin-corrected vs raw: v3.0-baseline-d64 +6.28 dB  track-CI [+6.07, +6.49] (unit-CI [+6.22, +6.34])  99% units, 100% of 240 tracks improved
+  * origin-corrected vs raw: v3.1-decmix-disc-d64 +2.19 dB  track-CI [+2.04, +2.36] (unit-CI [+2.14, +2.25])  99% units, 100% of 240 tracks improved
+  [skip] origin-corrected vs raw: v1.1: missing per-chunk data
+  [skip] origin-corrected vs raw: m2l_phase0_ema: missing per-chunk data
+  [skip] origin-corrected vs raw: m2l_phase2_ema: missing per-chunk data
+
+corrected matched contrasts (origin-corrected subtraction):
+  * corrected: L_dec vs no mix (7.66x)       +0.29 dB  track-CI [+0.20, +0.39]
+  * corrected: L_dec+disc vs no mix (7.66x)  +0.12 dB  track-CI [+0.02, +0.22]
+  * corrected: mix vs no mix (15.3x)         +0.42 dB  track-CI [+0.29, +0.55]
+
+corrected latent subtraction vs comparators (same units):
+  * v2.0-continued+origin          vs wavsub  : +0.70 dB  track-CI [+0.54, +0.85]
+  * v2.0-continued+origin          vs aemix   : +6.45 dB  track-CI [+6.25, +6.65]
+  * v2.0-continued+origin          vs identity: +3.55 dB  track-CI [+3.23, +3.88]
+  * v2.1-decmix+origin             vs wavsub  : +0.88 dB  track-CI [+0.80, +0.95]
+  * v2.1-decmix+origin             vs aemix   : +6.72 dB  track-CI [+6.46, +6.99]
+  * v2.1-decmix+origin             vs identity: +3.84 dB  track-CI [+3.43, +4.24]
+  * v2.2-decmix-disc+origin        vs wavsub  : +0.74 dB  track-CI [+0.67, +0.82]
+  * v2.2-decmix-disc+origin        vs aemix   : +6.56 dB  track-CI [+6.29, +6.83]
+  * v2.2-decmix-disc+origin        vs identity: +3.67 dB  track-CI [+3.27, +4.07]
+  * v3.0-baseline-d64+origin       vs wavsub  : +0.55 dB  track-CI [+0.39, +0.71]
+  * v3.0-baseline-d64+origin       vs aemix   : +5.75 dB  track-CI [+5.58, +5.93]
+  * v3.0-baseline-d64+origin       vs identity: +2.55 dB  track-CI [+2.23, +2.87]
+  * v3.1-decmix-disc-d64+origin    vs wavsub  : +0.76 dB  track-CI [+0.70, +0.82]
+  * v3.1-decmix-disc-d64+origin    vs aemix   : +6.20 dB  track-CI [+5.94, +6.46]
+  * v3.1-decmix-disc-d64+origin    vs identity: +2.96 dB  track-CI [+2.55, +3.39]
+
+comparators (same units; positive = latent subtraction better):
+  * v2.0-continued         vs wavsub   (=+7.15 dB): -3.96 dB  track-CI [-4.27, -3.66]
+  * v2.0-continued         vs aemix    (=+1.41 dB): +1.79 dB  track-CI [+1.63, +1.95]
+  * v2.0-continued         vs identity (=+4.31 dB): -1.11 dB  track-CI [-1.37, -0.84]
+  * v2.0-continued+origin  vs wavsub   (=+7.15 dB): +0.70 dB  track-CI [+0.54, +0.85]
+  * v2.0-continued+origin  vs aemix    (=+1.41 dB): +6.45 dB  track-CI [+6.25, +6.66]
+  * v2.0-continued+origin  vs identity (=+4.31 dB): +3.55 dB  track-CI [+3.21, +3.89]
+  * v2.1-decmix            vs wavsub   (=+7.27 dB): -1.80 dB  track-CI [-2.02, -1.60]
+  * v2.1-decmix            vs aemix    (=+1.43 dB): +4.04 dB  track-CI [+3.87, +4.22]
+  * v2.1-decmix            vs identity (=+4.31 dB): +1.17 dB  track-CI [+0.84, +1.49]
+  * v2.1-decmix+origin     vs wavsub   (=+7.27 dB): +0.88 dB  track-CI [+0.80, +0.95]
+  * v2.1-decmix+origin     vs aemix    (=+1.43 dB): +6.72 dB  track-CI [+6.46, +6.99]
+  * v2.1-decmix+origin     vs identity (=+4.31 dB): +3.84 dB  track-CI [+3.44, +4.26]
+  * v2.2-decmix-disc       vs wavsub   (=+7.23 dB): -1.56 dB  track-CI [-1.78, -1.36]
+  * v2.2-decmix-disc       vs aemix    (=+1.42 dB): +4.25 dB  track-CI [+4.08, +4.43]
+  * v2.2-decmix-disc       vs identity (=+4.31 dB): +1.36 dB  track-CI [+1.04, +1.68]
+  * v2.2-decmix-disc+origin vs wavsub   (=+7.23 dB): +0.74 dB  track-CI [+0.67, +0.82]
+  * v2.2-decmix-disc+origin vs aemix    (=+1.42 dB): +6.56 dB  track-CI [+6.29, +6.83]
+  * v2.2-decmix-disc+origin vs identity (=+4.31 dB): +3.67 dB  track-CI [+3.26, +4.09]
+  * v3.0-baseline-d64      vs wavsub   (=+6.30 dB): -5.73 dB  track-CI [-6.08, -5.40]
+  * v3.0-baseline-d64      vs aemix    (=+1.11 dB): -0.53 dB  track-CI [-0.70, -0.37]
+  * v3.0-baseline-d64      vs identity (=+4.31 dB): -3.73 dB  track-CI [-3.97, -3.48]
+  * v3.0-baseline-d64+origin vs wavsub   (=+6.30 dB): +0.55 dB  track-CI [+0.39, +0.70]
+  * v3.0-baseline-d64+origin vs aemix    (=+1.11 dB): +5.75 dB  track-CI [+5.58, +5.93]
+  * v3.0-baseline-d64+origin vs identity (=+4.31 dB): +2.55 dB  track-CI [+2.23, +2.87]
+  * v3.1-decmix-disc-d64   vs wavsub   (=+6.51 dB): -1.43 dB  track-CI [-1.64, -1.22]
+  * v3.1-decmix-disc-d64   vs aemix    (=+1.07 dB): +4.01 dB  track-CI [+3.85, +4.16]
+  * v3.1-decmix-disc-d64   vs identity (=+4.31 dB): +0.77 dB  track-CI [+0.46, +1.09]
+  * v3.1-decmix-disc-d64+origin vs wavsub   (=+6.51 dB): +0.76 dB  track-CI [+0.70, +0.82]
+  * v3.1-decmix-disc-d64+origin vs aemix    (=+1.07 dB): +6.20 dB  track-CI [+5.94, +6.45]
+  * v3.1-decmix-disc-d64+origin vs identity (=+4.31 dB): +2.96 dB  track-CI [+2.55, +3.38]
+
+wrote evaluation/holdout_moisesdb/paired_stats.json
+* = 95% track-cluster CI excludes zero. CIs cover evaluation variance (new tracks), not training-seed variance.

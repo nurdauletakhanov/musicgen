@@ -1,0 +1,20 @@
+v2.0-continued                   sub +2.41 [+2.08,+2.73]  gap +6.46 [+6.12,+6.82]
+v2.0-continued+origin            sub +8.24 [+7.91,+8.56]  gap +0.63 [+0.50,+0.76]
+v2.1-decmix                      sub +5.25 [+4.88,+5.61]  gap +3.67 [+3.44,+3.92]
+v2.1-decmix+origin               sub +8.46 [+8.07,+8.85]  gap +0.46 [+0.40,+0.52]
+v2.2-decmix-disc                 sub +5.50 [+5.14,+5.86]  gap +3.34 [+3.12,+3.58]
+v2.2-decmix-disc+origin          sub +8.29 [+7.90,+8.67]  gap +0.56 [+0.50,+0.61]
+v3.0-baseline-d64                sub -0.25 [-0.56,+0.07]  gap +8.36 [+7.98,+8.75]
+v3.0-baseline-d64+origin         sub +7.25 [+6.93,+7.56]  gap +0.86 [+0.73,+1.00]
+v3.1-decmix-disc-d64             sub +4.91 [+4.55,+5.26]  gap +3.16 [+2.94,+3.40]
+v3.1-decmix-disc-d64+origin      sub +7.57 [+7.17,+7.97]  gap +0.50 [+0.46,+0.54]
+
+change in between-model advantage after recentering:
+  decode-mixing, 7.66x         raw +2.84 [+2.70,+2.98] -> corrected +0.22 [+0.14,+0.31]  change -2.62 [-2.71,-2.53]  reduced on 240/240 tracks
+      corrected by stem: bass +0.46, drums -0.17, other +0.58, vocals +0.03
+  decode-mixing + disc, 7.66x  raw +3.09 [+2.96,+3.23] -> corrected +0.05 [-0.03,+0.14]  change -3.04 [-3.13,-2.95]  reduced on 240/240 tracks
+      corrected by stem: bass +0.42, drums -0.28, other +0.27, vocals -0.20
+  decode-mixing + disc, 15.3x  raw +5.16 [+4.97,+5.34] -> corrected +0.32 [+0.21,+0.43]  change -4.84 [-4.95,-4.73]  reduced on 240/240 tracks
+      corrected by stem: bass +0.88, drums +0.07, other +0.47, vocals -0.13
+
+wrote evaluation/holdout_moisesdb/origin_effect_unfiltered.json
