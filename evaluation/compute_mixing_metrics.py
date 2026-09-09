@@ -219,6 +219,9 @@ def _process_batch(
         "abs_gain_rec": list(zip(sources, [abs(g) for g in gain_rec])),
         "l_lat":   list(zip(sources, l_lat)),
         "mix_rate": list(zip(sources, mix_rate)),
+        # Which sample each one was mixed with, so per-unit records can name
+        # both recordings of the dyad (needed for a dyadic cluster bootstrap).
+        "_perm": perm.cpu().tolist(),
     }
     return out
 
@@ -236,6 +239,10 @@ def _tally(records: List[tuple]) -> Dict[str, float]:
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--per-unit-out", type=str, default=None,
+                    help="Write one record per evaluated sample (with the "
+                         "recording ids of BOTH members of the mixing pair) "
+                         "so contrasts can be bootstrapped by recording.")
     ap.add_argument("--config", type=str, required=True)
     ap.add_argument("--checkpoint", type=str, required=True)
     ap.add_argument("--out", type=str, required=True)
@@ -283,6 +290,9 @@ def main():
         "sdr_rec": [], "sdr_lin": [], "sdr_lin_gt": [], "l_lat": [], "mix_rate": [],
         "gain_lin_gt": [], "gain_rec": [], "abs_gain_lin_gt": [], "abs_gain_rec": [],
     }
+    per_unit: List[Dict] = []
+    PER_UNIT_METRICS = ("sdr_rec", "sdr_lin", "sdr_lin_gt", "l_lat", "mix_rate",
+                        "gain_lin_gt", "gain_rec")
 
     n_seen = 0
     for bi, batch in enumerate(tqdm(val_loader, desc="mixing-metrics")):
@@ -295,9 +305,28 @@ def main():
         elif not isinstance(sources, list):
             sources = list(sources)
 
-        out = _process_batch(model, x_wave, sources, alpha=args.alpha)
+        # Per-batch permutation stream: the pairing depends only on the batch
+        # index, so every model sees identical pairs regardless of what else
+        # consumed the global RNG.
+        pg = torch.Generator(device=device).manual_seed(args.seed * 1_000_003 + bi)
+        out = _process_batch(model, x_wave, sources, alpha=args.alpha,
+                             perm_generator=pg)
         for k in aggregates:
             aggregates[k].extend(out.get(k, []))
+        if args.per_unit_out and out:
+            keys = batch.get("key", None)
+            chunks = batch.get("chunk", None)
+            perm = out.get("_perm", [])
+            if keys is not None and perm:
+                keys = list(keys)
+                chunks = [int(c) for c in chunks] if chunks is not None else [-1] * len(keys)
+                for i, j in enumerate(perm):
+                    rec = {"track": keys[i], "chunk": chunks[i],
+                           "pair_track": keys[j], "pair_chunk": chunks[j],
+                           "source": sources[i]}
+                    for k in PER_UNIT_METRICS:
+                        rec[k] = float(out[k][i][1])
+                    per_unit.append(rec)
         n_seen += x_wave.size(0)
 
     summary = {k: _tally(v) for k, v in aggregates.items()}
@@ -326,6 +355,13 @@ def main():
     with open(args.out, "w") as f:
         json.dump(out_dict, f, indent=2)
     print(f"\nwrote {args.out}")
+
+    if args.per_unit_out:
+        os.makedirs(os.path.dirname(args.per_unit_out) or ".", exist_ok=True)
+        with open(args.per_unit_out, "w") as f:
+            json.dump({"checkpoint": args.checkpoint, "alpha": args.alpha,
+                       "n": len(per_unit), "records": per_unit}, f)
+        print(f"wrote {args.per_unit_out}  ({len(per_unit)} units)")
 
 
 if __name__ == "__main__":

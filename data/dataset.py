@@ -28,7 +28,8 @@ class WaveformDataset(Dataset):
     Random-access dataset over (track, chunk) pairs in one split of a
     unified chunks directory.
 
-    __getitem__(idx) -> {"x_wave": [1, L] fp32, "source": str}
+    __getitem__(idx) -> {"x_wave": [1, L] fp32, "source": str,
+                         "key": str, "chunk": int}
     """
 
     def __init__(
@@ -103,7 +104,11 @@ class WaveformDataset(Dataset):
         wave = self._load(f["path"])[chunk_idx].float().clone()
         if wave.dim() == 1:
             wave = wave.unsqueeze(0)
-        return {"x_wave": wave, "source": f["source"]}
+        # "key" and "chunk" identify the recording and window this sample came
+        # from. Evaluation needs them to cluster by recording: chunks of one
+        # track are correlated, and mixing pairs involve two tracks at once.
+        return {"x_wave": wave, "source": f["source"],
+                "key": f["key"], "chunk": int(chunk_idx)}
 
 
 class FileGroupedSampler(Sampler[int]):
