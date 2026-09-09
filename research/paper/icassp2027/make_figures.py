@@ -52,7 +52,7 @@ def fig_alpha():
         ("v2.1-decmix",      "$\\mathcal{L}_\\mathrm{dec}$ (v2.1)", "s", "-"),
         ("v2.2-decmix-disc", "$\\mathcal{L}_\\mathrm{dec}$+disc (v2.2)", "^", "-"),
     ]
-    fig, ax = plt.subplots(figsize=(3.3, 2.4))
+    fig, ax = plt.subplots(figsize=(2.72, 1.72))
     for name, label, mk, ls in series:
         if name not in summ:
             continue
@@ -93,7 +93,7 @@ def fig_protocol():
                                                "M2L +mix": vals[("random", "P2")]},
     }
     models = ["M2L base", "M2L +mix"]
-    fig, ax = plt.subplots(figsize=(3.3, 2.4))
+    fig, ax = plt.subplots(figsize=(2.72, 1.72))
     import numpy as np
     x = np.arange(len(models))
     w = 0.38

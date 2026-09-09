@@ -63,8 +63,9 @@ dedicated separation or synthesis model, a prerequisite for latent-diffusion
 systems \cite{liu2023audioldm,evans2024stable} that compose independently
 modeled sources. Standard autoencoders do not satisfy Eq.~\ref{eq:equiv}:
 their objectives reward reconstruction fidelity, not algebraic structure, and
-quantized codecs (DAC \cite{kumar2024dac}, EnCodec \cite{defossez2023encodec})
-cannot represent interpolated codes at all. Torres et al.~\cite{torres2026linearity} induce the property in a
+in quantized codecs (DAC \cite{kumar2024dac}, EnCodec
+\cite{defossez2023encodec}) an interpolated point is not a codebook entry,
+so code-domain mixing is undefined without leaving the quantizer. Torres et al.~\cite{torres2026linearity} induce the property in a
 consistency autoencoder by decoding averaged latents against the true mix.
 
 This paper asks a prior question: \emph{what do these arithmetic scores
@@ -390,7 +391,7 @@ everywhere.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.80\linewidth]{figures/fig_protocol.pdf}
+  \includegraphics[scale=1]{figures/fig_protocol.pdf}
   \caption{Decode-noise protocol confound (Music2Latent, MUSDB18,
   $\alpha{=}0.5$). The same checkpoints score deeply negative under
   independent-noise decoding and positive under shared-noise decoding; the
@@ -406,14 +407,13 @@ function and every unit-sum combination pointwise unchanged, for arbitrary
 nonlinear encoders and decoders, yet it moves subtraction scores by several
 decibels and, on five fixed checkpoints, removes the entire aggregate
 advantage that mixing supervision appeared to have there, on all 49 test
-tracks. What the supervision does buy is convex equivariance, which the
-intervention provably cannot affect and which improves at both compression
-rates. We therefore recommend reporting latent arithmetic against a declared origin
+tracks. What the supervision buys is convex equivariance, which the intervention
+cannot affect and which improves at both rates. We therefore recommend reporting latent arithmetic against a declared origin
 and against the model's own reconstruction of the target.
 \textbf{Limitations.} Comparisons are single-run at one initialization;
 checkpoint selection used the test split (\secref{sec:protocol-setup});
-intervals are conditional on these checkpoints; exact recovery holds only
-for an affine encoder; experiments are mono with no listening test.
+intervals are conditional on these checkpoints; recovery is exact only for
+an affine encoder; audio is mono and untested by listeners.
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}
