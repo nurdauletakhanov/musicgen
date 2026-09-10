@@ -84,7 +84,10 @@ def main():
     p.add_argument("--chunks-dir", type=str, default="./chunks-44k-1s")
     p.add_argument("--fma-metadata-csv", type=str,
                    default="./dataset/fma_metadata/tracks.csv",
-                   help="Path to FMA's tracks.csv. If missing, falls back to random split.")
+                   help="Path to FMA's tracks.csv (required unless --allow-random-split).")
+    p.add_argument("--allow-random-split", action="store_true",
+                   help="Build a seeded random split instead of the official "
+                        "one. Produces a different split from the paper's.")
     p.add_argument("--random-fraction", type=float, default=0.05,
                    help="Used only if metadata CSV isn't found")
     p.add_argument("--seed", type=int, default=0)
@@ -101,6 +104,15 @@ def main():
 
     # Decide source of truth for which tracks go to test.
     selected: Set[str]
+    # The quickstart documents the OFFICIAL FMA split. Falling back to a random
+    # one silently would reproduce different numbers under the same command, so
+    # the random path must now be asked for explicitly.
+    if not os.path.isfile(args.fma_metadata_csv) and not args.allow_random_split:
+        raise SystemExit(
+            f"FMA metadata not found at {args.fma_metadata_csv}. The paper uses "
+            "the official split; download fma_metadata.zip and pass "
+            "--fma-metadata-csv, or pass --allow-random-split to build a "
+            "DIFFERENT, seeded random split on purpose.")
     if os.path.isfile(args.fma_metadata_csv):
         print(f"[mode] official splits from {args.fma_metadata_csv}")
         official_test_ids = _load_official_fma_test_ids(args.fma_metadata_csv)

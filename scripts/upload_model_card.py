@@ -5,6 +5,8 @@ Run anywhere you are logged in to Hugging Face as the repo owner:
 """
 import os
 
+import argparse
+
 from huggingface_hub import HfApi
 
 REPO_ID = os.environ.get("MUSICGEN_HF_REPO",
@@ -82,7 +84,22 @@ share the decode noise (the eval adapter does) or the metric measures sampling,
 not linearity.
 """
 
-api = HfApi()
-api.upload_file(path_or_fileobj=CARD.encode(), path_in_repo="README.md",
-                repo_id=REPO_ID, repo_type="model")
-print(f"model card uploaded to https://huggingface.co/{REPO_ID}")
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--repo-id", default=REPO_ID,
+                    help="destination model repo (default: %(default)s)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="print the card and the destination, upload nothing")
+    a = ap.parse_args()
+    if a.dry_run:
+        print(f"[dry-run] would upload README.md to {a.repo_id}\n")
+        print(CARD)
+        return
+    HfApi().upload_file(path_or_fileobj=CARD.encode(), path_in_repo="README.md",
+                        repo_id=a.repo_id, repo_type="model")
+    print(f"model card uploaded to https://huggingface.co/{a.repo_id}")
+
+
+# Importing this module must not publish anything.
+if __name__ == "__main__":
+    main()

@@ -190,7 +190,7 @@ def poll_loop(base_interval):
     while True:
         try:
             out = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
-                                  SSH_HOST, remote_cmd()], capture_output=True, text=True, timeout=120)
+                                  SSH_HOST, remote_cmd()], capture_output=True, text=True, timeout=900)
             if out.returncode != 0 and not out.stdout:
                 raise RuntimeError(out.stderr.strip()[-300:] or "ssh failed")
             stages, runs, evals, queue, launch = parse(out.stdout)

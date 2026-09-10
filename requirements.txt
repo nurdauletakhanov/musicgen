@@ -19,11 +19,16 @@ soundfile>=0.12.1
 tensorboard>=2.13
 huggingface_hub>=0.20
 matplotlib>=3.7
-# FAD with the LAION-CLAP backbone (see evaluation/compute_fad.py)
-frechet-audio-distance>=0.1.2
-# LAION-CLAP embeddings for FAD (evaluation/compute_fad.py); checkpoint downloaded separately
-laion_clap>=1.1
+scipy>=1.10          # imported directly by evaluation/compute_fad.py
 
+# --- Optional, not needed for the core train/eval path -----------------------
+# FAD here uses LAION-CLAP embeddings, NOT the frechet_audio_distance package
+# (see evaluation/compute_fad.py for why). Install laion-clap for FAD:
+#   pip install laion_clap
+# Music2Latent cross-architecture evaluation:
+#   pip install music2latent
+# The held-out MoisesDB corpus builder (scripts/prepare_moisesdb.py):
+#   pip install git+https://github.com/moises-ai/moises-db.git
 # --- Paper run (fill from `pip freeze` on the training machine) -------------
 # torch==
 # torchaudio==

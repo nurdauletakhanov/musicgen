@@ -143,9 +143,18 @@ def main():
         if groups is None:                      # already on disk from an earlier run
             d = out / tid
             n = sf.info(str(d / "mixture.wav")).frames
+            # Recover provenance from the files rather than asserting defaults:
+            # an empty group is a silent file, and the peak is measurable.
+            miss, peak = [], 0.0
+            for g in TARGETS:
+                x, _ = sf.read(str(d / f"{g}.wav"), dtype="float32", always_2d=True)
+                if not np.any(x):
+                    miss.append(g)
+            mx, _ = sf.read(str(d / "mixture.wav"), dtype="float32", always_2d=True)
+            peak = float(np.abs(mx).max()) if mx.size else 0.0
             manifest.append({"track": tid, "samples": int(n),
-                             "seconds": round(n / SR, 2), "missing_groups": [],
-                             "mixture_peak": None, "resumed": True})
+                             "seconds": round(n / SR, 2), "missing_groups": miss,
+                             "mixture_peak": round(peak, 4), "resumed": True})
             n_done += 1; n_skipped += 1
             continue
         present = {g: v for g, v in groups.items() if v is not None and np.size(v)}

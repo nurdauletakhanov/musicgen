@@ -1,11 +1,14 @@
-paper.aux
-paper.bbl
-paper.blg
-paper.fdb_latexmk
-paper.fls
-paper.log
-build.log
+# LaTeX build products, for any jobname. The .bbl is generated at package
+# time by make_arxiv.sh, so it does not belong in the tree either.
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
 *.out
+*.synctex.gz
+build.log
 
 # Internal submission checklist — working document, not part of the artifact.
 SUBMISSION.md

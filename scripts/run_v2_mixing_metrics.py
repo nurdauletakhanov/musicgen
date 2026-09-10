@@ -41,9 +41,12 @@ MODELS = [
 
 OUT_DIR = REPO / "evaluation" / "v2_metrics"
 
+from scripts._runs import resolve_config, out_dir, add_common_args, report
+
 
 def main():
     ap = argparse.ArgumentParser()
+    add_common_args(ap, "evaluation/v2_metrics")
     ap.add_argument("--only", nargs="+", default=None,
                     help="Run only the given model names (default: all 7)")
     ap.add_argument("--checkpoint-name", default="best.pth",
@@ -63,25 +66,26 @@ def main():
     if unknown:
         sys.exit(f"unknown model(s): {unknown}. valid: {MODELS}")
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    OUT = out_dir(args.out_dir, OUT_DIR)
 
     summary = []
     for name in targets:
         ckpt_dir = REPO / "checkpoints" / name
-        cfg = ckpt_dir / "config.yaml"
+        cfg = resolve_config(name)
         ckpt = ckpt_dir / args.checkpoint_name
-        out = OUT_DIR / f"{name}_mixing.json"
+        out = OUT / f"{name}_mixing.json"
 
-        if not cfg.exists():
-            print(f"[skip] {name}: missing {cfg}")
+        if cfg is None:
+            print(f"[FAIL] {name}: no config (not in scripts/_runs.py and no "
+                  f"checkpoints/{name}/config.yaml)")
             summary.append((name, "missing-config"))
             continue
         if not ckpt.exists():
-            print(f"[skip] {name}: missing {ckpt}")
+            print(f"[FAIL] {name}: missing {ckpt}")
             summary.append((name, "missing-ckpt"))
             continue
         if out.exists() and not args.force:
-            print(f"[skip] {name}: {out} already exists (use --force to redo)")
+            print(f"[skip] {name}: {out} already exists (use --force, or --out-dir to write elsewhere)")
             summary.append((name, "skipped-exists"))
             continue
 
@@ -105,11 +109,9 @@ def main():
         summary.append((name, "ok" if rc == 0 else f"failed-rc{rc}"))
 
     print("\n=== summary ===")
-    for name, status in summary:
-        print(f"  {name:30s} {status}")
-    failed = [n for n, s in summary if s.startswith("failed")]
-    if failed:
-        sys.exit(f"\n{len(failed)} run(s) failed: {failed}")
+    # A run named with --only must not fail quietly: missing weights or a
+    # missing config are failures there, not skips.
+    sys.exit(report(summary, requested_explicitly=bool(args.only)))
 
 
 if __name__ == "__main__":

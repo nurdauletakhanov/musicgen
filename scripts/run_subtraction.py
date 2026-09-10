@@ -28,6 +28,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 OUT_DIR = REPO / "evaluation" / "v2_metrics"
 
+from scripts._runs import resolve_config, out_dir, add_common_args, report
+
 # Music2Latent Phase-2 checkpoint (sibling repo). Override with:
 #   export MUSICGEN_M2L_CHECKPOINT=/path/to/model_..._iters_50000.pt
 # Only the "m2l-phase2" row needs this; the v2/v3 rows run without it.
@@ -53,6 +55,7 @@ MODELS = [
 
 def main():
     ap = argparse.ArgumentParser()
+    add_common_args(ap, "evaluation/v2_metrics")
     ap.add_argument("--only", nargs="+", default=None,
                     help="Run only the given model names (default: all)")
     ap.add_argument("--checkpoint-name", default="best.pth",
@@ -79,21 +82,21 @@ def main():
     if unknown:
         sys.exit(f"unknown model(s): {unknown}. valid: {names}")
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    OUT = out_dir(args.out_dir, OUT_DIR)
 
     summary = []
     for name, kind, payload in MODELS:
         if name not in targets:
             continue
-        out = OUT_DIR / f"{name}_subtraction.json"
+        out = OUT / f"{name}_subtraction.json"
         if out.exists() and not args.force:
-            print(f"[skip] {name}: {out} already exists (use --force to redo)")
+            print(f"[skip] {name}: {out} already exists (use --force, or --out-dir to write elsewhere)")
             summary.append((name, "skipped-exists"))
             continue
 
         if kind == "v2":
             ckpt_dir = Path(payload)
-            cfg = ckpt_dir / "config.yaml"
+            cfg = resolve_config(name)
             ckpt = ckpt_dir / args.checkpoint_name
             if not cfg.exists():
                 print(f"[skip] {name}: missing {cfg}")
@@ -141,11 +144,9 @@ def main():
         summary.append((name, "ok" if rc == 0 else f"failed-rc{rc}"))
 
     print("\n=== summary ===")
-    for name, status in summary:
-        print(f"  {name:30s} {status}")
-    failed = [n for n, s in summary if s.startswith("failed")]
-    if failed:
-        sys.exit(f"\n{len(failed)} run(s) failed: {failed}")
+    # A run named with --only must not fail quietly: missing weights or a
+    # missing config are failures there, not skips.
+    sys.exit(report(summary, requested_explicitly=bool(args.only)))
 
 
 if __name__ == "__main__":

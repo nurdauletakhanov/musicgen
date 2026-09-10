@@ -118,4 +118,9 @@ $PY -m evaluation.origin_effect \
     --per-chunk "$OUT/per_chunk/*_per_chunk.json" \
     --out "$OUT/origin_effect_unfiltered.json" | tee "$OUT/origin_effect_unfiltered.txt"
 
+# The mixing half needs its own statistics: each unit joins two recordings.
+$PY -m evaluation.mixing_stats \
+    --per-unit "$OUT/per_chunk/*_mixing_per_unit.json" \
+    --out "$OUT/mixing_stats.json" | tee "$OUT/mixing_stats.txt"
+
 echo "done. results in $OUT"

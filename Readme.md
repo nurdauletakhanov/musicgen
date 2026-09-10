@@ -176,8 +176,15 @@ python -m data.preprocess maestro
 python -m data.preprocess fma --workers 8
 python -m scripts.reshuffle_fma_splits    # move FMA's official test split into test/
 
-# 2. Train
-python -m training.train --config configs/experiments/v2/v2.1_decmix.yaml
+# 2. Train. v2.x are 25k-step fine-tunes of the converged v1.1 baseline, so
+#    they need --warm-start; without it you train a different experiment from
+#    random initialisation.
+python -m training.train --config configs/experiments/v2/v2.1_decmix.yaml \
+    --warm-start checkpoints/v1.1/best.pth
+
+#    For NEW training rather than reproducing the paper, carve a real
+#    validation split first (the released runs validated on the test split):
+#    python -m scripts.make_val_split && set data.val_split: val in the config
 
 # 3. Resume
 python -m training.train --config configs/experiments/v2/v2.1_decmix.yaml \

@@ -14,7 +14,7 @@ protocol shows a U-shape with the minimum at alpha=0.5.
 Usage:
   python -m scripts.run_alpha_sweep                  # all models, all alphas
   python -m scripts.run_alpha_sweep --only v2.0-continued v2.2-decmix-disc
-  python -m scripts.run_alpha_sweep --max-batches 5  # smoke test
+  python -m scripts.run_alpha_sweep --per-source 20   # small, fast sweep
 
 Already-existing outputs are skipped unless --force is passed.
 """

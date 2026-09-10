@@ -1,0 +1,27 @@
+Found 12055 musdb chunks in test split
+Filtering to source: musdb
+Eval batches: 30 × batch=8
+
+
+=== checkpoint=checkpoints/m2l/music2latent.pt, protocol=shared ===
+  n=240, sdr_rec=-2.193 ± 4.143, sdr_lin=+3.562 ± 2.257
+
+=== checkpoint=checkpoints/m2l/mix_phase2_decmix_consmix_ema.pt, protocol=shared ===
+  n=240, sdr_rec=-1.788 ± 4.058, sdr_lin=+5.938 ± 1.860
+
+=== checkpoint=checkpoints/m2l/music2latent.pt, protocol=random ===
+  n=240, sdr_rec=-1.989 ± 3.864, sdr_lin=-9.051 ± 3.829
+
+=== checkpoint=checkpoints/m2l/mix_phase2_decmix_consmix_ema.pt, protocol=random ===
+  n=240, sdr_rec=-1.622 ± 3.810, sdr_lin=-7.299 ± 3.745
+
+========== summary ==========
+protocol      phase      sdr_rec     sdr_lin
+--------------------------------------------------
+shared        P0          -2.193      +3.562
+shared        P2          -1.788      +5.938
+random        P0          -1.989      -9.051
+random        P2          -1.622      -7.299
+
+random-noise P0 -> P2: -9.05 -> -7.30  (Δ=+1.75)
+shared-noise P0 -> P2: +3.56 -> +5.94  (Δ=+2.38)

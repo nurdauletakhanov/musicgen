@@ -20,7 +20,18 @@ RUN="${1:?run name under checkpoints/}"
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 [ -f "checkpoints/$RUN/best.pth" ] || { echo "no checkpoints/$RUN/best.pth"; exit 1; }
 CKPT=$(CKPT_PICK "$RUN")
-echo "evaluating checkpoints/$RUN/$CKPT (final step, no selection)"
+# Do not call a checkpoint "final" without looking: latest.pth is only the
+# final-step weights if it actually sits at the last step.
+STEP=$(.venv/bin/python -c "
+import torch,sys
+c=torch.load('checkpoints/$RUN/$CKPT', map_location='cpu', weights_only=False)
+print(c.get('global_step','?'))" 2>/dev/null || echo "?")
+echo "evaluating checkpoints/$RUN/$CKPT at step $STEP"
+if [ "$CKPT" = latest.pth ] && [ "$STEP" != 25000 ]; then
+  echo "REFUSING: latest.pth is at step $STEP, not the final 25000, so this is"
+  echo "not a selection-free final checkpoint. Finish the run first."
+  exit 1
+fi
 [ -f checkpoints/clap/music_audioset_epoch_15_esc_90.14.pt ] || { echo "CLAP checkpoint missing"; exit 1; }
 .venv/bin/python -m scripts.run_v2_mixing_metrics --only "$RUN" --checkpoint-name "$CKPT"
 .venv/bin/python -m scripts.run_v2_fad --only "$RUN" --checkpoint-name "$CKPT"
