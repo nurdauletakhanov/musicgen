@@ -249,6 +249,9 @@ def dyadic_cluster_ci(vals, left, right, rng, n_boot=N_BOOT):
     We resample recordings with replacement and keep a pair only when BOTH of
     its recordings were drawn, which is the dyadic ("pigeonhole") bootstrap.
 
+    Pairs whose two members come from the same recording are handled
+    separately from pairs that cross recordings; see the comment below.
+
     vals  : per-unit values
     left  : recording id of the first member of each pair
     right : recording id of the second member
@@ -260,12 +263,17 @@ def dyadic_cluster_ci(vals, left, right, rng, n_boot=N_BOOT):
     pos = {c: i for i, c in enumerate(ids)}
     li = np.array([pos[c] for c in left])
     ri = np.array([pos[c] for c in right])
+    # 80% of the mixing pairs in this evaluation join two chunks of the SAME
+    # recording, because the sampler emits a track's chunks contiguously. Such
+    # a pair enters the resample once per copy of that recording (weight m),
+    # not once per ordered pair of copies (m^2). Using m^2 for both cases
+    # overweights within-recording pairs and understates the interval.
+    same = (li == ri)
     means = np.empty(n_boot)
     for b in range(n_boot):
         draw = rng.integers(0, len(ids), size=len(ids))
-        # multiplicity of each recording in this resample
         mult = np.bincount(draw, minlength=len(ids))
-        w = mult[li] * mult[ri]          # a pair enters once per (copy, copy)
+        w = np.where(same, mult[li], mult[li] * mult[ri]).astype(np.float64)
         tot = w.sum()
         means[b] = float((vals * w).sum() / tot) if tot else np.nan
     means = means[~np.isnan(means)]
