@@ -35,8 +35,8 @@ arithmetic, but common evaluations measure different properties of an
 autoencoder. We investigate these effects through same-start fine-tuning
 comparisons in GAN audio autoencoders. Decode-mixing supervision improves
 ground-truth convex mixing with little change in reconstruction SI-SDR. An
-independent held-out corpus confirms a $1.73$\,dB mixing improvement at
-$7.66\times$ compression and $1.33$\,dB for a combined recipe at
+independent held-out corpus confirms a $1.77$\,dB mixing improvement at
+$7.66\times$ compression and $1.39$\,dB for a combined recipe at
 $15.3\times$. Discriminator supervision, however, increases decoder
 consistency while reducing ground-truth mixing fidelity. For source
 subtraction, correcting the latent origin removes $87$--$95$\% of the raw
@@ -65,8 +65,8 @@ $g(f(x_\mathrm{mix}){-}f(x_\mathrm{stem}))\approx x_\mathrm{res}$. Where these
 hold, editing and composition happen in the latent domain without a dedicated
 separation or synthesis model, a prerequisite for latent-diffusion systems
 \cite{liu2023audioldm,evans2024stable} that compose independently modeled
-sources. Standard autoencoders do not satisfy Eq.~\ref{eq:equiv}: their
-objectives reward reconstruction fidelity, not algebraic structure, and in
+sources. Standard reconstruction objectives do not enforce Eq.~\ref{eq:equiv}: they
+reward fidelity, not algebraic structure, and in
 quantized codecs (DAC \cite{kumar2024dac}, EnCodec
 \cite{defossez2023encodec}) an interpolated point is not a codebook entry.
 
@@ -256,23 +256,21 @@ seed variance.
 The improvement is confirmed on audio that took no part in training or in
 checkpoint selection. On 240 held-out MoisesDB recordings \cite{pereira2023moisesdb}, $\Ldec$
 gains $+1.77$\,dB $[+1.73,+1.81]$ at $7.66\times$ and the combined recipe
-$+1.39$ $[+1.33,+1.45]$ at $15.3\times$. All held-out mixing figures come from one evaluation of $14{,}064$ units:
-pairing depends on the batching, so figures from two runs would not
-reconcile.
+$+1.39$ $[+1.33,+1.45]$ at $15.3\times$. All held-out mixing figures come from one evaluation of $14{,}064$ units,
+since pairing depends on the batching.
 Intervals resample recordings; mixing pairs join two chunks, about $80\%$ of
 them from the same recording. A cross-recording pair enters a resample $m_i
 m_j$ times and a within-recording pair $m_i$ times, $m$ being that
 recording's multiplicity. Across $\alpha$, swept against its matched control, the swing is $1.9$\,dB
 with $\Ldec$ against $3.2$ without, and $\Ldec$ leads at all five
 coefficients. \textbf{The gain largely corresponds to a reduced penalty for decoding
-interpolated latents.} Scoring both routes against the same target $\bar{x}$
-on the same units, the direct route $g(f(\bar{x}))$ moves by $+0.04$\,dB
-$[+0.03,+0.05]$ under $\Ldec$ while the penalty for routing through the
-interpolated latent instead falls by $1.73$\,dB $[-1.77,-1.70]$, from $1.80$
-to $0.07$. The two sum to the $+1.77$ gain by construction. At $15.3\times$
-the direct route moves $-0.14$ $[-0.17,-0.10]$ and the penalty falls $1.52$
-$[-1.58,-1.48]$, so there the reconstruction change is not negligible and
-both encoder and decoder changed.
+interpolated latents.} Scoring both routes against the same target on the same units, the direct
+route $g(f(\bar{x}))$ moves by $+0.04$\,dB $[+0.03,+0.05]$ under $\Ldec$
+while the penalty for routing through the interpolated latent decreases by
+$1.73$ $[1.70,1.77]$, from $1.80$ to $0.07$; the two sum to the $+1.77$ gain
+by construction. At $15.3\times$ the direct route changes by $-0.14$
+$[-0.17,-0.10]$ and the penalty decreases by $1.52$ $[1.48,1.58]$, so there
+the reconstruction change is not negligible.
 
 \subsection{What the training comparisons establish}\label{sec:training}
 The encoder-only variant $\Lenc$ leaves MixRate high ($1.15$--$1.18$): it
@@ -287,17 +285,17 @@ the relabelling of \secref{sec:prop} the numerator is unchanged while a
 large enough $c$ inflates the denominator and drives the ratio toward zero.
 \tabref{tab:latnorm} re-measures the three contrasts under four
 normalizations on the held-out corpus. The unnormalized residual and the
-ratio to the endpoint distance, both translation-invariant, favour the
-mixing models throughout; the ratio to each encoder's distance from its own
-$f(0)$, also translation-invariant, reverses at $7.66\times$ and is
-indistinguishable from zero at $15.3\times$. Recording the numerator and both denominators separately is informative.
-With $D$ the number of latent elements (channels $\times$ frames), write
+ratio to the endpoint distance favour the mixing models throughout; the
+ratio to each encoder's distance from its own $f(0)$ reverses at
+$7.66\times$ and is indistinguishable from zero at $15.3\times$. All three
+are translation-invariant. Recording the numerator and both denominators
+separately is informative: with $D$ the latent element count, write
 $N=\lVert r\rVert^2/D$, $S=\lVert f(x_1){-}f(x_2)\rVert^2/D$ and $O=\lVert
 f(\bar{x}){-}f(0)\rVert^2/D$, each a squared quantity averaged over units.
 Against its control, each mixing model has mean $N$ at $0.64$--$0.67$, mean
 $S$ within $4\%$ at $7.66\times$ and $1.37$ at $15.3\times$, and mean $O$ at
-$0.53$--$0.61$, so the residual falls by about a third while the mixture
-latents sit some $22$--$27\%$ closer to $f(0)$ in distance. These are means
+$0.53$--$0.61$, so the residual falls by about a third while the mixture latents sit some
+$22$--$27\%$ closer to $f(0)$ in RMS distance. These are means
 of the parts, not of the ratio, so they do not by themselves determine the
 mean ratio; the reversal of $N/O$ at $7.66\times$ is consistent with the
 stronger reduction in its denominator. Both normalized ratios, and the customary one, are additionally invariant to
@@ -305,11 +303,13 @@ rescaling $f\!\to\!sf$ with the decoder adjusted, since numerator and
 denominator scale alike; only the unnormalized residual is not. Scale
 invariance therefore cannot decide between the two denominators. We therefore make no claim about
 improved encoder geometry. \begin{table}[t] \centering\small
-\setlength{\tabcolsep}{3.0pt} \input{tables/latnorm.tex} \caption{Latent
-error under four normalizations, held-out corpus: paired difference
-(treatment $-$ control, $\times10^{-3}$, negative is better) $\pm$ half the
-95\% interval from a dyadic bootstrap over 240 recordings. $\dagger$ marks
-the one interval containing zero.} \label{tab:latnorm} \end{table}
+\setlength{\tabcolsep}{3.0pt} \input{tables/latnorm.tex} \caption{Latent error under four normalizations, held-out corpus. Each
+column is a treatment against its \emph{own no-mixing control} at the same
+rate, so the $\Ldec{+}$disc column compares that recipe with no mixing, not
+with $\Ldec$ alone. Values are the paired difference (treatment $-$ control,
+$\times10^{-3}$, negative is better) $\pm$ half the 95\% interval from a
+dyadic bootstrap over 240 recordings; $\dagger$ marks the one interval
+containing zero.} \label{tab:latnorm} \end{table}
 
 \subsection{Decoder consistency can misrepresent mixing quality}\label{sec:consistency}
 Adding an adversarial term to the mixed path does \emph{not} improve
@@ -364,8 +364,8 @@ the gap on $229$--$236$ of the 240 recordings; on the rest it overshoots and
 reverses the sign. The residue is resolvable there ($+0.29$, $+0.12$ and
 $+0.42$\,dB, intervals excluding zero), so a small training-associated
 advantage survives correction. Units are scored where the removed stem is active, at least $-50$\,dBFS and
-within $30$\,dB of the mixture energy ($24{,}648$ of $28{,}800$ kept; vocals
-lose the most, $70.4\%$). The rule excludes silent \emph{targets} and does
+within $30$\,dB of the mixture energy ($24{,}648$ of $28{,}800$ retained;
+vocals retain the least, $70.4\%$). The rule excludes silent \emph{targets} and does
 not make the SI-SDR reference nonsilent, that reference being the remaining
 mixture. The protocol was committed before the audio was downloaded and is
 released as \texttt{HOLDOUT\_PROTOCOL.md} with the checkpoint hashes the
