@@ -96,9 +96,9 @@ decoder-only adaptation retains most of the improvement while joint
 adaptation is best among the tested configurations (\secref{sec:ablation}).
   \item Generalization against matched controls: the combined
   $\Ldec{+}$disc recipe trained from scratch at $2\times$ tighter compression,
-  and a re-run on a consistency-model
-  autoencoder where latent geometry improves but waveform arithmetic does not
-  (\secref{sec:general}).
+  and a Music2Latent fine-tuning experiment in which latent mixing error
+decreases and ground-truth mixing improves, while waveform agreement remains
+poor (\secref{sec:general}).
   \item A downstream analysis showing latent stem removal is limited by the
   latent origin rather than the loss, for every evaluated GAN configuration
   (\secref{sec:downstream}).

@@ -60,8 +60,13 @@ any decoder; matching the residual waveform additionally needs exact
 reconstruction. Empirically this lifts **every evaluated GAN configuration** to
 within 0.4–0.5 dB of its ceiling in aggregate (≈ +8.3 dB at 7.66×, ≈ +7.3 dB at
 15.3×; per track the tail is wider — worst 2.2 dB, 29–32 of 49 tracks within
-0.5 dB), and the mixing-loss advantage on subtraction vanishes
-(−0.03 dB, 95% track-cluster CI [−0.15, +0.11]).
+0.5 dB), and it removes most of the mixing-loss advantage on subtraction rather than
+all of it. On this 49-track test set the residual is −0.03 dB (95%
+track-cluster CI [−0.15, +0.10]), indistinguishable from zero; on a
+pre-registered held-out corpus of 240 MoisesDB recordings, where the intervals
+are about three times tighter, correction removes 87–95% of the advantage and
+leaves a small but resolvable residue of +0.29, +0.12 and +0.42 dB, with
+intervals excluding zero. See `evaluation/holdout_moisesdb/`.
 
 **So: the loss's demonstrated effect is on _convex_ mixing (the tables above).
 Stem subtraction is governed by the latent origin, not by the loss.** Reproduce
@@ -206,9 +211,12 @@ Stated plainly, so nobody rediscovers these the hard way:
   adapter ([`evaluation/m2l_adapter.py`](evaluation/m2l_adapter.py)), the eval
   drivers, and every resulting metric JSON — so the numbers are inspectable and
   the eval protocol is auditable, but the fine-tuning runs cannot be repeated.
-- Latent arithmetic on a **consistency decoder stays phase-limited**; the
-  geometry improves but waveform arithmetic does not become clean. This is a
-  property of the decoder class, not of the loss.
+- In **our Music2Latent fine-tuning experiment**, latent mixing error
+  decreases and ground-truth mixing SI-SDR improves (−9.5 → −7.8 dB against a
+  continued-training control), while waveform agreement remains poor. The two
+  systems differ in encoder, loss family, compression and training data as
+  well as decoder class, so this is a limit we measured on that experiment,
+  not a demonstrated property of consistency autoencoders in general.
 
 ## Layout
 

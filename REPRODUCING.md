@@ -58,13 +58,14 @@ and set `data.val_split: val` in the config.
 | **Table II** (compression + architecture) | same, plus `--only v3.0-baseline-d64 v3.1-decmix-disc-d64` | `v3.*_{mixing,fad}.json` |
 | **Table III** (per-domain equivariance) | same JSONs as I/II — per-source keys are already in them | — |
 | **Table IV** (stem subtraction) | `python -m scripts.run_subtraction` | `*_subtraction.json` |
-| **Fig. 1** (decode-noise protocol confound) | `python -m scripts._diag_old_vs_new_eval` | `_diag_old_vs_new_eval.log` |
-| **Fig. 3** (α sweep) | `python -m scripts.run_alpha_sweep` | `alpha_sweep/`, `alpha_sweep_summary.json` |
+| **Decode-noise protocol swing** (in the text; the figure was cut for space) | `sbatch scripts/slurm_fig1_rerun.sh` | `_diag_old_vs_new_eval_fixedpairs.log` |
+| **α sweep** (in the text) | `python -m scripts.run_alpha_sweep` | `alpha_sweep/`, `alpha_sweep_summary.json` |
+| **Fig. 1** (origin intervention, `paper_origin`) | `python -m evaluation.origin_effect` then `make_figures.py` | `figures/fig_origin.pdf` |
 | **Table IV `+f(0)` rows** (origin correction) | `sbatch scripts/slurm_origin_ablation.sh`<br>or `python -m evaluation.compute_subtraction --origin-correct ...` | `*_subtraction_origin.json`, `per_chunk/*+origin_*.json` |
 | **Confidence intervals** (paired track-cluster bootstrap) | `python -m evaluation.paired_stats --per-chunk 'evaluation/v2_metrics/per_chunk/*.json' --out evaluation/v2_metrics/paired_stats.json` | `paired_stats.json` |
 | **No-arithmetic baselines** (unchanged mix / autoencoded mix / decode-then-subtract) | `sbatch scripts/slurm_comparators.sh` | per-chunk `identity`, `aemix`, `wavsub` fields |
 | **Level preservation** (the gain SI-SDR discards) | `sbatch scripts/slurm_gain_eval.sh` | `gain/*_mixing_gain.json` |
-| **Same-latent control** (Fig. 1 confound) | `sbatch scripts/slurm_same_latent.sh` | `same_latent_control.json` |
+| **Same-latent control** (−1.8 dB, isolates decoder sampling) | `sbatch scripts/slurm_same_latent.sh` | `same_latent_control.json` |
 
 Every driver skips already-existing outputs unless `--force` is passed, and
 every one takes `--only <run> [...]` to run a subset.
@@ -145,9 +146,12 @@ Two traps worth knowing before you compare against other papers:
    corrected decode is the model's own reconstruction of the residual. Raw
    subtraction numbers mostly reflect each model's latent offset; use
    `--origin-correct` before comparing models on this task.
-3. **Stochastic decoders need shared decode noise.** A consistency-model decoder
-   draws fresh noise per call, which sets output phase. Two decodes of the same
-   latent then differ in phase and `sdr_lin` collapses to ≈ −8 dB regardless of
-   real linearity. All evals here share the noise across the two decode calls;
-   `scripts/_diag_old_vs_new_eval.py` demonstrates the ≈12 dB swing between
-   protocols on identical checkpoints.
+3. **Stochastic decoders need shared decode noise.** A consistency-model
+   decoder draws fresh noise per call. Under independent noise the Music2Latent
+   checkpoints score −9.1 and −7.3 dB on `sdr_lin`, and +3.6 and +5.9 dB under
+   shared noise: a ≈13 dB swing driven by the protocol rather than the model
+   (`scripts/slurm_fig1_rerun.sh`, identical pairs). Decoding the *same* latent
+   twice, with no latent arithmetic at all, already costs **−1.8 dB** under
+   independent noise (`scripts/_diag_same_latent.py`), which is the control
+   that isolates decoder sampling from linearity. All evals here share the
+   noise across the two decode calls.
