@@ -91,8 +91,16 @@ def main():
         rm, rlo, rhi, nt = cluster_ci(raw, tracks, rng)
         cm, clo, chi, _ = cluster_ci(cor, tracks, rng)
         dm, dlo, dhi, _ = cluster_ci(chg, tracks, rng)
-        per_track = np.array([chg[tracks == t].mean() for t in np.unique(tracks)])
-        neg = int((per_track < 0).sum())
+        # Two different per-track statistics, and only one of them is the
+        # honest one. A DECREASE IN THE SIGNED difference counts a correction
+        # that overshoots and reverses the advantage as a success. What we
+        # want is a decrease in the MAGNITUDE of the between-model gap.
+        ids = np.unique(tracks)
+        pt_raw = np.array([raw[tracks == t].mean() for t in ids])
+        pt_cor = np.array([cor[tracks == t].mean() for t in ids])
+        neg = int((np.abs(pt_cor) < np.abs(pt_raw)).sum())
+        neg_signed = int(((pt_cor - pt_raw) < 0).sum())
+        flips = int(((pt_raw > 0) & (pt_cor < 0)).sum())
         per_stem = {s: float(cor[stems == s].mean()) for s in sorted(set(stems))}
         tr_ids = list(np.unique(tracks))
         per_track_raw = [float(raw[tracks == t].mean()) for t in tr_ids]
@@ -103,12 +111,16 @@ def main():
             "corrected_advantage": cm, "corrected_lo": clo, "corrected_hi": chi,
             "change": dm, "change_lo": dlo, "change_hi": dhi,
             "n_tracks": nt, "tracks_reduced": neg,
+            "tracks_signed_reduced": neg_signed, "tracks_sign_flipped": flips,
+            "pct_of_advantage_removed": (100.0 * (rm - cm) / rm) if rm else None,
             "corrected_by_stem": per_stem,
             "per_track_raw": per_track_raw, "per_track_corrected": per_track_cor,
             "corrected_excludes_zero": bool(clo > 0 or chi < 0)}
         print(f"  {label:28s} raw {rm:+.2f} [{rlo:+.2f},{rhi:+.2f}] -> corrected {cm:+.2f} "
               f"[{clo:+.2f},{chi:+.2f}]  change {dm:+.2f} [{dlo:+.2f},{dhi:+.2f}]  "
-              f"reduced on {neg}/{nt} tracks")
+              f"|gap| smaller on {neg}/{nt} tracks "
+              f"(signed {neg_signed}/{nt}, {flips} sign flips), "
+              f"{100*(rm-cm)/rm:.1f}% of the advantage removed")
         print(f"      corrected by stem: " + ", ".join(f"{s} {v:+.2f}" for s, v in per_stem.items()))
     json.dump(out, open(a.out, "w"), indent=2)
     print(f"\nwrote {a.out}")
