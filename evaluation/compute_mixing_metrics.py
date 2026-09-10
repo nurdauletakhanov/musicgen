@@ -192,6 +192,11 @@ def _process_batch(
     # immune to inflation from a latent-insensitive decoder.
     sdr_lin_gt_t, gain_lin_gt_t = _si_sdr_and_gain(g_zbar, x_mix)
     sdr_lin_gt = sdr_lin_gt_t.cpu().tolist()
+    # The mixed-input reconstruction route against the SAME target. Together
+    # with sdr_lin_gt this says what the latent interpolation residual costs in
+    # the waveform: the gap between decoding f(x̄) and decoding z̄.
+    sdr_direct_gt = _si_sdr(g_zreal, x_mix).cpu().tolist()
+    sdr_interp_cost = [d - i for d, i in zip(sdr_direct_gt, sdr_lin_gt)]
     # Gain error SI-SDR ignores: 20 log10 of the fitted scale of g(z̄) vs x̄.
     gain_lin_gt = gain_lin_gt_t.cpu().tolist()
     # Same for plain reconstruction, as the reference level error of the AE.
@@ -219,12 +224,18 @@ def _process_batch(
     n_elem = diff.size(1)
     l_lat_abs = (sq_err / n_elem).cpu().tolist()
 
+    # The three quantities separately, per latent element, so a change in a
+    # ratio can be attributed to the numerator or to its denominator:
+    #   N = ||delta||^2, S = ||f(x1)-f(x2)||^2, O = ||f(xbar)-f(0)||^2.
+    lat_N = l_lat_abs
+
     # (b) Normalized by how far apart the two endpoint latents are. Both terms
     # move together under translation AND under a global rescaling, so this is
     # invariant to both: it asks how large the interpolation error is relative
     # to the span the interpolation traverses.
     span = (z - z_pair).reshape(B, -1).pow(2).sum(dim=1)
     l_lat_span = (sq_err / span.clamp(min=1e-8)).cpu().tolist()
+    lat_S = (span / n_elem).cpu().tolist()
 
     # (c) Normalized by the latent measured from the encoder's own origin,
     # ||f(x̄) - f(0)||^2. f(0) translates with f, so this is invariant too, and
@@ -232,8 +243,10 @@ def _process_batch(
     if z_zero is not None:
         cdenom = (z_real - z_zero).reshape(B, -1).pow(2).sum(dim=1)
         l_lat_centered = (sq_err / cdenom.clamp(min=1e-8)).cpu().tolist()
+        lat_O = (cdenom / n_elem).cpu().tolist()
     else:
         l_lat_centered = [float("nan")] * B
+        lat_O = [float("nan")] * B
 
     # Per-sample MixRate = L_recon(g(z̄), x̄) / L_recon(g(f(x̄)), x̄)
     # Vectorized over the batch — replaces an earlier Python loop that
@@ -255,6 +268,11 @@ def _process_batch(
         "l_lat_abs": list(zip(sources, l_lat_abs)),
         "l_lat_span": list(zip(sources, l_lat_span)),
         "l_lat_centered": list(zip(sources, l_lat_centered)),
+        "lat_N": list(zip(sources, lat_N)),
+        "lat_S": list(zip(sources, lat_S)),
+        "lat_O": list(zip(sources, lat_O)),
+        "sdr_direct_gt": list(zip(sources, sdr_direct_gt)),
+        "sdr_interp_cost": list(zip(sources, sdr_interp_cost)),
         "mix_rate": list(zip(sources, mix_rate)),
         # Which sample each one was mixed with, so per-unit records can name
         # both recordings of the dyad (needed for a dyadic cluster bootstrap).
@@ -341,11 +359,15 @@ def main():
         "sdr_rec": [], "sdr_lin": [], "sdr_lin_gt": [], "l_lat": [], "mix_rate": [],
         "gain_lin_gt": [], "gain_rec": [], "abs_gain_lin_gt": [], "abs_gain_rec": [],
         "l_lat_abs": [], "l_lat_span": [], "l_lat_centered": [],
+        "lat_N": [], "lat_S": [], "lat_O": [],
+        "sdr_direct_gt": [], "sdr_interp_cost": [],
     }
     per_unit: List[Dict] = []
     PER_UNIT_METRICS = ("sdr_rec", "sdr_lin", "sdr_lin_gt", "l_lat", "mix_rate",
                         "gain_lin_gt", "gain_rec",
-                        "l_lat_abs", "l_lat_span", "l_lat_centered")
+                        "l_lat_abs", "l_lat_span", "l_lat_centered",
+                        "lat_N", "lat_S", "lat_O",
+                        "sdr_direct_gt", "sdr_interp_cost")
 
     n_seen = 0
     for bi, batch in enumerate(tqdm(val_loader, desc="mixing-metrics")):
@@ -392,7 +414,9 @@ def main():
     print("\n=== mixing metrics ===")
     for metric in ("sdr_rec", "sdr_lin", "sdr_lin_gt", "l_lat", "mix_rate",
                    "gain_lin_gt", "gain_rec", "abs_gain_lin_gt", "abs_gain_rec",
-                   "l_lat_abs", "l_lat_span", "l_lat_centered"):
+                   "l_lat_abs", "l_lat_span", "l_lat_centered",
+                   "lat_N", "lat_S", "lat_O",
+                   "sdr_direct_gt", "sdr_interp_cost"):
         line = f"  {metric:8s}"
         for src in sorted(summary[metric].keys()):
             line += f"  {src}={summary[metric][src]:+.4f}"

@@ -49,7 +49,7 @@ cfg_for() {
 
 # 1. Held-out corpus first: 14k chunks, minutes per model, and it answers the
 #    question on data that took no part in training or selection.
-OUT=evaluation/holdout_moisesdb/latent_invariance
+OUT=evaluation/holdout_moisesdb/latent_decomposition
 mkdir -p "$OUT/per_chunk"
 for r in "${RUNS[@]}"; do
   [ -f "$OUT/${r}_mixing.json" ] && { echo "skip $r"; continue; }
@@ -61,31 +61,20 @@ for r in "${RUNS[@]}"; do
       --per-unit-out "$OUT/per_chunk/${r}_mixing_per_unit.json" --alpha 0.5 --batch-size "$BS"
 done
 
-# 2. The paper's test set, which is where the published ell_lat numbers come
-#    from. Balanced subsample keeps this to minutes rather than an hour a model.
-OUT2=evaluation/v2_metrics/latent_invariance
-mkdir -p "$OUT2"
-for r in "${RUNS[@]}"; do
-  [ -f "$OUT2/${r}_mixing.json" ] && { echo "skip $r"; continue; }
-  echo "=== test set (balanced 400/source): $r ==="
-  $PY -m evaluation.compute_mixing_metrics \
-      --config "$(cfg_for "$r")" --checkpoint "checkpoints/$r/best.pth" \
-      --out "$OUT2/${r}_mixing.json" --per-source 400 --alpha 0.5 --batch-size "$BS"
-done
-
-echo "=== rankings under each normalization ==="
+echo "=== decomposition and waveform cost ==="
 $PY - <<'PY'
 import json, os
 RUNS=["v2.0-continued","v2.1-decmix","v2.2-decmix-disc","v3.0-baseline-d64","v3.1-decmix-disc-d64"]
-for tag, d in (("held-out MoisesDB","evaluation/holdout_moisesdb/latent_invariance"),
-               ("MUSDB-era test set","evaluation/v2_metrics/latent_invariance")):
+for tag, d in (("held-out MoisesDB","evaluation/holdout_moisesdb/latent_decomposition"),
+               ("MUSDB-era test set","evaluation/v2_metrics/latent_decomposition")):
     print(f"\n--- {tag}")
-    print(f"  {'run':24s} {'||f(0)||':>9s} {'l_lat':>9s} {'abs':>10s} {'span':>9s} {'centered':>9s}")
+    print(f"  {'run':22s} {'N/D':>9s} {'S/D':>8s} {'O/D':>8s} {'N/S':>7s} {'N/O':>7s} {'gt(z_bar)':>10s} {'gt(direct)':>11s} {'cost':>6s}")
     for r in RUNS:
         p=os.path.join(d, f"{r}_mixing.json")
         if not os.path.exists(p): continue
         j=json.load(open(p)); m=j["metrics"]; g=lambda k: m.get(k,{}).get("all", float("nan"))
-        print(f"  {r:24s} {j.get('f0_norm',float('nan')):9.2f} {g('l_lat'):9.4f} "
-              f"{g('l_lat_abs'):10.4f} {g('l_lat_span'):9.4f} {g('l_lat_centered'):9.4f}")
+        print(f"  {r:22s} {g('lat_N'):9.5f} {g('lat_S'):8.4f} {g('lat_O'):8.4f} "
+              f"{g('l_lat_span'):7.4f} {g('l_lat_centered'):7.4f} "
+              f"{g('sdr_lin_gt'):10.2f} {g('sdr_direct_gt'):11.2f} {g('sdr_interp_cost'):6.2f}")
 PY
 echo done
