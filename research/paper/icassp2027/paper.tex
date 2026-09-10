@@ -139,8 +139,8 @@ waveform term, so the two paths differ in objective. Gradients flow through
 $g$ and into $f$ via $\bar{z}$, so one term constrains both networks. We also
 study an encoder-only variant, $\Lenc=\lVert f(\bar{x})-\bar{z}\rVert^2$, and
 a variant that additionally applies the discriminator to the mixed path
-(``$+$disc''). The total objective is $\mathcal{L}=\mathcal{L}_\mathrm{recon}+\mathcal{L}_\
-mathrm{GAN}+\lambda\Ldec +\lambda_\mathrm{enc}\Lenc+\lambda_{\ell_2}\lVert
+(``$+$disc''). The total objective is $\mathcal{L}=\mathcal{L}_\mathrm{recon}+\mathcal{L}_\mathrm{GAN}
++\lambda\Ldec +\lambda_\mathrm{enc}\Lenc+\lambda_{\ell_2}\lVert
 z\rVert^2$ with $\lambda{=}0.5$, $\lambda_{\ell_2}{=}10^{-3}$, equal multi-resolution STFT and mel weights, adversarial weight $0.5$ and feature-matching weight $2$; $\lambda_\mathrm{enc}$ is $0$ except in the encoder-only runs, which sweep $5$, $10$ and $20$. Training uses Adam at $10^{-4}$
 ($5{\times}10^{-5}$ for the discriminator), $\beta{=}(0.8,0.99)$, weight
 decay $10^{-3}$, gradient clipping at $1.0$, batch $32$ with two
@@ -181,8 +181,9 @@ at $\alpha{=}0.5$, two views of Eq.~\ref{eq:equiv}:
 SI-SDR$_\mathrm{lin}=\mathrm{SISDR}(g(\bar{z}),g(f(\bar{x})))$
 (decode-vs-decode, relative to the model's own reconstruction of the mix) and
 SI-SDR$_\mathrm{lin}^\mathrm{gt}=\mathrm{SISDR}(g(\bar{z}),\bar{x})$ (vs.\
-ground truth, comparable across models). We also report MixRate $=\mathcal{L}_\mathrm{mix}(g(\bar{z}),\bar{x})/\mathc
-al{L}_\mathrm{mix}(g(f(\bar{x})),\bar{x})$ with $\mathcal{L}_\mathrm{mix}$
+ground truth, comparable across models). We also report MixRate
+$=\mathcal{L}_\mathrm{mix}(g(\bar{z}),\bar{x})/\mathcal{L}_\mathrm{mix}(g(f(\bar{x})),\bar{x})$
+with $\mathcal{L}_\mathrm{mix}$
 the three-term loss of Eq.~\ref{eq:ldec} in both terms, and the latent error
 $r=\bar{z}-f(\bar{x})$. The $\ell_\mathrm{lat}$ column of
 \tabref{tab:ablation} is the customary ratio $\lVert r\rVert^2/\lVert

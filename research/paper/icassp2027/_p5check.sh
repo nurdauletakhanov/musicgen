@@ -6,6 +6,15 @@ set -e
 SRC="${1:-paper.tex}"
 sed 's/\\bibliography{references}/\\clearpage\\bibliography{references}/' "$SRC" > _p5.tex
 latexmk -g -pdf -interaction=nonstopmode -jobname=_p5 _p5.tex > _p5.log 2>&1 || true
+# A failed compile silently shortens the document, which used to read as a
+# PASS. Refuse to report on a build that did not succeed.
+ERRS=$(grep -c '^!' _p5.log || true)
+if [ "${ERRS:-0}" -gt 0 ]; then
+  echo "FAIL: $SRC did not compile ($ERRS LaTeX errors):"
+  grep -A2 '^!' _p5.log | head -8
+  rm -f _p5.aux _p5.bbl _p5.blg _p5.fdb_latexmk _p5.fls _p5.log _p5.out _p5.tex _p5.pdf
+  exit 1
+fi
 P=$(gs -q -dNODISPLAY -dBATCH -dNOPAUSE -dPDFINFO _p5.pdf 2>&1 | grep -oE 'File has [0-9]+' | grep -oE '[0-9]+')
 BODY=$((P - 1))
 if [ "$BODY" -le 4 ]; then echo "PASS: $SRC body = $BODY pages, refs alone on page $P"
