@@ -305,6 +305,19 @@ def table_origin():
 
 
 if __name__ == "__main__":
+    import argparse
+    _ap = argparse.ArgumentParser()
+    _ap.add_argument("--check-manifest", action="store_true",
+                     help="verify every canonical input against "
+                          "SUBMISSION_MANIFEST.json before building")
+    _args = _ap.parse_args()
+    if _args.check_manifest:
+        import subprocess as _sp
+        _rc = _sp.call([sys.executable if (sys := __import__("sys")) else "python3",
+                        os.path.join(HERE, "make_manifest.py"), "--verify"])
+        if _rc != 0:
+            raise SystemExit("canonical inputs do not match the manifest; "
+                             "refusing to rebuild the submitted tables")
     table_ablation()
     table_origin()
     table_crossarch()

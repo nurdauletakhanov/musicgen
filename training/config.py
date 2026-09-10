@@ -74,9 +74,12 @@ def build_model_config(cfg: dict) -> dict:
 
     Supports two architectures:
       - 'wave': 1D waveform encoder + HiFi-GAN decoder (v15+)
-      - 'stft': 2D STFT encoder + 2D decoder with iSTFT (v6-v14, legacy)
+      - 'stft': 2D STFT encoder + 2D decoder with iSTFT (v6-v14, HISTORICAL)
 
-    The architecture is selected by model.architecture in config (default: 'stft').
+    The architecture is selected by model.architecture in config. Every
+    released config uses 'wave'; the released Autoencoder does not accept the
+    'stft' argument set, so that branch is kept only to read old configs and
+    raises unless MUSICGEN_ALLOW_LEGACY_STFT=1 is set.
     """
     model_cfg = cfg['model']
     data_cfg = cfg['data']
@@ -123,7 +126,15 @@ def build_model_config(cfg: dict) -> dict:
             'win_length': win_length,
         }
     else:
-        # Legacy STFT architecture (v6-v14)
+        # Legacy STFT architecture (v6-v14). The released waveform Autoencoder
+        # cannot consume this argument set, so failing here beats returning a
+        # config that blows up further down with a confusing error.
+        if os.environ.get("MUSICGEN_ALLOW_LEGACY_STFT", "") != "1":
+            raise ValueError(
+                "model.architecture='stft' is a historical (v6-v14) setting and "
+                "is not supported by the released Autoencoder. Every published "
+                "config uses 'wave'. Set MUSICGEN_ALLOW_LEGACY_STFT=1 only if "
+                "you are deliberately reading an old config.")
         n_freq_bins = n_fft // 2 + 1
         config = {
             'd_model': model_cfg['d_model'],

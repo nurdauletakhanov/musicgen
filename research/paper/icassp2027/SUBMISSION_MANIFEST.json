@@ -1,0 +1,351 @@
+{
+  "evaluator_revision": "2fc57874a890a6c8ed7924b2784f28288786c1f1",
+  "missing": [],
+  "tables": {
+    "Table I (mechanism ablation)": {
+      "evaluation/v2_metrics/v2.0-continued_mixing.json": {
+        "sha256": "b7a5f464730341290c2ac1e07019b5efe5535288ebe5da9c1fd4556abfa178e4",
+        "bytes": 964,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.0-continued\\best.pth",
+        "step": 25000,
+        "alpha": 0.5,
+        "n_samples_seen": 409216
+      },
+      "evaluation/v2_metrics/v2.1-decmix_mixing.json": {
+        "sha256": "c42c4ea36277df5b11b92821b4decd4e325463baa413fb07dca364617f36bde4",
+        "bytes": 966,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.1-decmix\\best.pth",
+        "step": 25000,
+        "alpha": 0.5,
+        "n_samples_seen": 409216
+      },
+      "evaluation/v2_metrics/v2.2-decmix-disc_mixing.json": {
+        "sha256": "6bc0e4e69c3e0ce7603bbe56ad5e3c18f714b626d1a379d422ab3bad2c7eb263",
+        "bytes": 972,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.2-decmix-disc\\best.pth",
+        "step": 25000,
+        "alpha": 0.5,
+        "n_samples_seen": 409216
+      },
+      "evaluation/v2_metrics/v3.0-baseline-d64_mixing.json": {
+        "sha256": "edcc3aee3ecdb6b64251e56824d53bc6bac9804c303e56c65e48c6e593027ccb",
+        "bytes": 970,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v3.0-baseline-d64\\best.pth",
+        "step": 240000,
+        "alpha": 0.5,
+        "n_samples_seen": 409216
+      },
+      "evaluation/v2_metrics/v3.1-decmix-disc-d64_mixing.json": {
+        "sha256": "5899bfbaff4facd3abb3195603244e49e2184461685a7d9213ff3a0574575a5d",
+        "bytes": 945,
+        "checkpoint": "checkpoints/v3.1-decmix-disc-d64/best.pth",
+        "step": 240000,
+        "alpha": 0.5,
+        "n_samples_seen": 409216
+      },
+      "evaluation/v2_metrics/v2.3-encmix-g5_mixing.json": {
+        "sha256": "c83b9e13fa6795341a64eed2c4693acf66c6f3ed9bc991c94dbea49a4a99f806",
+        "bytes": 962,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.3-encmix-g5\\best.pth",
+        "step": 25000,
+        "alpha": 0.5,
+        "n_samples_seen": 409216
+      },
+      "evaluation/v2_metrics/v2.4-encmix-g10_mixing.json": {
+        "sha256": "6befd7997d7a3343f3303529717eae791859317f5a26355f5e19fcd410608faf",
+        "bytes": 964,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.4-encmix-g10\\best.pth",
+        "step": 25000,
+        "alpha": 0.5,
+        "n_samples_seen": 409216
+      },
+      "evaluation/v2_metrics/v2.5-encmix-g20_mixing.json": {
+        "sha256": "510be326953395455c3c4eb312916939c35f1aea4bddc6f1d9044e375716449b",
+        "bytes": 967,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.5-encmix-g20\\best.pth",
+        "step": 25000,
+        "alpha": 0.5,
+        "n_samples_seen": 409216
+      },
+      "evaluation/v2_metrics/v2.6-decmix-frozenenc_mixing.json": {
+        "sha256": "573d99e0d03b32ffc1732387865b0fb71d8dbfc9bb9494fc15e84191b75c4eca",
+        "bytes": 972,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.6-decmix-frozenenc\\best.pth",
+        "step": 25000,
+        "alpha": 0.5,
+        "n_samples_seen": 409216
+      },
+      "evaluation/v2_metrics/v2.0-continued_fad.json": {
+        "sha256": "a9506218a793d87452ab0a606b5c5bc802e5c73314c5d5ca486c34dde32e4b8b",
+        "bytes": 445,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.0-continued\\best.pth",
+        "step": 25000
+      },
+      "evaluation/v2_metrics/v2.1-decmix_fad.json": {
+        "sha256": "a3de427ca57d98110e985f4545c5716f51e4884dd0b61798f91e105b9ee50bc2",
+        "bytes": 442,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.1-decmix\\best.pth",
+        "step": 25000
+      },
+      "evaluation/v2_metrics/v2.2-decmix-disc_fad.json": {
+        "sha256": "b56deb55e729b4c04e1fd3318af0501f75c46445bd26241db078a692daf34d87",
+        "bytes": 448,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.2-decmix-disc\\best.pth",
+        "step": 25000
+      },
+      "evaluation/v2_metrics/v3.0-baseline-d64_fad.json": {
+        "sha256": "c69a0684071256d437f50d580f1c343069adeb97d7744bcf119f34d33f26ce73",
+        "bytes": 450,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v3.0-baseline-d64\\best.pth",
+        "step": 240000
+      },
+      "evaluation/v2_metrics/v3.1-decmix-disc-d64_fad.json": {
+        "sha256": "02f52f43d222c03dc1653d172bbf30780e4cd1c924aeb22aedf9e4d98e804427",
+        "bytes": 426,
+        "checkpoint": "checkpoints/v3.1-decmix-disc-d64/best.pth",
+        "step": 240000
+      },
+      "evaluation/v2_metrics/v2.3-encmix-g5_fad.json": {
+        "sha256": "b1edce613ad2c4e06c5d394f631554ef332bceb2266a44a0da5ab940c91e7501",
+        "bytes": 446,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.3-encmix-g5\\best.pth",
+        "step": 25000
+      },
+      "evaluation/v2_metrics/v2.4-encmix-g10_fad.json": {
+        "sha256": "608f5cc8878be508dd901cefc074c27381cc63fd509c33ee965fa627fac76948",
+        "bytes": 447,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.4-encmix-g10\\best.pth",
+        "step": 25000
+      },
+      "evaluation/v2_metrics/v2.5-encmix-g20_fad.json": {
+        "sha256": "148ccc08e3f826e752ee86529e118162741a63dc172f73031f7494c7726a4823",
+        "bytes": 448,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.5-encmix-g20\\best.pth",
+        "step": 25000
+      },
+      "evaluation/v2_metrics/v2.6-decmix-frozenenc_fad.json": {
+        "sha256": "bc402811c16d2a480998d47a9a838f4d0eb42ac60663eae0fe6505d9c2a3425a",
+        "bytes": 452,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.6-decmix-frozenenc\\best.pth",
+        "step": 25000
+      }
+    },
+    "Table II (compression + architecture)": {
+      "evaluation/v2_metrics/v2.0-continued_mixing.json": {
+        "sha256": "b7a5f464730341290c2ac1e07019b5efe5535288ebe5da9c1fd4556abfa178e4",
+        "bytes": 964,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.0-continued\\best.pth",
+        "step": 25000,
+        "alpha": 0.5,
+        "n_samples_seen": 409216
+      },
+      "evaluation/v2_metrics/v2.1-decmix_mixing.json": {
+        "sha256": "c42c4ea36277df5b11b92821b4decd4e325463baa413fb07dca364617f36bde4",
+        "bytes": 966,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.1-decmix\\best.pth",
+        "step": 25000,
+        "alpha": 0.5,
+        "n_samples_seen": 409216
+      },
+      "evaluation/v2_metrics/v2.2-decmix-disc_mixing.json": {
+        "sha256": "6bc0e4e69c3e0ce7603bbe56ad5e3c18f714b626d1a379d422ab3bad2c7eb263",
+        "bytes": 972,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.2-decmix-disc\\best.pth",
+        "step": 25000,
+        "alpha": 0.5,
+        "n_samples_seen": 409216
+      },
+      "evaluation/v2_metrics/v3.0-baseline-d64_mixing.json": {
+        "sha256": "edcc3aee3ecdb6b64251e56824d53bc6bac9804c303e56c65e48c6e593027ccb",
+        "bytes": 970,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v3.0-baseline-d64\\best.pth",
+        "step": 240000,
+        "alpha": 0.5,
+        "n_samples_seen": 409216
+      },
+      "evaluation/v2_metrics/v3.1-decmix-disc-d64_mixing.json": {
+        "sha256": "5899bfbaff4facd3abb3195603244e49e2184461685a7d9213ff3a0574575a5d",
+        "bytes": 945,
+        "checkpoint": "checkpoints/v3.1-decmix-disc-d64/best.pth",
+        "step": 240000,
+        "alpha": 0.5,
+        "n_samples_seen": 409216
+      },
+      "evaluation/v2_metrics/m2l_phase0_ema_mixing.json": {
+        "sha256": "abdbf9eb04f4f47d62df6b41f5796893266a2815a4ebec7c6b88ced9a2267ea2",
+        "bytes": 954,
+        "checkpoint": "<music2latent default>",
+        "step": -1,
+        "alpha": 0.5,
+        "n_samples_seen": 409216
+      },
+      "evaluation/v2_metrics/m2l_phase05_ema_mixing.json": {
+        "sha256": "78fa1d0f286b85c1bb3595a0c9c1e93866772aca56853195d8ea88abbf39f3f5",
+        "bytes": 1067,
+        "checkpoint": "d:\\projects\\music2latent-mix\\checkpoints\\mix_phase05_control\\2026-06-11_16-14-16\\model_fid_-1.0_loss_57.824_iters_25000_ema.pt",
+        "step": -1,
+        "alpha": 0.5,
+        "n_samples_seen": 409216
+      },
+      "evaluation/v2_metrics/m2l_phase2_ema_mixing.json": {
+        "sha256": "3489cb37e0a838237f6061a29351e443d8193dffdcc9613a27a33c4dca5681fd",
+        "bytes": 1072,
+        "checkpoint": "d:\\projects\\music2latent-mix\\checkpoints\\mix_phase2_decmix_consmix\\2026-05-06_14-11-27\\model_fid_-1.0_loss_119.60_iters_50000_ema.pt",
+        "step": -1,
+        "alpha": 0.5,
+        "n_samples_seen": 409216
+      },
+      "evaluation/v2_metrics/v2.0-continued_fad.json": {
+        "sha256": "a9506218a793d87452ab0a606b5c5bc802e5c73314c5d5ca486c34dde32e4b8b",
+        "bytes": 445,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.0-continued\\best.pth",
+        "step": 25000
+      },
+      "evaluation/v2_metrics/v2.1-decmix_fad.json": {
+        "sha256": "a3de427ca57d98110e985f4545c5716f51e4884dd0b61798f91e105b9ee50bc2",
+        "bytes": 442,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.1-decmix\\best.pth",
+        "step": 25000
+      },
+      "evaluation/v2_metrics/v2.2-decmix-disc_fad.json": {
+        "sha256": "b56deb55e729b4c04e1fd3318af0501f75c46445bd26241db078a692daf34d87",
+        "bytes": 448,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v2.2-decmix-disc\\best.pth",
+        "step": 25000
+      },
+      "evaluation/v2_metrics/v3.0-baseline-d64_fad.json": {
+        "sha256": "c69a0684071256d437f50d580f1c343069adeb97d7744bcf119f34d33f26ce73",
+        "bytes": 450,
+        "checkpoint": "D:\\projects\\musicgen\\checkpoints\\v3.0-baseline-d64\\best.pth",
+        "step": 240000
+      },
+      "evaluation/v2_metrics/v3.1-decmix-disc-d64_fad.json": {
+        "sha256": "02f52f43d222c03dc1653d172bbf30780e4cd1c924aeb22aedf9e4d98e804427",
+        "bytes": 426,
+        "checkpoint": "checkpoints/v3.1-decmix-disc-d64/best.pth",
+        "step": 240000
+      },
+      "evaluation/v2_metrics/m2l_phase0_fad.json": {
+        "sha256": "aebab4aed16275512a719936cd73499ed75af15be2db5710ac7a06d6f1c96ebd",
+        "bytes": 467,
+        "checkpoint": "d:/projects/music2latent/music2latent/models/music2latent.pt",
+        "step": -1
+      },
+      "evaluation/v2_metrics/m2l_phase05_control_fad.json": {
+        "sha256": "d00e73b9f2547a10ca133b7026f9bc2f0b6377bb8805d743a9bfed3a07d38e7a",
+        "bytes": 534,
+        "checkpoint": "d:/projects/music2latent-mix/checkpoints/mix_phase05_control/2026-06-11_16-14-16/model_fid_-1.0_loss_57.824_iters_25000_ema.pt",
+        "step": -1
+      },
+      "evaluation/v2_metrics/m2l_phase2_ema_fad.json": {
+        "sha256": "24538715d066348957c474b62a5be2c53a2e1cd675a7e42c59ec4785e23a231a",
+        "bytes": 545,
+        "checkpoint": "d:\\projects\\music2latent-mix\\checkpoints\\mix_phase2_decmix_consmix\\2026-05-06_14-11-27\\model_fid_-1.0_loss_119.60_iters_50000_ema.pt",
+        "step": -1
+      }
+    },
+    "Table III (stem subtraction)": {
+      "evaluation/v2_metrics/per_chunk/v2.0-continued_per_chunk.json": {
+        "sha256": "7c2b46153054aaf4d88be690ad473e3a5ade74e3be7f2bd6cff3ba4252e5e77c",
+        "bytes": 1521247,
+        "checkpoint": "checkpoints/v2.0-continued/best.pth",
+        "seed": 0,
+        "chunks_per_track": 30
+      },
+      "evaluation/v2_metrics/per_chunk/v2.1-decmix_per_chunk.json": {
+        "sha256": "bbd7f2008b1598a15b50ed603bdca8e0149e571b1fff91e2ad0a66ced4cfe039",
+        "bytes": 1520173,
+        "checkpoint": "checkpoints/v2.1-decmix/best.pth",
+        "seed": 0,
+        "chunks_per_track": 30
+      },
+      "evaluation/v2_metrics/per_chunk/v2.2-decmix-disc_per_chunk.json": {
+        "sha256": "196cdb3218820d68c9cbcc44d624b918effd584b7f37b90df840cd788365fd2a",
+        "bytes": 1520519,
+        "checkpoint": "checkpoints/v2.2-decmix-disc/best.pth",
+        "seed": 0,
+        "chunks_per_track": 30
+      },
+      "evaluation/v2_metrics/per_chunk/v3.0-baseline-d64_per_chunk.json": {
+        "sha256": "2119fe7a106cf211fd4dc4ead0290b8fc6c5470c6a0e5ed231375247b544fe75",
+        "bytes": 1523682,
+        "checkpoint": "checkpoints/v3.0-baseline-d64/best.pth",
+        "seed": 0,
+        "chunks_per_track": 30
+      },
+      "evaluation/v2_metrics/per_chunk/v3.1-decmix-disc-d64_per_chunk.json": {
+        "sha256": "58402c97e8047f00fb7efc53fd4a6f06e666be3e7141103204a6fa49d588e19e",
+        "bytes": 1521763,
+        "checkpoint": "checkpoints/v3.1-decmix-disc-d64/best.pth",
+        "seed": 0,
+        "chunks_per_track": 30
+      },
+      "evaluation/v2_metrics/per_chunk/v2.0-continued+origin_per_chunk.json": {
+        "sha256": "902481dffa9dcc3e19845129a3c681f81282f585094b997a3cc3f2d3e3cd994a",
+        "bytes": 992662,
+        "checkpoint": "checkpoints/v2.0-continued/best.pth",
+        "seed": 0,
+        "chunks_per_track": 30
+      },
+      "evaluation/v2_metrics/per_chunk/v2.1-decmix+origin_per_chunk.json": {
+        "sha256": "9b09b485d5a7fe5cad7173d0f046a4494740db54724f8ecfea536db4661c79c5",
+        "bytes": 993492,
+        "checkpoint": "checkpoints/v2.1-decmix/best.pth",
+        "seed": 0,
+        "chunks_per_track": 30
+      },
+      "evaluation/v2_metrics/per_chunk/v2.2-decmix-disc+origin_per_chunk.json": {
+        "sha256": "23cdf41b52144d2eae8ea32ccde4c719ac077078f39bfd9e0332655724bab3cc",
+        "bytes": 993546,
+        "checkpoint": "checkpoints/v2.2-decmix-disc/best.pth",
+        "seed": 0,
+        "chunks_per_track": 30
+      },
+      "evaluation/v2_metrics/per_chunk/v3.0-baseline-d64+origin_per_chunk.json": {
+        "sha256": "67d76ed979acdb94468bafbe14cbdf72d799b307c8c190ce01ff661fa2b27ec3",
+        "bytes": 992711,
+        "checkpoint": "checkpoints/v3.0-baseline-d64/best.pth",
+        "seed": 0,
+        "chunks_per_track": 30
+      },
+      "evaluation/v2_metrics/per_chunk/v3.1-decmix-disc-d64+origin_per_chunk.json": {
+        "sha256": "5128d8c44ed412720bb1b082f637714935486fd9fed2399e64aedae4d0a2c81a",
+        "bytes": 993842,
+        "checkpoint": "checkpoints/v3.1-decmix-disc-d64/best.pth",
+        "seed": 0,
+        "chunks_per_track": 30
+      }
+    },
+    "Table (origin intervention)": {
+      "evaluation/v2_metrics/origin_effect.json": {
+        "sha256": "6c8041ec76c76c5b8445f4354656b96d062efcef2b5c1e6dd0bc4edb904f832e",
+        "bytes": 14384,
+        "n_boot": 10000
+      },
+      "evaluation/holdout_moisesdb/origin_effect.json": {
+        "sha256": "7c06d2ded2443a9ca71b264a780dbcba0685cbc1ea651c66ee48f7b1923dc72d",
+        "bytes": 46775,
+        "n_boot": 10000
+      }
+    },
+    "Held-out corpus and protocol": {
+      "evaluation/holdout_moisesdb/activity.json": {
+        "sha256": "c2b924af18f7529b40b1262df2a291b258057894e44f75216d596ad106b2aa28",
+        "bytes": 3536664
+      },
+      "evaluation/holdout_moisesdb/corpus_manifest.json": {
+        "sha256": "1cdd580b5512adb2fc76311962b6b9367d43198d474b1d6d9d6d34089bc99d01",
+        "bytes": 42693
+      },
+      "evaluation/holdout_moisesdb/mixing_stats.json": {
+        "sha256": "7d1b706ca56e9bfcafd328a3cf1ca74ab92d2478e234cc02d443ed5691417212",
+        "bytes": 11361,
+        "n_boot": 10000
+      },
+      "research/paper/icassp2027/HOLDOUT_PROTOCOL.md": {
+        "sha256": "9c6efb2d5a4d998fa67fa26f614ba857dd5453b24f05f549dfe332f9dad08531",
+        "bytes": 9395
+      }
+    }
+  }
+}

@@ -25,11 +25,16 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SSH_HOST = "lab-login"
-REMOTE = "~/musicgen-seeds"
+# Personal operations settings, all overridable so this is not tied to one
+# machine or one deadline:
+#   MUSICGEN_SSH_HOST, MUSICGEN_REMOTE_ROOT, MUSICGEN_DEADLINE (YYYY-MM-DD HH:MM)
+SSH_HOST = os.environ.get("MUSICGEN_SSH_HOST", "lab-login")
+REMOTE = os.environ.get("MUSICGEN_REMOTE_ROOT", "~/musicgen-seeds")
 MAX_STEPS = 25000
-DEADLINE = time.mktime(time.strptime("2026-09-16 23:59", "%Y-%m-%d %H:%M")) + 12 * 3600  # AoE
-DECISION = time.mktime(time.strptime("2026-09-12 18:00", "%Y-%m-%d %H:%M"))
+DEADLINE = time.mktime(time.strptime(
+    os.environ.get("MUSICGEN_DEADLINE", "2026-09-16 23:59"), "%Y-%m-%d %H:%M")) + 12 * 3600  # AoE
+DECISION = time.mktime(time.strptime(
+    os.environ.get("MUSICGEN_DECISION", "2026-09-12 18:00"), "%Y-%m-%d %H:%M"))
 
 # base run -> (label, Slurm job-name prefix)
 BASES = {

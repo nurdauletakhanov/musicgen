@@ -32,7 +32,8 @@ REPO = Path(__file__).resolve().parents[1]
 M2L_REPO = Path(os.environ.get("MUSICGEN_M2L_REPO", REPO.parent / "music2latent-mix"))
 OUT_DIR = REPO / "evaluation" / "v2_metrics"
 
-# phase -> checkpoint dir under music2latent-mix/checkpoints (None = published)
+# Internal: phase -> checkpoint dir under the non-public music2latent-mix
+# repo (None = published Music2Latent). Public users want RELEASED below.
 PHASES = {
     "phase0": None,
     "phase05": "mix_phase05_control",
@@ -46,6 +47,32 @@ PHASES = {
 # downstream table rows (phase0 baseline + phase2 headline; phase05 done).
 RUN_FAD = {"phase1", "phase2", "phase2b"}
 RUN_SUBTRACTION = {"phase0", "phase2"}
+
+
+# Released weights on the Hub, one pinned file per phase. The public path
+# uses these; the timestamp search below is the internal historical workflow
+# and needs the non-public fine-tuning repo.
+RELEASED = {
+    "phase0": None,                                   # published Music2Latent
+    "phase05": "m2l/mix_phase05_control_ema.pt",
+    "phase1": "m2l/mix_phase1_encmix_ema.pt",
+    "phase2": "m2l/mix_phase2_decmix_consmix_ema.pt",
+    "phase2b": "m2l/mix_phase2b_decmix_w5_ema.pt",
+}
+HF_REPO = "SoMa25/mixing-equivariant-ae-checkpoints"
+
+
+def released_ckpt(phase: str):
+    """Download the pinned released checkpoint for a phase (or None for the
+    published baseline). This is what a reader outside the project should use:
+
+        python -m evaluation.m2l_run_mixing --m2l-checkpoint <path> ...
+    """
+    rel = RELEASED[phase]
+    if rel is None:
+        return None
+    from huggingface_hub import hf_hub_download
+    return hf_hub_download(HF_REPO, rel)
 
 
 def _resolve_ckpt(phase: str):
