@@ -21,6 +21,20 @@
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"
 PY=.venv/bin/python
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+BS="${BATCH_SIZE:-16}"
+
+# The gpu partition is shared and a card can be allocated with no free memory
+# left on it. Fail loudly and early rather than after a partial sweep.
+$PY - <<'CHK'
+import torch, sys
+if not torch.cuda.is_available():
+    sys.exit("no CUDA device visible")
+free, total = torch.cuda.mem_get_info()
+print(f"GPU free {free/2**30:.1f} GiB of {total/2**30:.1f} GiB")
+if free < 4 * 2**30:
+    sys.exit("less than 4 GiB free on the allocated GPU; requeue")
+CHK
 RUNS=(v2.0-continued v2.1-decmix v2.2-decmix-disc v3.0-baseline-d64 v3.1-decmix-disc-d64)
 
 cfg_for() {
@@ -44,7 +58,7 @@ for r in "${RUNS[@]}"; do
       --config "$(cfg_for "$r")" --checkpoint "checkpoints/$r/best.pth" \
       --chunks-dir chunks-holdout --val-split test \
       --out "$OUT/${r}_mixing.json" \
-      --per-unit-out "$OUT/per_chunk/${r}_mixing_per_unit.json" --alpha 0.5
+      --per-unit-out "$OUT/per_chunk/${r}_mixing_per_unit.json" --alpha 0.5 --batch-size "$BS"
 done
 
 # 2. The paper's test set, which is where the published ell_lat numbers come
@@ -56,7 +70,7 @@ for r in "${RUNS[@]}"; do
   echo "=== test set (balanced 400/source): $r ==="
   $PY -m evaluation.compute_mixing_metrics \
       --config "$(cfg_for "$r")" --checkpoint "checkpoints/$r/best.pth" \
-      --out "$OUT2/${r}_mixing.json" --per-source 400 --alpha 0.5
+      --out "$OUT2/${r}_mixing.json" --per-source 400 --alpha 0.5 --batch-size "$BS"
 done
 
 echo "=== rankings under each normalization ==="
