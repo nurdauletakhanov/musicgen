@@ -33,7 +33,8 @@ CONTRASTS = [
     ("v2.2-decmix-disc", "v2.1-decmix", "disc-on-mix vs L_dec alone"),
     ("v3.1-decmix-disc-d64", "v3.0-baseline-d64", "L_dec+disc vs no mix (15.3x)"),
 ]
-METRICS = ["sdr_lin_gt", "sdr_rec", "mix_rate", "l_lat", "sdr_lin"]
+METRICS = ["sdr_lin_gt", "sdr_rec", "mix_rate", "l_lat", "sdr_lin",
+           "l_lat_abs", "l_lat_span", "l_lat_centered"]
 N_BOOT, SEED = 10000, 0
 
 
