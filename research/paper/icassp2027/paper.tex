@@ -61,11 +61,10 @@ encoder $f$ and decoder $g$, the property usually asked for is
   \label{eq:equiv}
 \end{equation}
 and a common companion probe is stem removal by subtraction,
-$g(f(x_\mathrm{mix}){-}f(x_\mathrm{stem}))\approx x_\mathrm{res}$. Where these
-hold, editing and composition happen in the latent domain without a dedicated
-separation or synthesis model, a prerequisite for latent-diffusion systems
-\cite{liu2023audioldm,evans2024stable} that compose independently modeled
-sources. Standard reconstruction objectives do not enforce Eq.~\ref{eq:equiv}: they
+$g(f(x_\mathrm{mix}){-}f(x_\mathrm{stem}))\approx x_\mathrm{res}$. Where these hold, editing happens in the latent domain without a dedicated
+separation or synthesis model, and composing independently generated latents
+by direct arithmetic, one route open to latent-diffusion systems
+\cite{liu2023audioldm,evans2024stable}, requires exactly this property. Standard reconstruction objectives do not enforce Eq.~\ref{eq:equiv}: they
 reward fidelity, not algebraic structure, and in
 quantized codecs (DAC \cite{kumar2024dac}, EnCodec
 \cite{defossez2023encodec}) an interpolated point is not a codebook entry.
@@ -273,13 +272,13 @@ $[-0.17,-0.10]$ and the penalty decreases by $1.52$ $[1.48,1.58]$, so there
 the reconstruction change is not negligible.
 
 \subsection{What the training comparisons establish}\label{sec:training}
-The encoder-only variant $\Lenc$ leaves MixRate high ($1.15$--$1.18$): it
-constrains the encoder without making the decoder equivariant. Training only
-the decoder under $\Ldec$, with the encoder frozen, retains most of the gain
-($9.5$\,dB against $10.2$ joint and $8.0$ baseline). Joint training is best among the tested configurations. Decoder adaptation
-is therefore largely sufficient here, which does not show it is necessary or
-that the decoder is the unique locus; a decoder-frozen counterpart was not
-trained. \textbf{Encoder geometry has no normalization-independent answer.} The
+The encoder-only variant $\Lenc$ drives $\ell_\mathrm{lat}$ lowest
+($0.034$--$0.044$) and leaves MixRate high, and it yields smaller
+improvements in ground-truth waveform mixing than decode-mixing supervision
+($8.4$--$8.7$\,dB against $10.2$, from $8.0$). Training only the decoder under $\Ldec$, with the encoder frozen, retains
+most of the gain ($9.5$\,dB). Joint training is best among the tested
+configurations. Decoder adaptation is therefore largely sufficient here, which does not show
+it is necessary; a decoder-frozen counterpart was not trained. \textbf{Encoder geometry has no normalization-independent answer.} The
 customary ratio $\lVert r\rVert^2/\lVert f(\bar{x})\rVert^2$ is translation-sensitive. The coefficients of $r=\bar{z}-f(\bar{x})$ sum to zero, so under
 the relabelling of \secref{sec:prop} the numerator is unchanged while a
 large enough $c$ inflates the denominator and drives the ratio toward zero.
