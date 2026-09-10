@@ -1,0 +1,19 @@
+{
+  "checkpoint": "/home/nurdaulet.akhanov/musicgen-seeds/checkpoints/v2.0-continued-s2/step_25000.pth",
+  "step": 25000,
+  "n_embeddings_per_source": {
+    "fma": 26859,
+    "maestro": 7044,
+    "musdb": 1181,
+    "all": 35084
+  },
+  "config": {
+    "sample_rate": 44100,
+    "clap_sr": 48000,
+    "clip_seconds": 10.0
+  },
+  "fad/fma": 0.04201275844249608,
+  "fad/maestro": 0.08909521495051015,
+  "fad/musdb": 0.05285708936343925,
+  "fad/all": 0.04559898627423076
+}

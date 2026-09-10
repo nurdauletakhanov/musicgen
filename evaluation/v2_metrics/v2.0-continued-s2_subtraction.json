@@ -1,0 +1,69 @@
+{
+  "checkpoint": "/home/nurdaulet.akhanov/musicgen-seeds/checkpoints/v2.0-continued-s2/step_25000.pth",
+  "step": 25000,
+  "config": {
+    "musdb_dir": "/home/nurdaulet.akhanov/musicgen-seeds/dataset/musdb18/test",
+    "chunks_per_track": 30,
+    "n_chunks_seen": 1470,
+    "seed": 0
+  },
+  "skipped_tracks": [
+    {
+      "track": "PR - Oh No",
+      "reason": "sanity=18.47"
+    }
+  ],
+  "origin_corrected": false,
+  "subtraction": {
+    "drums": {
+      "sdr_sub": 4.310678941990584,
+      "sdr_ceil": 9.264536838183815,
+      "sdr_dd": 6.618913003239071,
+      "gap": 4.953857896193231,
+      "n": 1470,
+      "sdr_identity": 10.84731975089423,
+      "sdr_aemix": 1.8003145995055687,
+      "sdr_wavsub": 7.860217259946552
+    },
+    "bass": {
+      "sdr_sub": 0.4393724215258116,
+      "sdr_ceil": 7.338315832538311,
+      "sdr_dd": 3.9797685970973578,
+      "gap": 6.8989434110125,
+      "n": 1470,
+      "sdr_identity": 21.350991657706885,
+      "sdr_aemix": 3.078765327336926,
+      "sdr_wavsub": 7.293683516964804
+    },
+    "vocals": {
+      "sdr_sub": 5.27581977446779,
+      "sdr_ceil": 9.72809697261625,
+      "sdr_dd": 7.9646479982502605,
+      "gap": 4.45227719814846,
+      "n": 1470,
+      "sdr_identity": 31.90497468038443,
+      "sdr_aemix": 4.7175127023678955,
+      "sdr_wavsub": 8.335269171408802
+    },
+    "other": {
+      "sdr_sub": 4.124328326399052,
+      "sdr_ceil": 8.71241713215654,
+      "sdr_dd": 7.752481876326358,
+      "gap": 4.588088805757488,
+      "n": 1470,
+      "sdr_identity": 4.3030666309482495,
+      "sdr_aemix": -0.7056276731151885,
+      "sdr_wavsub": 6.566595753430876
+    },
+    "all": {
+      "sdr_sub": 3.537549866095809,
+      "sdr_ceil": 8.76084169387373,
+      "sdr_dd": 6.578952868728262,
+      "gap": 5.223291827777921,
+      "n": 5880,
+      "sdr_identity": 17.101588179983448,
+      "sdr_aemix": 2.2227412390238004,
+      "sdr_wavsub": 7.513941425437759
+    }
+  }
+}
