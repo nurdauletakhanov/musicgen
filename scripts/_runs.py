@@ -34,6 +34,7 @@ RUN_CONFIGS = {
     "v2.4-encmix-g10": "configs/experiments/v2/v2.4_encmix_g10.yaml",
     "v2.5-encmix-g20": "configs/experiments/v2/v2.5_encmix_g20.yaml",
     "v2.6-decmix-frozenenc": "configs/experiments/v2/v2.6_decmix_frozenenc.yaml",
+    "v2.7-mixedrecon": "configs/experiments/v2/v2.7_mixedrecon.yaml",
     "v3.0-baseline-d64": "configs/experiments/v3/v3.0_baseline_d64.yaml",
     "v3.1-decmix-disc-d64": "configs/experiments/v3/v3.1_decmix_disc_d64.yaml",
 }

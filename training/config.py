@@ -117,6 +117,7 @@ def build_model_config(cfg: dict) -> dict:
             # Losses
             'decode_mix_weight': model_cfg.get('decode_mix_weight', 0.0),
             'latent_mix_weight': model_cfg.get('latent_mix_weight', 0.0),
+            'mixed_recon_weight': model_cfg.get('mixed_recon_weight', 0.0),
             'mrstft_weight': model_cfg.get('mrstft_weight', 1.0),
             'mel_weight': model_cfg.get('mel_weight', 0.0),
             'latent_l2_weight': model_cfg.get('latent_l2_weight', 0.0),

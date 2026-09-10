@@ -40,6 +40,14 @@ class Autoencoder(nn.Module):
         # Loss params
         decode_mix_weight=0.0,
         latent_mix_weight=0.0,
+        # Attribution control. The decode-mixing arm changes three things at
+        # once against the baseline: supervision flows through an INTERPOLATED
+        # latent, the target is a MIXED waveform, and the mixed path carries a
+        # waveform L1 term the reconstruction path lacks. This weight applies
+        # the identical three-term loss to the SAME mixed target but through
+        # the real encoded mixture g(f(x_mix)), holding the last two factors
+        # and removing the first.
+        mixed_recon_weight=0.0,
         mrstft_weight=1.0,
         mel_weight=0.0,
         latent_l2_weight=0.0,
@@ -64,6 +72,7 @@ class Autoencoder(nn.Module):
         self.mel_weight = mel_weight
         self.decode_mix_weight = decode_mix_weight
         self.latent_mix_weight = latent_mix_weight
+        self.mixed_recon_weight = mixed_recon_weight
         self.latent_l2_weight = latent_l2_weight
 
         # MR-STFT params
@@ -251,6 +260,7 @@ class Autoencoder(nn.Module):
         # waveform out to the trainer when v2's `disc_on_mix` path needs them.
         mix_aux = None
         need_pairs = (self.decode_mix_weight > 0.0 or self.latent_mix_weight > 0.0
+                      or self.mixed_recon_weight > 0.0
                       or compute_mix_rate) and B >= 2
 
         if need_pairs:
@@ -274,6 +284,20 @@ class Autoencoder(nn.Module):
                 # generator's gradient graph (not when compute_mix_rate-only).
                 if self.decode_mix_weight > 0.0:
                     mix_aux = {"x_interp": x_interp, "x_mix_wave": x_mix_wave}
+
+            # Mixed-input reconstruction control: same target, same three-term
+            # loss, but the latent is encoded from the mixture rather than
+            # interpolated, so no interpolated-latent supervision occurs.
+            mixed_recon = x_hat.new_tensor(0.0)
+            if self.mixed_recon_weight > 0.0:
+                z_realmix = self.encoder(x_mix_wave)
+                x_realmix, _ = self.decoder(z_realmix)
+                mr_mr = self.mrstft_loss(x_realmix, x_mix_wave)
+                mr_mel = (self.mel_loss(x_realmix, x_mix_wave)
+                          if self.mel_weight > 0.0 else x_hat.new_tensor(0.0))
+                mr_wav = F.l1_loss(x_realmix, x_mix_wave)
+                mixed_recon = (self.mrstft_weight * mr_mr
+                               + self.mel_weight * mr_mel + mr_wav)
 
             # MixRate (validation only)
             if compute_mix_rate:
@@ -299,7 +323,8 @@ class Autoencoder(nn.Module):
 
         total = (recon + latent_l2
                  + self.decode_mix_weight * decode_mix
-                 + self.latent_mix_weight * latent_mix)
+                 + self.latent_mix_weight * latent_mix
+                 + self.mixed_recon_weight * mixed_recon)
 
         components = {
             "total": total.detach().item(),
