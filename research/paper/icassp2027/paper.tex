@@ -41,11 +41,10 @@ decode-consistency metric by $4$\,dB, so the two metrics rank the same
 models differently; on a
 consistency-model autoencoder it improves latent geometry and ground-truth
 mixing, both far from usable waveform arithmetic. Latent stem subtraction, in contrast, is governed largely by the latent
-origin rather than the loss: adding the encoded silence $f(0)$ recovers the
-residual's own latent for an affine encoder and brings every evaluated GAN
-configuration to within $1$\,dB of its reconstruction reference, removing
-$87$--$91$\% of the loss's apparent subtraction advantage on every track of
-both the test set and a pre-registered $240$-track held-out corpus.
+origin rather than the loss: adding the encoded silence $f(0)$ recovers the residual's own latent for an
+affine encoder and brings every evaluated GAN configuration in aggregate to
+within $1$\,dB of its reconstruction reference, reducing the loss's apparent
+subtraction advantage by $87$--$95$\% on a pre-registered $240$-track held-out corpus.
 Comparisons are single-run, matched at one initialization.
 \end{abstract}
 
@@ -258,11 +257,9 @@ the design is not a full factorial. Three observations drive the paper.
 \end{table}
 
 \textbf{(1) Reconstruction is similar across configurations.}
-SDR$_\mathrm{rec}$ spans $11.2$--$11.4$\,dB and FAD $0.044$--$0.046$ at this
-initialization, so we observe no reconstruction cost at $7.66\times$ on
-either a sample-wise or a distributional measure. These are single runs, so
-the absence of a difference this small is not established beyond seed
-variance.
+SDR$_\mathrm{rec}$ spans $11.2$--$11.4$\,dB and FAD $0.044$--$0.046$, so we
+observe no reconstruction cost at $7.66\times$. These are single runs, so an
+absence this small is not established beyond seed variance.
 
 \textbf{(2) The decode-mixing loss is the active ingredient.} On the ground-truth metric, $\Ldec$ alone improves
 SDR$_\mathrm{lin}^\mathrm{gt}$ from $8.0$ to $10.2$\,dB and is the only run with
@@ -297,28 +294,19 @@ improving ground-truth equivariance by $+1.7$\,dB
 and encoder linearity ($\ell_\mathrm{lat}$ $0.078\!\to\!0.057$). FAD, however, rises from $0.052$ to $0.061$ (\tabref{tab:crossarch});
 whether that is perceptible is untested. At $7.66\times$ the reported
 reconstruction metrics are similar in these runs (\tabref{tab:ablation}); at
-$15.3\times$ that similarity holds for SDR$_\mathrm{rec}$ only. Because v3.0 is
-a matched control (same architecture, compression, and schedule, mixing
-disabled), this isolates the loss's contribution and shows the effect is not
-an artifact of the looser $7.66\times$ rate or of warm-starting.
-\textbf{Level preservation.} SI-SDR discards gain, so we also report the gain
-it fits: the decoded mix is $1.6$\,dB too quiet without the loss and
-$0.9$\,dB with it, matching the model's own reconstruction level error
-($0.8$\,dB); at $15.3\times$, $1.8$ versus $1.0$ against $0.9$. The loss
-reduces level error as well as spectral error. \textbf{Architecture:} we fine-tune the published Music2Latent
-\cite{pasini2024music2latent} consistency autoencoder with the decode-mixing
-objective, using its native consistency loss on the mixed pair in place of
-the discriminator. A continued-training control moves equivariance by
-$<0.2$\,dB and \emph{worsens} FAD ($0.127\!\to\!0.134$), so the gain is the
-loss, not domain adaptation.
-SDR$_\mathrm{lin}^\mathrm{gt}$ improves against that control
-($-9.5\!\to\!-7.8$\,dB) but stays far from usable: latent \emph{geometry}
-(MixRate, $\ell_\mathrm{lat}$) and ground-truth mixing both improve, waveform
-arithmetic does not become practical. The systems differ in encoder,
-representation, loss family, compression and training data as well as decoder
-class, so the contrast isolates none of them as the cause; we report the GAN
-autoencoder as the primary result and treat this as a limit on transfer, not
-an explanation of it.
+$15.3\times$ that similarity holds for SDR$_\mathrm{rec}$ only. Because v3.0 is a matched control, the effect is not an artifact of the
+looser $7.66\times$ rate or of warm-starting.
+\textbf{Level preservation.} The gain SI-SDR discards: the decoded mix is
+$1.6$\,dB too quiet without the loss and $0.9$\,dB with it, against a
+reconstruction level error of $0.8$\,dB. The loss reduces level error as
+well as spectral error. \textbf{Architecture:} fine-tuning the published Music2Latent
+\cite{pasini2024music2latent} consistency autoencoder with the same
+objective improves SDR$_\mathrm{lin}^\mathrm{gt}$ against a continued-training control ($-9.5\!\to\!-7.8$\,dB) while that control moves
+equivariance by $<0.2$\,dB and \emph{worsens} FAD, so the gain is the loss,
+not domain adaptation. Latent geometry and ground-truth mixing both improve,
+yet waveform arithmetic does not become practical. The systems differ in too
+many respects for this to isolate a cause; we treat it as a limit on
+transfer.
 
 \begin{table}[t]
   \centering\small
@@ -368,12 +356,18 @@ $-0.03$\,dB (95\% track-cluster CI $[-0.15,+0.10]$), the $15.3\times$ pair
 $+0.01$ ($[-0.19,+0.21]$). Because these checkpoints were selected on this
 same split (\secref{sec:setup}), we repeat the intervention on MoisesDB
 \cite{pereira2023moisesdb}, 240 recordings absent from training and from
-selection, under a protocol registered before the audio was downloaded. Raw
-subtraction again favours the mixing models by $+2.3$ to $+4.5$\,dB and
-recentering again removes most of it on every one of the 240 tracks, but the
-residue is resolvable there ($+0.29$, $+0.12$, $+0.42$\,dB, intervals
-excluding zero), so the intervention accounts for $87$--$91$\% of the
-apparent advantage rather than all of it. The no-mixing models also carry the larger offset ($\lVert f(0)\rVert$ $6.6$
+selection, under a protocol registered before the audio was downloaded. Raw subtraction again favours the mixing models by $+2.3$ to $+4.5$\,dB and
+recentering removes $87$--$95$\% of that, shrinking the gap on $229$--$236$
+of the $240$ recordings, but the residue is resolvable there ($+0.29$,
+$+0.12$, $+0.42$\,dB, intervals excluding zero). Convex mixing replicates on
+the same corpus: $\Ldec$ gains $+1.73$\,dB $[+1.69,+1.78]$ at $7.66\times$
+and the combined recipe $+1.33$ $[+1.27,+1.39]$ at $15.3\times$ for a
+reconstruction change of $+0.04$ and $-0.07$\,dB, while the adversarial term
+\emph{costs} $0.49$\,dB $[-0.51,-0.48]$ of ground-truth equivariance and
+adds $+4.06$\,dB of decode-vs-decode. Units are scored only where the
+removed stem is active ($24{,}648$ of $28{,}800$); the rule excludes silent
+\emph{targets} and does not make the SI-SDR reference nonsilent, that
+reference being the remaining mixture. The no-mixing models also carry the larger offset ($\lVert f(0)\rVert$ $6.6$
 versus $5.4$ at $7.66\times$), though offset norm alone does not determine
 the decoded error. What
 the loss buys is convex equivariance (\tabref{tab:ablation}), which the
@@ -387,9 +381,11 @@ certifies arithmetic only relative to the model's own reconstruction.
 Origin-corrected latent subtraction beats decode-then-subtract by $+0.7$ to
 $+0.9$\,dB (CIs exclude zero); raw subtraction loses to it everywhere.
 
-All intervals here come from a paired cluster bootstrap over the 49 tracks
-($10^4$ resamples), the correlated unit; they cover evaluation variance at the
-tested initialization.
+Intervals come from a paired cluster bootstrap over recordings ($10^4$
+resamples), 49 tracks on the test set and 240 on the held-out corpus; mixing
+pairs join two recordings, $80\%$ of them within one, and are weighted by
+the multiplicity of each member. They cover evaluation variance at the
+tested initialization only.
 
 \subsection{Equivariance across mixing ratios}\label{sec:alpha}
 $\Ldec$ and its matched control are the pair swept under the same protocol
@@ -405,10 +401,10 @@ A controlled study identifies the decode-mixing loss, not an adversarial
 term on the mixed path, as the signal behind convex mixing-equivariance,
 with reconstruction SI-SDR similar across compression rates.
 Raw stem subtraction is instead governed largely by the latent offset:
-adding encoded silence brings subtraction within about $1$\,dB of each
-evaluated GAN model's reconstruction reference and removes $87$--$91$\% of
-the loss's apparent advantage on every track of two corpora, exactly only in
-the affine limit. On a consistency-model autoencoder both latent geometry and ground-truth
+adding encoded silence brings subtraction in aggregate within about $1$\,dB
+of each model's reconstruction reference and reduces the loss's apparent
+advantage by $87$--$95$\% on a held-out corpus, exactly only in the affine
+limit. On a consistency-model autoencoder both latent geometry and ground-truth
 mixing improve while staying far from usable waveform arithmetic. \textbf{Limitations.} Comparisons are matched at one initialization, so each
 factor's effect is identified there and not across runs; checkpoint
 selection used the test split (\secref{sec:setup}); audio is mono and

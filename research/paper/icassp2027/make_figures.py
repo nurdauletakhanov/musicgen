@@ -127,7 +127,7 @@ def fig_origin():
     """Recentering the origin: every model lands on its own reconstruction
     reference, and the apparent advantage of mixing supervision disappears."""
     d = json.load(open(os.path.join(M, "origin_effect.json")))
-    fig, (axl, axr) = plt.subplots(1, 2, figsize=(6.9, 1.88),
+    fig, (axl, axr) = plt.subplots(1, 2, figsize=(6.9, 1.62),
                                    gridspec_kw={"width_ratios": [1.15, 1.0]})
 
     ys = list(range(len(ORIGIN_ROWS)))[::-1]

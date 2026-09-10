@@ -31,11 +31,10 @@ one of these two probes is not a property of the autoencoder at all. Shifting
 the latent origin by the encoded silence $f(0)$, a reparameterization that
 leaves the autoencoding function and every affine combination with unit
 coefficient sum exactly unchanged for arbitrary nonlinear encoders and
-decoders, changes stem-subtraction scores by several decibels. Applying it to five fixed checkpoints, with no retraining, removes most of
-the apparent advantage of mixing supervision on subtraction: on a held-out
-corpus of 240 recordings that took no part in training or in checkpoint
-selection, an advantage of $+2.3$ to $+4.5$\,dB falls to $+0.1$ to
-$+0.4$\,dB, on every one of the 240 tracks, and every model lands within
+decoders, changes stem-subtraction scores by several decibels. Applying it to five fixed checkpoints, with no retraining, removes most of the apparent advantage of mixing supervision on subtraction.
+On a held-out corpus of 240 recordings that took no part in training or in
+checkpoint selection, it reduces that advantage by $87$--$95$\%, leaving a
+residual $+0.12$ to $+0.42$\,dB, and every model lands in aggregate within
 $1$\,dB of its own reconstruction of the residual. On convex mixing, which the same reparameterization provably cannot
 touch, the supervision does help: ground-truth equivariance improves by
 $+1.7$ to $+2.2$\,dB at two compression rates. The two probes therefore
@@ -62,10 +61,8 @@ hold, editing and composition happen in the latent domain without a
 dedicated separation or synthesis model, a prerequisite for latent-diffusion
 systems \cite{liu2023audioldm,evans2024stable} that compose independently
 modeled sources. Standard autoencoders do not satisfy Eq.~\ref{eq:equiv}:
-their objectives reward reconstruction fidelity, not algebraic structure, and
-in quantized codecs (DAC \cite{kumar2024dac}, EnCodec
-\cite{defossez2023encodec}) an interpolated point is not a codebook entry,
-so code-domain mixing is undefined without leaving the quantizer. Torres et al.~\cite{torres2026linearity} induce the property in a
+their objectives reward reconstruction fidelity, not algebraic structure, and in quantized codecs (DAC \cite{kumar2024dac}, EnCodec
+\cite{defossez2023encodec}) an interpolated point is not a codebook entry. Torres et al.~\cite{torres2026linearity} induce the property in a
 consistency autoencoder by decoding averaged latents against the true mix.
 
 This paper asks a prior question: \emph{what do these arithmetic scores
@@ -90,9 +87,10 @@ with no retraining and no change to the evaluation audio. Our contributions:
   reconstruction of the target as the coordinate-invariant reference.
   \item The intervention applied to fixed checkpoints
 (\secref{sec:subtraction}), on the test set and on a pre-registered held-out
-corpus: recentering removes $87$--$91$\% of the advantage that mixing
-supervision appears to have on stem subtraction, on every track of both
-corpora, leaving a residue below half a decibel.
+corpus: recentering reduces the advantage that mixing supervision appears to have on
+stem subtraction by $87$--$95$\%, and shrinks the between-model gap on
+$229$--$236$ of $240$ held-out recordings, leaving a residue below half a
+decibel.
   \item Evidence that the two probes disagree on the same checkpoints
   (\secref{sec:mixing}): on convex mixing, which the intervention cannot
   affect, the supervision does deliver a measurable gain at both compression
@@ -225,13 +223,19 @@ on 3{,}000 samples.
 \subsection{Protocol and what the intervals cover}\label{sec:protocol-setup}
 Subtraction is evaluated on the MUSDB18 test set, 49 of 50 tracks (one is
 excluded because its stems sum to the mixture at only $18.5$\,dB), giving
-5{,}880 (track, stem, chunk) units; chunk selection is a pure function of the
-seed and the sorted track list, so all models are measured on identical units
-and every contrast is paired. Confidence intervals come from a paired cluster
-bootstrap over the 49 tracks ($10^4$ resamples), the correlated unit. They are
-a \emph{conditional diagnostic}: they cover evaluation variance over test
-audio for these checkpoints, and cover neither training-seed variance nor
-checkpoint selection.
+5{,}880 (track, stem, chunk) units; chunk selection is a pure function of
+the seed and the sorted track list, so all models see identical units and
+every contrast is paired. Confidence intervals come from a paired cluster bootstrap over recordings
+($10^4$ resamples), the correlated unit: 49 tracks on the test set and 240
+on the held-out corpus. Mixing pairs join two recordings, and $80\%$ of them
+fall within one recording, so those intervals resample recordings and weight
+a pair by the multiplicity of each member. Intervals are a \emph{conditional
+diagnostic}: they cover evaluation variance over audio for these
+checkpoints, and cover neither training-seed variance nor checkpoint
+selection. On the held-out corpus a unit is scored only where the removed
+stem is active ($24{,}648$ of $28{,}800$ kept; the rule excludes silent
+\emph{targets}, and does not make the SI-SDR reference nonsilent, since that
+reference is the remaining mixture).
 
 That selection needs disclosure. The released weights are the checkpoint with
 the lowest validation loss, and the validation loader read the test split. For
@@ -279,11 +283,10 @@ units, same audio.}
   \label{tab:origin}
 \end{table}
 
-\textbf{In raw coordinates the supervision looks decisive.} Mixing
-supervision raises subtraction quality from $+3.4$ to $+5.8$\,dB at
-$7.66\times$ and from $+1.2$ to $+5.2$\,dB at $15.3\times$
-(\tabref{tab:subtraction}), advantages of $+2.33$ and $+4.02$\,dB on paired
-units (\tabref{tab:origin}).
+\textbf{In raw coordinates the supervision looks decisive.} It raises
+subtraction quality from $+3.4$ to $+5.8$\,dB at $7.66\times$ and from
+$+1.2$ to $+5.2$ at $15.3\times$ (\tabref{tab:subtraction}), advantages of
+$+2.33$ and $+4.02$\,dB on paired units.
 
 \textbf{Recentering removes most of it.} Adding $f(0)$ gains $+2.0$ to
 $+6.0$\,dB for every evaluated configuration and leaves each within
@@ -293,20 +296,18 @@ $-0.03$, $-0.07$ and $+0.01$\,dB, all three intervals containing zero
 (\tabref{tab:origin}), and the reduction holds on $49$ of $49$ tracks in
 every pair (\figref{fig:origin}, right). The no-mixing models also carry the larger offset ($\lVert f(0)\rVert$ $6.6$
 versus $5.4$ at $7.66\times$, $18.1$ versus $14.8$ at $15.3\times$), though
-offset norm alone does not determine the decoded error. \textbf{Held-out
-replication, and a residue.} Because these checkpoints were selected on the
-same split we report (\secref{sec:protocol-setup}), we repeat the whole
+offset norm alone does not determine the decoded error. \textbf{Held-out replication, and a residue.} Because these checkpoints were
+selected on the split we report (\secref{sec:protocol-setup}), we repeat the
 intervention on MoisesDB \cite{pereira2023moisesdb}, 240 recordings absent
 from training and from selection, under a protocol registered before the
-audio was downloaded: frozen weights with verified hashes, the mixture
-defined as the sum of the four stems, and units dropped where the target
-stem is inactive ($85.6$\% kept). Raw subtraction again favours the mixing
-models by $+2.3$ to $+4.5$\,dB, and recentering again removes most of it, on
-every one of the 240 tracks (\tabref{tab:origin}). The residue, however, is
-resolvable here: $+0.29$, $+0.12$ and $+0.42$\,dB with intervals excluding
-zero, where the $49$-track set could not separate it from zero. The
-intervention accounts for $87$--$91$\% of the apparent advantage rather than
-all of it, and the smaller corpus lacked the resolution to say so.
+audio was downloaded: frozen weights with verified hashes and the mixture
+defined as the sum of the four stems. Raw subtraction again favours the mixing models by $+2.3$ to $+4.5$\,dB and
+recentering removes $87$--$95$\% of that, shrinking the gap on $229$, $231$
+and $236$ of the $240$ recordings (\tabref{tab:origin}); on the remainder
+the correction overshoots and reverses the sign. The residue is resolvable
+here, $+0.29$, $+0.12$ and $+0.42$\,dB with intervals excluding zero, where
+the $49$-track set could not separate it from zero. The intervention
+accounts for most of the apparent advantage, not all of it.
 
 \begin{figure*}[t]
   \centering
@@ -323,9 +324,8 @@ all of it, and the smaller corpus lacked the resolution to say so.
 
 \textbf{What survives.} Per stem the recentered contrast is nonzero in both
 directions: at $15.3\times$, $+0.35$\,dB on bass against $-0.34$ on vocals.
-Mixing supervision moves where the arithmetic error sits across sources more
-than it moves the mean. The residual gap to the reference is what decoding
-leaves after recentering, not a direct measure of encoder non-affinity.
+Mixing supervision moves where the arithmetic error sits more than it moves
+the mean.
 
 \textbf{Baselines without latent arithmetic.} The unchanged mixture scores
 $+17.1$\,dB against the residual, above every model's reconstruction
@@ -338,11 +338,11 @@ $+0.9$\,dB (intervals exclude zero); raw subtraction loses to it everywhere.
 By part (ii) of the proposition, recentering cannot change any quantity in
 Eq.~\ref{eq:equiv}. The mixing probe therefore reports on the autoencoder
 itself, and there the supervision does something (\tabref{tab:crossarch}). On the held-out corpus, with intervals from a dyadic recording bootstrap
-(each mixing unit involves two recordings), $\Ldec$ improves ground-truth
-equivariance by $+1.73$\,dB $[+1.71,+1.83]$ at $7.66\times$ and the combined
-recipe by $+1.33$ $[+1.28,+1.46]$ at $15.3\times$, and the adversarial term
-\emph{costs} $0.49$\,dB $[-0.51,-0.47]$ against $\Ldec$ alone while raising
-decode-vs-decode from $9.7$ to $13.8$\,dB. On the test set, $\Ldec$ improves
+(each mixing unit involves two recordings), $\Ldec$ improves ground-truth equivariance by $+1.73$\,dB $[+1.69,+1.78]$ at
+$7.66\times$ and the combined recipe by $+1.33$ $[+1.27,+1.39]$ at
+$15.3\times$, at a reconstruction change of $+0.04$ and $-0.07$\,dB, and the
+adversarial term \emph{costs} $0.49$\,dB $[-0.51,-0.48]$ against $\Ldec$
+alone while raising decode-vs-decode by $+4.06$\,dB. On the test set, $\Ldec$ improves
 ground-truth equivariance from $8.0$ to $10.2$\,dB and is the only
 configuration with MixRate $<1$; reconstruction SI-SDR spans $11.2$--$11.4$\,dB and FAD $0.044$--$0.046$, so
 we observe no reconstruction cost at this rate, on single runs. Trained from scratch at $15.3\times$ against a matched control, the combined
@@ -398,16 +398,14 @@ Latent stem subtraction is measured in coordinates that the model never fixes.
 Recentering the latent space at the encoded silence leaves the autoencoding
 function and every unit-sum combination pointwise unchanged, for arbitrary
 nonlinear encoders and decoders, yet it moves subtraction scores by several decibels and, on five fixed
-checkpoints, removes $87$--$91$\% of the advantage that mixing supervision
-appeared to have there, on every track of both a $49$-track test set and a
-pre-registered $240$-track held-out corpus, leaving a residue below half a
-decibel. What the supervision buys is convex equivariance, which the intervention
+checkpoints, reduces the advantage that mixing supervision appeared to have there by
+$87$--$95$\% on a pre-registered $240$-track held-out corpus, leaving a
+residual $0.12$ to $0.42$\,dB. What the supervision buys is convex equivariance, which the intervention
 cannot affect and which improves at both rates. We therefore recommend reporting latent arithmetic against a declared origin
 and against the model's own reconstruction of the target.
-\textbf{Limitations.} Comparisons are single-run at one initialization;
-checkpoint selection used the test split (\secref{sec:protocol-setup});
-intervals are conditional on these checkpoints; recovery is exact only for
-an affine encoder; audio is mono and untested by listeners.
+\textbf{Limitations.} Single-run at one initialization; checkpoint selection
+used the test split (\secref{sec:protocol-setup}); recovery is exact only
+for an affine encoder; audio is mono and untested by listeners.
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}

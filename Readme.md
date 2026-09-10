@@ -236,3 +236,29 @@ load-bearing: `_diag_old_vs_new_eval.py` produces the paper's Fig. 1.
   year      = {2027}
 }
 ```
+
+## Held-out evaluation (MoisesDB)
+
+`evaluation/holdout_moisesdb/` holds the pre-registered held-out run in full:
+per-unit records for every model in both raw and recentered form
+(`per_chunk/*_per_chunk.json`, 28,800 units each), the per-unit convex-mixing
+records naming both recordings of each pair, the target-activity measurements
+that implement the silent-target rule (`activity.json`), the corpus manifest
+(`corpus_manifest.json`, 240 tracks with per-track length and any empty stem
+group), and every statistic computed from them. The protocol was committed
+before the audio was downloaded: `research/paper/icassp2027/HOLDOUT_PROTOCOL.md`.
+
+Regenerate the statistics from the records alone:
+
+```bash
+python -m evaluation.origin_effect \
+    --per-chunk 'evaluation/holdout_moisesdb/per_chunk/*_per_chunk.json' \
+    --activity evaluation/holdout_moisesdb/activity.json \
+    --out /tmp/origin_effect.json
+python -m evaluation.mixing_stats \
+    --per-unit 'evaluation/holdout_moisesdb/per_chunk/*_mixing_per_unit.json' \
+    --out /tmp/mixing_stats.json
+```
+
+Rebuild the corpus from the MoisesDB download (`scripts/prepare_moisesdb.py`)
+to reproduce the records themselves.
