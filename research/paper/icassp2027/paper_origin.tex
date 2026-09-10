@@ -97,8 +97,8 @@ $229$--$236$ of $240$ held-out recordings, leaving a residue below half a
 decibel.
   \item Evidence that the two probes disagree on the same checkpoints
   (\secref{sec:mixing}): on convex mixing, which the intervention cannot
-  affect, the supervision does deliver a measurable gain at both compression
-  rates, and it also restores level, not only spectral shape.
+  affect, the supervision delivers a measurable gain at both compression rates and
+reduces level error, not only spectral error.
   \item A methodological correction (\secref{sec:protocol}): the widely used
 decode-vs-decode SI-SDR is inflated by an adversarial term and by decoder
 sampling noise; we report a ground-truth-referenced variant.
@@ -380,9 +380,9 @@ without $\Ldec$ is not tested here.
 \cite{pasini2024music2latent} consistency autoencoder, using its native
 consistency loss, improves ground-truth
 equivariance against a continued-training control ($-9.5\!\to\!-7.8$\,dB)
-but stays far from usable arithmetic ($-11.2$\,dB subtraction). The systems
-differ in too many respects for this to isolate a cause; we report it as a
-limit on transfer.
+while waveform agreement remains poor ($-11.2$\,dB subtraction). The systems
+differ in too many respects for this to isolate a cause, and we make no
+claim about consistency autoencoders in general.
 
 \subsection{Decode-vs-decode scores are protocol-sensitive}\label{sec:protocol}
 For stochastic decoders the decode-vs-decode metric is confounded a second
