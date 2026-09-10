@@ -40,8 +40,8 @@ compression. An adversarial term on the mixed path adds no
 ground-truth gain while inflating a decode-consistency metric. Latent stem
 subtraction, in contrast, is governed largely by the latent origin: adding
 the encoded silence $f(0)$ reduces the loss's apparent subtraction advantage
-by $87$--$95$\% on a pre-registered $240$-track held-out corpus. Comparisons
-are single-run and matched at one initialization.
+by $87$--$95$\% on a pre-registered $240$-track held-out corpus. Comparisons use single training runs; fine-tunes share a starting
+checkpoint.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -99,9 +99,9 @@ adaptation is best among the tested configurations (\secref{sec:ablation}).
   and a Music2Latent fine-tuning experiment in which latent mixing error
 decreases and ground-truth mixing improves, while waveform agreement remains
 poor (\secref{sec:general}).
-  \item A downstream analysis showing latent stem removal is limited by the
-  latent origin rather than the loss, for every evaluated GAN configuration
-  (\secref{sec:downstream}).
+  \item A downstream analysis showing the latent origin accounts for most of
+the observed raw subtraction advantage across the evaluated GAN
+configurations (\secref{sec:downstream}).
   \item A methodological correction: the widely used decode-vs-decode
   SI-SDR$_\mathrm{lin}$ is sensitive to the decode-noise protocol and to an
 adversarial term; we report a ground-truth-referenced variant.
@@ -185,11 +185,11 @@ numerator and denominator,
 (decoder equivariance; $<1$ is better than the encode-then-decode path).
 SI-SDR$_\mathrm{lin}$ shares the decode-vs-decode structure of prior work's
 decoder-additivity metrics (SNR and spectral distance between two decodes
-\cite{torres2026linearity}), and the two views can be moved apart: an adversarial term on the mixed path
-raises the mutual SI-SDR of the two decode paths without bringing either
-closer to $\bar{x}$ (\secref{sec:ablation}). We do not identify the
-mechanism; one candidate is that both decodes are driven onto a common
-realistic manifold. It is also confounded for stochastic
+\cite{torres2026linearity}), and the two views can be moved apart: an adversarial term on the mixed path raises the mutual SI-SDR of the two
+decode paths without improving the latent-interpolation output's ground-truth SI-SDR (\secref{sec:ablation}). We do not identify the mechanism; one
+candidate is that both decodes are driven onto a common realistic manifold.
+We do not measure the mixed-input reconstruction route against ground truth,
+so we make no claim about it. It is also confounded for stochastic
 decoders: a consistency-model decoder \cite{pasini2024music2latent} draws fresh
 noise per call. Decoding the \emph{same} latent twice is deterministic under
 shared noise but scores $-1.8$\,dB under independent noise: decoder sampling
@@ -255,8 +255,9 @@ SDR$_\mathrm{lin}^\mathrm{gt}$ from $8.0$ to $10.2$\,dB and is the only run with
 MixRate $<1$ ($0.97$). Adding an adversarial term to the mixed path
 (``+disc-on-mix'') does \emph{not} improve ground-truth equivariance
 ($9.9$\,dB, MixRate $1.05$), yet it dramatically inflates the decode-vs-decode
-SDR$_\mathrm{lin}$ ($12.1\!\to\!16.0$\,dB). The two decode paths move toward each other without either moving toward
-$\bar{x}$; one candidate mechanism is a common realistic manifold. This is direct evidence that
+SDR$_\mathrm{lin}$ ($12.1\!\to\!16.0$\,dB). The adversarial term increases decode-consistency without improving the
+latent-interpolation output's ground-truth SI-SDR; one candidate mechanism
+is a common realistic manifold. This is direct evidence that
 SDR$_\mathrm{lin}$ can rise without ground-truth equivariance rising, and
 that given $\Ldec$ no adversarial term improved the ground-truth metric
 here; whether the discriminator has an effect on its own, without $\Ldec$,
@@ -398,9 +399,13 @@ advantage by $87$--$95$\% on a held-out corpus. That percentage is
 empirical; what the affine assumption guarantees is recovery of the
 residual's latent, not the size of the reduction. In our Music2Latent fine-tuning experiment, mixing supervision reduces latent mixing error and
 improves ground-truth mixing SI-SDR ($-9.5\!\to\!-7.8$\,dB), while waveform
-agreement remains poor. \textbf{Limitations.} Comparisons are matched at one initialization, not
-across runs; checkpoint selection used the test split (\secref{sec:setup});
-audio is mono and untested by listeners.
+agreement remains poor. \textbf{Limitations.} Comparisons use single training runs; the fine-tunes
+share a starting checkpoint, while the from-scratch pair shares a
+configuration but not initial weights, since training sets no explicit seed.
+Intervals quantify recording-level evaluation variation conditional on the
+released checkpoints, not variation across training runs. Checkpoint
+selection used the test split (\secref{sec:setup}); audio is mono and
+untested by listeners.
 
 \bibliographystyle{IEEEtran}
 \bibliography{references}
