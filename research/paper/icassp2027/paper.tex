@@ -250,10 +250,22 @@ five coefficients.
 The encoder-only variant $\Lenc$ leaves MixRate high ($1.15$--$1.18$): it
 constrains the encoder without making the decoder equivariant. Training only
 the decoder under $\Ldec$, with the encoder frozen, retains most of the gain
-($9.5$\,dB against $10.2$ joint and $8.0$ baseline). Joint training is best
-among the tested configurations. Decoder adaptation is therefore largely
-sufficient here, which does not show it is necessary or that the decoder is
-the unique locus; a decoder-frozen counterpart was not trained.
+($9.5$\,dB against $10.2$ joint and $8.0$ baseline). Joint training is best among the tested configurations. Decoder adaptation
+is therefore largely sufficient here, which does not show it is necessary or
+that the decoder is the unique locus; a decoder-frozen counterpart was not
+trained. \textbf{Encoder geometry does not have a normalization-independent
+answer.} The usual latent-error ratio
+$\lVert\bar{z}-f(\bar{x})\rVert^2/\lVert f(\bar{x})\rVert^2$ is not
+invariant under the relabelling of \secref{sec:prop}: the numerator is a
+unit-sum combination and does not move, while a large enough $c$ drives the
+denominator up and the ratio to zero. Measured instead by the unnormalized
+residual, or relative to the distance between the two endpoint latents, both
+invariant, the mixing models have the lower interpolation error on all three
+held-out contrasts (intervals excluding zero). Measured relative to each
+encoder's distance from its own $f(0)$, also invariant, the $7.66\times$
+comparisons reverse and the $15.3\times$ one is indistinguishable from zero.
+We therefore report the residual and make no claim about improved encoder
+geometry.
 
 \subsection{Decoder consistency can misrepresent mixing quality}\label{sec:consistency}
 Adding an adversarial term to the mixed path does \emph{not} improve
