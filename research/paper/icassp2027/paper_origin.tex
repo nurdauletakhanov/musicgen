@@ -13,6 +13,11 @@
 \newcommand{\Ldec}{\mathcal{L}_\mathrm{mix}^\mathrm{dec}}
 \newcommand{\Lenc}{\mathcal{L}_\mathrm{mix}^\mathrm{enc}}
 
+% ICASSP states a 9 pt minimum. IEEEtran sets captions, footnotes and the
+% bibliography in \footnotesize, which is 8 pt in a 10 pt document, so raise
+% that floor to \small (9 pt) rather than leave text below the stated limit.
+\renewcommand{\footnotesize}{\small}
+
 \begin{document}
 
 \title{Latent Arithmetic Measures the Origin:\\A No-Retraining Intervention on Audio Autoencoders}
@@ -25,25 +30,24 @@ nurdaulet.akhanov@mbzuai.ac.ae}}
 \maketitle
 
 \begin{abstract}
-Audio latents are increasingly evaluated by arithmetic: interpolate two codes
-and decode a mix, subtract a stem's code and decode the residual. We show that
-one of these two probes is not a property of the autoencoder at all. Shifting
-the latent origin by the encoded silence $f(0)$, a reparameterization that
-leaves the autoencoding function and every affine combination with unit
-coefficient sum exactly unchanged for arbitrary nonlinear encoders and
-decoders, changes stem-subtraction scores by several decibels. Applying it to five fixed checkpoints, with no retraining, removes most of the apparent advantage of mixing supervision on subtraction.
-On a held-out corpus of 240 recordings that took no part in training or in
-checkpoint selection, it reduces that advantage by $87$--$95$\%, leaving a
-residual $+0.12$ to $+0.42$\,dB, and every model lands in aggregate within
-$1$\,dB of its own reconstruction of the residual. On convex mixing, which the same reparameterization provably cannot
-touch, the supervision does help: ground-truth equivariance improves by
-$+1.7$ to $+2.2$\,dB at two compression rates. The two probes therefore
-support different conclusions about the same checkpoints, and latent
-arithmetic should be reported against a coordinate-invariant reference.
+Audio latents are increasingly judged by arithmetic: interpolate two codes
+and decode a mix, subtract a stem's code and decode the residual. One of
+these probes is not a property of the autoencoder. Shifting the latent
+origin by the encoded silence $f(0)$ leaves the autoencoding function and
+every unit-sum affine combination exactly unchanged, for arbitrary nonlinear
+encoders and decoders, yet it moves stem-subtraction scores by decibels. On
+five fixed checkpoints and a pre-registered held-out corpus of 240
+recordings, the shift reduces the apparent advantage of mixing supervision
+by $87$--$95$\%, leaving $0.12$ to $0.42$\,dB. Convex mixing, which the same
+shift provably cannot touch, improves by $+1.7$ and $+1.3$\,dB at two
+compression rates. The two probes therefore support different conclusions
+about the same checkpoints, and latent arithmetic should be reported against
+a declared origin.
 \end{abstract}
 
 \begin{IEEEkeywords}
-representation learning, equivariant representations, audio autoencoders, latent arithmetic, evaluation methodology, source separation
+representation learning, equivariant representations, audio autoencoders,
+latent arithmetic, evaluation methodology
 \end{IEEEkeywords}
 
 \section{Introduction}\label{sec:intro}
@@ -227,15 +231,15 @@ excluded because its stems sum to the mixture at only $18.5$\,dB), giving
 the seed and the sorted track list, so all models see identical units and
 every contrast is paired. Confidence intervals come from a paired cluster bootstrap over recordings
 ($10^4$ resamples), the correlated unit: 49 tracks on the test set and 240
-on the held-out corpus. Mixing pairs join two recordings, and $80\%$ of them
-fall within one recording, so those intervals resample recordings and weight
-a pair by the multiplicity of each member. Intervals are a \emph{conditional
+on the held-out corpus. Mixing pairs join two chunks, about $80\%$ of them from the same recording,
+so those intervals resample recordings and weight a pair by the multiplicity
+of each member. Intervals are a \emph{conditional
 diagnostic}: they cover evaluation variance over audio for these
 checkpoints, and cover neither training-seed variance nor checkpoint
-selection. On the held-out corpus a unit is scored only where the removed
-stem is active ($24{,}648$ of $28{,}800$ kept; the rule excludes silent
-\emph{targets}, and does not make the SI-SDR reference nonsilent, since that
-reference is the remaining mixture).
+selection. For the held-out subtraction only, a unit is scored where the removed stem
+is active ($24{,}648$ of $28{,}800$ kept); the rule excludes silent
+\emph{targets} and does not make the SI-SDR reference nonsilent, since that
+reference is the remaining mixture.
 
 That selection needs disclosure. The released weights are the checkpoint with
 the lowest validation loss, and the validation loader read the test split. For
@@ -289,9 +293,8 @@ $+1.2$ to $+5.2$ at $15.3\times$ (\tabref{tab:subtraction}), advantages of
 $+2.33$ and $+4.02$\,dB on paired units.
 
 \textbf{Recentering removes most of it.} Adding $f(0)$ gains $+2.0$ to
-$+6.0$\,dB for every evaluated configuration and leaves each within
-$0.4$--$0.5$\,dB of its own reconstruction reference; the models that gain
-most are the ones that looked worst. The between-model advantage falls to
+$+6.0$\,dB for every configuration and leaves each within $0.4$--$0.5$\,dB
+of its own reconstruction reference; the models that gain most looked worst. The between-model advantage falls to
 $-0.03$, $-0.07$ and $+0.01$\,dB, all three intervals containing zero
 (\tabref{tab:origin}), and the reduction holds on $49$ of $49$ tracks in
 every pair (\figref{fig:origin}, right). The no-mixing models also carry the larger offset ($\lVert f(0)\rVert$ $6.6$
@@ -306,8 +309,9 @@ recentering removes $87$--$95$\% of that, shrinking the gap on $229$, $231$
 and $236$ of the $240$ recordings (\tabref{tab:origin}); on the remainder
 the correction overshoots and reverses the sign. The residue is resolvable
 here, $+0.29$, $+0.12$ and $+0.42$\,dB with intervals excluding zero, where
-the $49$-track set could not separate it from zero. The intervention
-accounts for most of the apparent advantage, not all of it.
+the $49$-track set could not separate it from zero. The three contrasts are $\Ldec$ and $\Ldec{+}$disc against no mixing at
+$7.66\times$ and the combined recipe against no mixing at $15.3\times$; the
+comparator figures below return to the MUSDB18 test set.
 
 \begin{figure*}[t]
   \centering
@@ -324,8 +328,6 @@ accounts for most of the apparent advantage, not all of it.
 
 \textbf{What survives.} Per stem the recentered contrast is nonzero in both
 directions: at $15.3\times$, $+0.35$\,dB on bass against $-0.34$ on vocals.
-Mixing supervision moves where the arithmetic error sits more than it moves
-the mean.
 
 \textbf{Baselines without latent arithmetic.} The unchanged mixture scores
 $+17.1$\,dB against the residual, above every model's reconstruction
@@ -374,8 +376,9 @@ $\bar{x}$, so the two metrics rank these configurations differently. We do
 not identify the mechanism. Whether the discriminator has an effect
 without $\Ldec$ is not tested here.
 
-\textbf{Architecture.} The same objective on the Music2Latent
-\cite{pasini2024music2latent} consistency autoencoder improves ground-truth
+\textbf{Architecture.} The same mixed-latent supervision on the Music2Latent
+\cite{pasini2024music2latent} consistency autoencoder, using its native
+consistency loss, improves ground-truth
 equivariance against a continued-training control ($-9.5\!\to\!-7.8$\,dB)
 but stays far from usable arithmetic ($-11.2$\,dB subtraction). The systems
 differ in too many respects for this to isolate a cause; we report it as a
