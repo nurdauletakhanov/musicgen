@@ -255,10 +255,19 @@ Intervals resample recordings; mixing pairs join two chunks, about $80\%$ of
 them from the same recording. A pair crossing two recordings enters a
 resample $m_i m_j$ times and a pair inside one recording $m_i$ times, where
 $m$ is that recording's multiplicity; weighting both as $m_i m_j$ would
-overweight the within-recording majority. The gain also holds across $\alpha$: swept under one protocol against
-its matched control, the SI-SDR$_\mathrm{lin}^\mathrm{gt}$ swing is
-$1.9$\,dB with $\Ldec$ against $3.2$\,dB without, and $\Ldec$ leads at all
-five coefficients.
+overweight the within-recording majority. The gain also holds across $\alpha$: swept under one protocol against its
+matched control, the SI-SDR$_\mathrm{lin}^\mathrm{gt}$ swing is $1.9$\,dB
+with $\Ldec$ against $3.2$\,dB without, and $\Ldec$ leads at all five
+coefficients. \textbf{The gain is a smaller interpolation penalty, not a
+better mixture reconstruction.} Decoding the encoded mixture directly,
+$g(f(\bar{x}))$, scores $8.02$ and $8.06$\,dB against $\bar{x}$ for the
+control and $\Ldec$: supervision leaves that route alone ($+0.04$\,dB
+$[+0.03,+0.04]$). What changes is the penalty for routing through the
+interpolated latent instead, which falls from $1.80$\,dB $[1.74,1.86]$ to
+$0.07$ $[0.04,0.10]$, a paired reduction of $1.73$\,dB $[-1.77,-1.69]$; at
+$15.3\times$ it falls from $1.93$ to $0.40$. Both routes are scored against
+the same target, so the entire ground-truth gain is the latent residual
+costing less audio.
 
 \subsection{What the training comparisons establish}\label{sec:training}
 The encoder-only variant $\Lenc$ leaves MixRate high ($1.15$--$1.18$): it
@@ -276,9 +285,13 @@ normalizations on the held-out corpus. The unnormalized residual and the
 ratio to the endpoint distance, both translation-invariant, favour the
 mixing models throughout; the ratio to each encoder's distance from its own
 $f(0)$, also translation-invariant, reverses at $7.66\times$ and is
-indistinguishable from zero at $15.3\times$. The controls carry two to three
-times the offset norm ($\lVert f(0)\rVert$ $18.1$ and $14.8$ against
-$5.4$--$6.7$), which inflates that denominator for them. Only the endpoint
+indistinguishable from zero at $15.3\times$. Recording the numerator and
+both denominators separately explains this. Against its control, each mixing
+model has $N$ at $0.64$--$0.67$, $S$ within $4\%$ at $7.66\times$ and $1.37$
+at $15.3\times$, and $O$ at $0.53$--$0.61$: the residual falls by about a
+third while the mixture latents move roughly twice as close to $f(0)$. $N/S$
+therefore tracks the residual, and $N/O$ worsens at $7.66\times$ only
+because its denominator shrinks faster than its numerator. Only the endpoint
 ratio is additionally invariant to rescaling $f\!\to\!sf$ with the decoder
 adjusted; the unnormalized residual is not. We therefore make no claim about
 improved encoder geometry. \begin{table}[t] \centering\small
@@ -294,9 +307,11 @@ ground-truth equivariance ($10.2\!\to\!9.9$\,dB, MixRate $0.97\!\to\!1.05$),
 yet it raises the decode-vs-decode SI-SDR$_\mathrm{lin}$ from $12.1$ to
 $16.0$\,dB. The held-out corpus confirms the direction and sharpens it: the
 adversarial term \emph{costs} $0.49$\,dB $[-0.51,-0.48]$ of ground-truth
-equivariance while adding $+4.06$\,dB of decode-consistency. The two
-measurements therefore rank the same checkpoints differently and cannot serve
-as interchangeable evidence of mixing capability. We do not identify the
+equivariance while adding $+4.06$\,dB of decode-consistency. The same divergence shows in the waveform: the adversarial term yields a
+slightly \emph{smaller} latent residual ($0.0045$ against $0.0047$ per
+element) yet a larger interpolation penalty ($0.52$ against $0.07$\,dB). The
+measurements therefore rank the same checkpoints differently and cannot
+serve as interchangeable evidence of mixing capability. We do not identify the
 mechanism; one candidate is that both decodes are driven onto a common
 realistic manifold. We do not separately report ground-truth SI-SDR for the mixed-input
 reconstruction route $g(f(\bar{x}))$, though MixRate scores it against
