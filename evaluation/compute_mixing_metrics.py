@@ -154,6 +154,7 @@ def _process_batch(
     sources: List[str],
     alpha: float = 0.5,
     perm_generator: "torch.Generator | None" = None,
+    z_zero: "torch.Tensor | None" = None,
 ) -> Dict[str, List]:
     """Compute per-sample metrics for one batch. Returns lists of (source, value)."""
     device = x_wave.device
@@ -196,10 +197,43 @@ def _process_batch(
     # Same for plain reconstruction, as the reference level error of the AE.
     gain_rec = _si_sdr_and_gain(g_recon, x)[1].cpu().tolist()
 
-    # Per-sample ℓ_lat = ||z̄ - z_real||^2 / ||z_real||^2
+    # Per-sample ℓ_lat = ||z̄ - z_real||^2 / ||z_real||^2.
+    #
+    # WARNING: this normalization is NOT translation-invariant. Under the
+    # relabelling f_b(x) = f(x) + b, g_b(z) = g(z - b) -- which leaves
+    # reconstruction and decoded convex mixing pointwise unchanged, by the same
+    # argument this paper makes about subtraction -- the numerator is invariant
+    # (the mixing coefficients sum to one, so b cancels) while the denominator
+    # becomes ||f(x̄) + b||^2. A large enough offset drives the reported error
+    # to zero without touching the actual mixing defect. It is kept for
+    # continuity with earlier numbers; the three variants below are the ones to
+    # read.
     diff = (z_interp - z_real).reshape(B, -1)
     denom = z_real.reshape(B, -1)
-    l_lat = (diff.pow(2).sum(dim=1) / denom.pow(2).sum(dim=1).clamp(min=1e-8)).cpu().tolist()
+    sq_err = diff.pow(2).sum(dim=1)
+    l_lat = (sq_err / denom.pow(2).sum(dim=1).clamp(min=1e-8)).cpu().tolist()
+
+    # (a) Unnormalized residual, per latent element so that two compression
+    # rates with different latent widths stay comparable. Invariant to
+    # translation; still scales with any global rescaling of the latent.
+    n_elem = diff.size(1)
+    l_lat_abs = (sq_err / n_elem).cpu().tolist()
+
+    # (b) Normalized by how far apart the two endpoint latents are. Both terms
+    # move together under translation AND under a global rescaling, so this is
+    # invariant to both: it asks how large the interpolation error is relative
+    # to the span the interpolation traverses.
+    span = (z - z_pair).reshape(B, -1).pow(2).sum(dim=1)
+    l_lat_span = (sq_err / span.clamp(min=1e-8)).cpu().tolist()
+
+    # (c) Normalized by the latent measured from the encoder's own origin,
+    # ||f(x̄) - f(0)||^2. f(0) translates with f, so this is invariant too, and
+    # it is the same recentering the subtraction analysis uses.
+    if z_zero is not None:
+        cdenom = (z_real - z_zero).reshape(B, -1).pow(2).sum(dim=1)
+        l_lat_centered = (sq_err / cdenom.clamp(min=1e-8)).cpu().tolist()
+    else:
+        l_lat_centered = [float("nan")] * B
 
     # Per-sample MixRate = L_recon(g(z̄), x̄) / L_recon(g(f(x̄)), x̄)
     # Vectorized over the batch — replaces an earlier Python loop that
@@ -218,6 +252,9 @@ def _process_batch(
         "abs_gain_lin_gt": list(zip(sources, [abs(g) for g in gain_lin_gt])),
         "abs_gain_rec": list(zip(sources, [abs(g) for g in gain_rec])),
         "l_lat":   list(zip(sources, l_lat)),
+        "l_lat_abs": list(zip(sources, l_lat_abs)),
+        "l_lat_span": list(zip(sources, l_lat_span)),
+        "l_lat_centered": list(zip(sources, l_lat_centered)),
         "mix_rate": list(zip(sources, mix_rate)),
         # Which sample each one was mixed with, so per-unit records can name
         # both recordings of the dyad (needed for a dyadic cluster bootstrap).
@@ -293,13 +330,22 @@ def main():
     )
     print(f"val: {len(val_ds):,} chunks across {len(val_ds.files)} files")
 
+    # f(0), the encoder's own origin. Needed for the translation-invariant
+    # latent-error variant; computed once, since it does not depend on the data.
+    with torch.no_grad():
+        _tgt = model.decoder.target_length
+        z_zero = model.encoder(torch.zeros(1, 1, _tgt, device=device))
+    print(f"||f(0)|| = {float(z_zero.norm()):.3f}")
+
     aggregates: Dict[str, List[tuple]] = {
         "sdr_rec": [], "sdr_lin": [], "sdr_lin_gt": [], "l_lat": [], "mix_rate": [],
         "gain_lin_gt": [], "gain_rec": [], "abs_gain_lin_gt": [], "abs_gain_rec": [],
+        "l_lat_abs": [], "l_lat_span": [], "l_lat_centered": [],
     }
     per_unit: List[Dict] = []
     PER_UNIT_METRICS = ("sdr_rec", "sdr_lin", "sdr_lin_gt", "l_lat", "mix_rate",
-                        "gain_lin_gt", "gain_rec")
+                        "gain_lin_gt", "gain_rec",
+                        "l_lat_abs", "l_lat_span", "l_lat_centered")
 
     n_seen = 0
     for bi, batch in enumerate(tqdm(val_loader, desc="mixing-metrics")):
@@ -317,7 +363,7 @@ def main():
         # consumed the global RNG.
         pg = torch.Generator(device=device).manual_seed(args.seed * 1_000_003 + bi)
         out = _process_batch(model, x_wave, sources, alpha=args.alpha,
-                             perm_generator=pg)
+                             perm_generator=pg, z_zero=z_zero)
         for k in aggregates:
             aggregates[k].extend(out.get(k, []))
         if args.per_unit_out and out:
@@ -345,7 +391,8 @@ def main():
 
     print("\n=== mixing metrics ===")
     for metric in ("sdr_rec", "sdr_lin", "sdr_lin_gt", "l_lat", "mix_rate",
-                   "gain_lin_gt", "gain_rec", "abs_gain_lin_gt", "abs_gain_rec"):
+                   "gain_lin_gt", "gain_rec", "abs_gain_lin_gt", "abs_gain_rec",
+                   "l_lat_abs", "l_lat_span", "l_lat_centered"):
         line = f"  {metric:8s}"
         for src in sorted(summary[metric].keys()):
             line += f"  {src}={summary[metric][src]:+.4f}"
@@ -356,6 +403,9 @@ def main():
         "step": int(step) if isinstance(step, int) else -1,
         "alpha": args.alpha,
         "n_samples_seen": n_seen,
+        # The encoder's own origin. ell_lat's usual normalization divides by
+        # ||f(x̄)||, which this offset inflates, so record it alongside.
+        "f0_norm": float(z_zero.norm()),
         "metrics": summary,
     }
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
