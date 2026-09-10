@@ -1,13 +1,13 @@
 # Fdb version 4
-["bibtex paper_origin"] 1788960974.96946 "paper_origin.aux" "paper_origin.bbl" "paper_origin" 1788961119.58242 0
+["bibtex paper_origin"] 1789025793.17513 "paper_origin.aux" "paper_origin.bbl" "paper_origin" 1789025793.98153 0
   "./IEEEtran.bst" 1788791074.79763 57748 7c8250ecf02814ce6ddc0cdbb63df1dd ""
-  "./references.bib" 1788865975.75641 3930 fb2ba2721d25732531cacec0d0c55c7d ""
-  "paper_origin.aux" 1788961119.28019 5684 4fe45876eb6d6b49df8e143427b90e52 "pdflatex"
+  "./references.bib" 1789025633.49107 4279 287a70753e14ddd541e4bec630f12854 ""
+  "paper_origin.aux" 1789025793.72056 5337 33033f4f7b95941d9a18a7c2799d9c21 "pdflatex"
   (generated)
   "paper_origin.bbl"
   "paper_origin.blg"
   (rewritten before read)
-["pdflatex"] 1788961118.8456 "paper_origin.tex" "paper_origin.pdf" "paper_origin" 1788961119.58258 0
+["pdflatex"] 1789025793.27815 "paper_origin.tex" "paper_origin.pdf" "paper_origin" 1789025793.98165 0
   "/usr/local/texlive/2024/texmf-dist/fonts/enc/dvips/base/8r.enc" 1165713224 4850 80dc9bab7f31fb78a000ccfed0e27cab ""
   "/usr/local/texlive/2024/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/local/texlive/2024/texmf-dist/fonts/tfm/adobe/times/ptmb7t.tfm" 1136768653 2172 fd0c924230362ff848a33632ed45dc23 ""
@@ -96,13 +96,12 @@
   "/usr/local/texlive/2024/texmf-var/web2c/pdftex/pdflatex.fmt" 1736158877 8221440 a3be6ddb9f35c45a1dbb89c0f51a6c25 ""
   "/usr/local/texlive/2024/texmf.cnf" 1710266656 577 e590dabc9e28c5b61546e15f63eebcdf ""
   "figures/fig_origin.pdf" 1788960969.76108 40496 76293ae781e402fc32253113b110327e ""
-  "figures/fig_protocol.pdf" 1788960969.8523 27951 a7730c151a51d3b7c309c195ea27e36b ""
-  "paper_origin.aux" 1788961119.28019 5684 4fe45876eb6d6b49df8e143427b90e52 "pdflatex"
-  "paper_origin.bbl" 1788960975.06181 3956 c8bf8115ff50daca5ce85dc0296e9163 "bibtex paper_origin"
-  "paper_origin.tex" 1788961114.37015 23710 a21fe23ab05f4091c25fc6814ccb1692 ""
-  "tables/crossarch.tex" 1788953851.63315 789 ce423c035d7bbc97ef26943a9b6c3eff ""
-  "tables/origin.tex" 1788953851.63065 464 823b2db895f405e8b87f0d7daa0b81d8 ""
-  "tables/subtraction.tex" 1788953851.75338 1041 4512e6905fa3b9f5b0865b14dafe70ec ""
+  "paper_origin.aux" 1789025793.72056 5337 33033f4f7b95941d9a18a7c2799d9c21 "pdflatex"
+  "paper_origin.bbl" 1789025793.27638 4222 942d17496d5e3656d3692c6ba1d2bbe4 "bibtex paper_origin"
+  "paper_origin.tex" 1789025792.28469 23862 f9691eb2cb3405860f66328a16f7147c ""
+  "tables/crossarch.tex" 1789025594.67317 789 ce423c035d7bbc97ef26943a9b6c3eff ""
+  "tables/origin.tex" 1789025594.67093 864 e684d0e4a48c8f1b5b2ea6ebff5f3061 ""
+  "tables/subtraction.tex" 1789025594.79349 1041 4512e6905fa3b9f5b0865b14dafe70ec ""
   (generated)
   "paper_origin.aux"
   "paper_origin.log"

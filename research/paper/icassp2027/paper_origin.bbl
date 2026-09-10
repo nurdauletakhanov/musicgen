@@ -87,4 +87,10 @@ Z.~Rafii, A.~Liutkus, F.-R. St{\"o}ter, S.~I. Mimilakis, and R.~Bittner,
   ``{MUSDB18-HQ}: An uncompressed version of {MUSDB18},''
   \url{https://zenodo.org/record/3338373}, 2019.
 
+\bibitem{pereira2023moisesdb}
+I.~Pereira, F.~Ara{\'u}jo, F.~Korzeniowski, and R.~Vogl, ``{MoisesDB}: A
+  dataset for source separation beyond 4-stems,'' in \emph{Proc. of the 24th
+  Int. Society for Music Information Retrieval Conf. (ISMIR)}, 2023, pp.
+  619--626.
+
 \end{thebibliography}
