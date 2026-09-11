@@ -183,3 +183,17 @@ validation split remains open, and this protocol is not a substitute for it.
   dataset authors' own `mix_4_stems` grouping, which places `percussion`
   under "other". Reason: it removes a judgment call of ours from the
   pipeline. No audio existed on disk at the time of the change.
+
+### 2026-09-11 — extension, not pre-registered: third-party codecs
+
+After the GAN results above were known, two autoencoders we did not train were
+added to the MoisesDB subtraction evaluation: DAC-44k (`descript/dac_44khz`)
+and EnCodec-24k (`facebook/encodec_24khz`), via `evaluation/codec_adapters.py`
+(continuous encoder output, quantizer bypassed on every path; EnCodec
+resampled 44.1<->24 kHz). Reason: MUSDB18 is DAC training data, so MoisesDB is
+the corpus on which DAC has no training exposure. Everything else is
+unchanged: same 240 tracks, same seeded units, same raw / `+f(0)` pair, same
+silent-target rule and statistics. The Lin-CAE family is **not** evaluated
+here because MoisesDB is its training data; it is reported on MUSDB18 test.
+This addition tests a model-agnostic identity on new models; it does not alter
+any GAN contrast recorded above, and it was not part of the registration.

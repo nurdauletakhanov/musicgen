@@ -1,7 +1,22 @@
-# Mixing-Equivariant Audio Autoencoders
+# Latent Arithmetic Measures the Origin
 
-Code and evaluation data for **"What Makes Audio Latents Mixing-Equivariant?
-A Controlled Study of Explicit Supervision"** (submitted to ICASSP 2027).
+Code and evaluation data for **"Latent Arithmetic Measures the Origin: Recentering Audio Autoencoders Without Retraining"** (submitted to ICASSP 2027).
+
+**The one-line result.** Stem removal by latent subtraction,
+`g(f(mix) − f(stem))`, is measured in coordinates the model never fixes.
+Shifting the latent origin by the encoding of silence, `f(0)`, leaves
+reconstruction and every unit-sum latent combination *exactly* unchanged for
+any encoder and decoder, yet it moves subtraction scores by decibels: it
+removes 87–95 % of the apparent subtraction advantage of mixing supervision on
+a pre-registered held-out corpus, and it improves stem subtraction on models we
+never trained (DAC, EnCodec, Music2Latent, the public Lin-CAE baselines) with
+no retraining. What mixing supervision genuinely buys is *convex* mixing, which
+the shift provably cannot touch. **Recentre before you subtract, whatever the
+model.**
+
+The repo also trains the waveform GAN autoencoders used in the paper, with an
+explicit **decode-mixing loss** that improves convex mixing by +1.8 dB at no
+reconstruction cost (replicated across training seeds).
 
 Audio mixing is linear in the waveform domain, but neural autoencoder latents do
 not preserve that structure: interpolating two latent codes and decoding does
@@ -245,12 +260,35 @@ load-bearing: `_diag_old_vs_new_eval.py` produces the paper's Fig. 1.
 
 ```bibtex
 @inproceedings{akhanov2027mixing,
-  title     = {What Makes Audio Latents Mixing-Equivariant? A Controlled Study of Explicit Supervision},
+  title     = {Latent Arithmetic Measures the Origin: Recentering Audio Autoencoders Without Retraining},
   author    = {Akhanov, Nurdaulet},
   booktitle = {Proc. IEEE Int. Conf. on Acoustics, Speech and Signal Processing (ICASSP)},
   year      = {2027}
 }
 ```
+
+## Recentering models we did not train
+
+`evaluation/codec_run_subtraction.py` applies the same raw / `+f(0)` stem
+subtraction to third-party autoencoders through small adapters
+(`evaluation/codec_adapters.py`): DAC-44k and EnCodec-24k from `transformers`
+(continuous encoder output, quantizer bypassed on every path), and the public
+Lin-CAE family of Torres et al. (`pip install linear-cae`; ids `lin-cae`,
+`lin-cae-2`, and their retrained `m2l`). Units are identical to the GAN runs,
+so `evaluation.paired_stats` / `origin_effect` apply unchanged
+(`--key dd` gives the phase-cancelled reading that consistency decoders need).
+
+```bash
+python -m evaluation.codec_run_subtraction --model dac44k --out evaluation/v2_metrics/codecs/dac44k_subtraction.json \
+    --per-chunk-out evaluation/v2_metrics/codecs/per_chunk/dac44k_per_chunk.json
+python -m evaluation.codec_run_subtraction --model dac44k --origin-correct ...   # +f(0)
+sbatch scripts/slurm_codec_origin.sh                                             # everything, both corpora
+```
+
+MUSDB18 is DAC training data and MoisesDB is Lin-CAE training data, so each
+model is reported on the corpus it has not seen (`evaluation/v2_metrics/codecs/`
+for MUSDB18 test, `evaluation/holdout_moisesdb/codecs/` for MoisesDB). Results
+table: paper Table III (`research/paper/icassp2027/tables/codecs.tex`).
 
 ## Held-out evaluation (MoisesDB)
 

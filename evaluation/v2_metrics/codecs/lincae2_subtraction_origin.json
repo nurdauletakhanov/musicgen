@@ -1,0 +1,83 @@
+{
+  "checkpoint": "lin-cae-2",
+  "model": {
+    "model": "lincae2",
+    "hf_id": "lin-cae-2",
+    "params": 58185026,
+    "latent_route": "Lin-CAE latent (scale_factor applied inside encode/decode)"
+  },
+  "step": -1,
+  "config": {
+    "musdb_dir": "dataset/musdb18/test",
+    "chunks_per_track": 30,
+    "n_chunks_seen": 1470,
+    "seed": 0
+  },
+  "skipped_tracks": [
+    {
+      "track": "PR - Oh No",
+      "reason": "sanity=18.47"
+    }
+  ],
+  "origin_corrected": true,
+  "origin": {
+    "f0_norm": 6.404892921447754,
+    "f0_rms": 0.24139347672462463,
+    "latent_shape": [
+      64,
+      11
+    ]
+  },
+  "subtraction": {
+    "drums": {
+      "sdr_sub": -0.12844776767527774,
+      "sdr_ceil": 0.0384893737708022,
+      "sdr_dd": 15.332258224000736,
+      "gap": 0.16693714144607993,
+      "n": 1470,
+      "sdr_identity": 10.84731975089423,
+      "sdr_aemix": -4.084585282609475,
+      "sdr_wavsub": -1.2666770064287034
+    },
+    "bass": {
+      "sdr_sub": -1.3216212075659814,
+      "sdr_ceil": -0.9503941972116737,
+      "sdr_dd": 20.623186047669172,
+      "gap": 0.3712270103543077,
+      "n": 1470,
+      "sdr_identity": 21.350991657706885,
+      "sdr_aemix": -3.2696890762817037,
+      "sdr_wavsub": -1.4586852364866127
+    },
+    "vocals": {
+      "sdr_sub": 0.6925884849521756,
+      "sdr_ceil": 1.0112546933350013,
+      "sdr_dd": 25.122827345659942,
+      "gap": 0.31866620838282567,
+      "n": 1470,
+      "sdr_identity": 31.90497468038443,
+      "sdr_aemix": -1.8368950915689182,
+      "sdr_wavsub": -0.38582975475313963
+    },
+    "other": {
+      "sdr_sub": -1.7308226352099798,
+      "sdr_ceil": -1.115380724417806,
+      "sdr_dd": 12.935636673411544,
+      "gap": 0.6154419107921738,
+      "n": 1470,
+      "sdr_identity": 4.3030666309482495,
+      "sdr_aemix": -5.883095442709279,
+      "sdr_wavsub": -1.1231447994553794
+    },
+    "all": {
+      "sdr_sub": -0.6220757813747658,
+      "sdr_ceil": -0.254007713630919,
+      "sdr_dd": 18.50347707268535,
+      "gap": 0.3680680677438468,
+      "n": 5880,
+      "sdr_identity": 17.101588179983448,
+      "sdr_aemix": -3.768566223292344,
+      "sdr_wavsub": -1.0585841992809588
+    }
+  }
+}

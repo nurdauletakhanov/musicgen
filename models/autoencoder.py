@@ -254,6 +254,7 @@ class Autoencoder(nn.Module):
         # Mixing pairs (shared by decode-mix, latent-mix, and MixRate)
         decode_mix = x_hat.new_tensor(0.0)
         latent_mix = x_hat.new_tensor(0.0)
+        mixed_recon = x_hat.new_tensor(0.0)
         mix_rate = 0.0
         mix_gap = 0.0
         # mix_aux carries the mixed-decode output and the matching real-mix
@@ -288,7 +289,6 @@ class Autoencoder(nn.Module):
             # Mixed-input reconstruction control: same target, same three-term
             # loss, but the latent is encoded from the mixture rather than
             # interpolated, so no interpolated-latent supervision occurs.
-            mixed_recon = x_hat.new_tensor(0.0)
             if self.mixed_recon_weight > 0.0:
                 z_realmix = self.encoder(x_mix_wave)
                 x_realmix, _ = self.decoder(z_realmix)

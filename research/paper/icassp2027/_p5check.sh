@@ -4,6 +4,8 @@
 # plus a references-only 5th, so the forced-break build must be <= 5 pages.
 set -e
 SRC="${1:-paper.tex}"
+# Placeholders left from drafting must never reach a submitted build.
+if grep -q "TBD" "$SRC"; then echo "FAIL: $SRC still contains TBD placeholders:"; grep -n "TBD" "$SRC" | head; exit 1; fi
 sed 's/\\bibliography{references}/\\clearpage\\bibliography{references}/' "$SRC" > _p5.tex
 latexmk -g -pdf -interaction=nonstopmode -jobname=_p5 _p5.tex > _p5.log 2>&1 || true
 # A failed compile silently shortens the document, which used to read as a

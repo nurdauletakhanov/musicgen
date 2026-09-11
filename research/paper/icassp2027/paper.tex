@@ -10,17 +10,16 @@
 \newcommand{\tabref}[1]{Table~\ref{#1}}
 \newcommand{\figref}[1]{Fig.~\ref{#1}}
 \newcommand{\secref}[1]{Section~\ref{#1}}
-\newcommand{\Ldec}{\mathcal{L}_\mathrm{mix}^\mathrm{dec}}
-\newcommand{\Lenc}{\mathcal{L}_\mathrm{mix}^\mathrm{enc}}
+\newcommand{\Ldec}{\mathcal{L}_\mathrm{dec}}
+\newcommand{\Lenc}{\mathcal{L}_\mathrm{enc}}
 
 % ICASSP states a 9 pt minimum. IEEEtran sets captions, footnotes and the
-% bibliography in \footnotesize, which is 8 pt in a 10 pt document, so raise
-% that floor to \small (9 pt) rather than leave text below the stated limit.
+% bibliography in \footnotesize (8 pt in a 10 pt document); raise that floor.
 \renewcommand{\footnotesize}{\small}
 
 \begin{document}
 
-\title{A Controlled Study of Mixing Supervision\\and Latent Arithmetic in Audio Autoencoders}
+\title{Latent Arithmetic Measures the Origin:\\Recentering Audio Autoencoders Without Retraining}
 
 \author{\IEEEauthorblockN{Nurdaulet Akhanov}
 \IEEEauthorblockA{Mohamed bin Zayed University of Artificial Intelligence\\
@@ -30,388 +29,399 @@ nurdaulet.akhanov@mbzuai.ac.ae}}
 \maketitle
 
 \begin{abstract}
-Explicit mixing supervision aims to improve audio composition through latent
-arithmetic, but common evaluations measure different properties of an
-autoencoder. We investigate these effects through same-start fine-tuning
-comparisons in GAN audio autoencoders. Decode-mixing supervision improves
-ground-truth convex mixing with little change in reconstruction SI-SDR. An
-independent held-out corpus confirms a $1.77$\,dB mixing improvement at
-$7.66\times$ compression and $1.39$\,dB for a combined recipe at
-$15.3\times$. Discriminator supervision, however, increases decoder
-consistency while reducing ground-truth mixing fidelity. For source
-subtraction, correcting the latent origin removes $87$--$95$\% of the raw
-between-model advantage on 240 held-out recordings. These results distinguish waveform mixing gains from decoder agreement and
-from origin-dependent subtraction effects. Findings are conditional on single
-training runs; held-out evaluation uses frozen checkpoints that were selected
-on the original evaluation data.
+Audio latents are increasingly judged by arithmetic: interpolate two codes and
+decode a mix, subtract a stem's code and decode the residual. We show that the
+second probe is not a property of the autoencoder alone. Shifting the latent
+origin by the encoding of silence, $f(0)$, leaves reconstruction and every
+unit-sum latent combination exactly unchanged for arbitrary nonlinear encoders
+and decoders, yet moves stem-subtraction scores by decibels. On five fixed
+checkpoints and a pre-registered held-out corpus of 240 recordings, the shift
+removes $87$--$95$\% of the apparent subtraction advantage of mixing
+supervision. Applied to autoencoders we did not train, including DAC, EnCodec
+and Music2Latent, the same shift improves stem subtraction by TBD--TBD\,dB
+with no retraining. What mixing supervision genuinely buys is convex mixing,
+which the shift provably cannot touch: $+1.8$ and $+1.4$\,dB at two
+compression rates, replicated across training seeds. Latent arithmetic should
+be reported against a declared origin.
 \end{abstract}
 
 \begin{IEEEkeywords}
-audio autoencoders, latent arithmetic, evaluation methodology,
-representation learning, controlled ablation
+audio autoencoders, latent arithmetic, representation learning,
+neural audio codecs, evaluation methodology
 \end{IEEEkeywords}
 
 \section{Introduction}\label{sec:intro}
-Audio mixing is linear on waveforms,
+Mixing is linear on waveforms,
 $\mathrm{mix}(x_1,x_2,\alpha)=\alpha x_1+(1{-}\alpha)x_2$, which makes latent
-arithmetic an attractive interface to a learned representation. For an
+arithmetic an attractive interface to a learned audio representation. For an
 encoder $f$ and decoder $g$, the property usually asked for is
 \begin{equation}
   g\!\left(\alpha f(x_1)+(1{-}\alpha)f(x_2)\right)\approx \alpha x_1+(1{-}\alpha)x_2 ,
   \label{eq:equiv}
 \end{equation}
 and a common companion probe is stem removal by subtraction,
-$g(f(x_\mathrm{mix}){-}f(x_\mathrm{stem}))\approx x_\mathrm{res}$. Where these hold, editing happens in the latent domain without a dedicated
-separation or synthesis model, and composing independently generated latents
-by direct arithmetic, one route open to latent-diffusion systems
-\cite{liu2023audioldm,evans2024stable}, requires exactly this property. Standard reconstruction objectives do not enforce Eq.~\ref{eq:equiv}: they
-reward fidelity, not algebraic structure, and in
-quantized codecs (DAC \cite{kumar2024dac}, EnCodec
-\cite{defossez2023encodec}) an interpolated point is not a codebook entry.
+$g(f(x_\mathrm{mix}){-}f(x_\mathrm{stem}))\approx x_\mathrm{res}$. Where these
+hold, editing happens in the latent domain without a separation model, and
+independently generated latents can be composed by addition, one route open to
+latent-diffusion systems \cite{liu2023audioldm,evans2024stable}.
+Reconstruction objectives do not enforce Eq.~\ref{eq:equiv}, and Torres et
+al.~\cite{torres2026linearity} induce it in a consistency autoencoder by
+decoding averaged latents against the true mix.
 
-\textbf{The supervision studied here is not ours.} Torres et
-al.~\cite{torres2026linearity} induce linearity in a consistency autoencoder
-by decoding the average of separately encoded latents against the true mix, a
-principle related to mixup \cite{zhang2018mixup}. We write that same
-supervision as an explicit loss on a waveform GAN autoencoder. The
-implementation differs from theirs in loss family (multi-resolution STFT, mel
-and a waveform $\ell_1$ term rather than a consistency loss), in mixing
-coefficient ($\alpha\sim U[0,1]$ rather than $0.5$), and in decoder class, so
-this is neither a new method nor an exact reproduction. What we contribute is
-the controlled comparison and the analysis of what the standard measurements
-actually report:
+This paper asks a prior question: \emph{what do these arithmetic scores
+measure?} The two probes differ in one respect that is easy to overlook. The
+coefficients in Eq.~\ref{eq:equiv} sum to one; those of subtraction sum to
+zero. A latent space is defined only up to a choice of origin, and a shift of
+that origin cancels in the first case but not in the second.
+\secref{sec:origin} makes this exact for arbitrary nonlinear $f$ and $g$:
+recentering the latent space at $f(0)$ leaves the autoencoding function and
+every unit-sum combination pointwise identical, while mapping subtraction to
+$g(f(x_\mathrm{mix}){-}f(x_\mathrm{stem}){+}f(0))$. Any change a subtraction
+score shows under this map is therefore a property of the coordinate system,
+not of the model as a function. Our contributions:
 \begin{enumerate}
-  \item \textbf{Recipe comparison.} Same-start fine-tuning shows how a
-decode-mixing recipe, an encoder-side mixing loss and decoder-only
-adaptation affect ground-truth mixing and reconstruction; the arms differ by
-whole recipe (\secref{sec:mixing}, \secref{sec:training}).
-  \item \textbf{Evaluation comparison.} Adding discriminator supervision on
-  the mixed path improves agreement between the two decoded outputs while
-  reducing ground-truth mixing fidelity, so the two measurements favour
-  different models and are not interchangeable evidence
-  (\secref{sec:consistency}).
-  \item \textbf{Origin analysis.} A short argument shows that recentering the
-  latent leaves reconstruction and every unit-sum combination pointwise
-  unchanged while altering subtraction, and empirically the correction
-  substantially reduces between-model subtraction differences, including on
-  an independent corpus (\secref{sec:origin}).
+  \item A reparameterization argument (\secref{sec:origin}) showing that
+  subtraction-style latent arithmetic is coordinate-dependent while
+  reconstruction and convex mixing are not, and identifying the model's own
+  reconstruction of the target as the coordinate-invariant reference.
+  \item The intervention on five fixed checkpoints of a waveform GAN
+  autoencoder (\secref{sec:subtraction}), on the test set and on a
+  pre-registered held-out corpus: recentering removes $87$--$95$\% of the
+  advantage that mixing supervision appears to have on stem subtraction and
+  lands every checkpoint within half a decibel of its own reconstruction.
+  \item The same shift applied to autoencoders we did not train
+  (\secref{sec:codecs}): DAC \cite{kumar2024dac}, EnCodec
+  \cite{defossez2023encodec}, Music2Latent \cite{pasini2024music2latent} and
+  the public baselines of \cite{torres2026linearity}. Recentering improves
+  stem subtraction on every one of them without retraining, including the
+  linearity-trained model, whose offset is ten times smaller than its
+  baseline's but not zero.
+  \item What supervision genuinely buys (\secref{sec:mixing}): convex mixing,
+  which the intervention cannot affect, improves by $+1.8$ and $+1.4$\,dB at
+  two compression rates, replicates across training seeds, and reduces level
+  error; the widely used decode-versus-decode score is inflated by an
+  adversarial term and by decoder noise (\secref{sec:protocol}).
 \end{enumerate}
+The practical reading is a two-line recipe: recentre at $f(0)$ before
+subtracting, whatever the model; add decode-mixing supervision if convex
+mixing is the goal.
 
 \section{Related Work}\label{sec:related}
 \textbf{Neural audio codecs.} DAC \cite{kumar2024dac}, EnCodec
 \cite{defossez2023encodec} and SoundStream \cite{zeghidour2022soundstream}
-pair convolutional encoders with HiFi-GAN decoders \cite{kong2020hifigan}
+pair convolutional encoders with HiFi-GAN-style decoders \cite{kong2020hifigan}
 and multi-scale discriminators, optimizing reconstruction without latent
-structure; under their residual vector quantization an interpolated point is
-generally not a codebook entry. RAVE \cite{caillon2021rave} learns a
-variational latent space but does not target mixing equivariance, and
-disentanglement regularizers \cite{higgins2017betavae} encourage generic
-smoothness rather than a specific identity. Mixing-equivariance follows the
-symmetry-based view of representation learning \cite{higgins2018towards},
-though convex mixing is an affine combination, not a group action.
-\textbf{Linear audio representations.} Music2Latent
+structure; their residual vector quantization is a further obstacle to
+interpolation, so we operate on their continuous pre-quantization latents.
+RAVE \cite{caillon2021rave} learns a variational latent space but does not
+target mixing equivariance, and disentanglement regularizers
+\cite{higgins2017betavae} encourage generic smoothness rather than a specific
+identity. Mixing-equivariance follows the symmetry-based view of
+representation learning \cite{higgins2018towards}, though convex mixing is an
+affine combination, not a group action.
+\textbf{Linear audio representations.} Music2Latent (M2L)
 \cite{pasini2024music2latent} is a consistency autoencoder with partial
-linearity as a byproduct, and Torres et al.~\cite{torres2026linearity} make it
-approximately linear by the supervision described above. Their additivity and
-separation scores compare two decodes, a protocol \secref{sec:metrics} shows
-to be sensitive to decoder sampling.
+linearity as a byproduct. Torres et al.~\cite{torres2026linearity} make it
+approximately linear (Lin-CAE) by decoding the average of separately encoded
+latents against the true mix and by a gain augmentation that enforces
+homogeneity, a principle related to mixup \cite{zhang2018mixup}. Their
+oracle-separation scores subtract raw latents and compare two decodes, a
+protocol \secref{sec:codecs} and \secref{sec:protocol} examine. No prior work
+reports latent arithmetic against a declared origin.
 
-\section{Method}\label{sec:method}
-
-\subsection{Mixing supervision}\label{sec:loss}
-Given a batch $\{x_i\}$ we form pairs $(x_i,x_j)$ with a fixed-point-free
-permutation and draw $\alpha\sim U[0,1]$. With $\bar{x}=\alpha
-x_i+(1{-}\alpha)x_j$ and $\bar{z}=\alpha f(x_i)+(1{-}\alpha)f(x_j)$, the
-decode-mixing loss requires the decoded interpolation to match the true mix:
+\section{The Latent Origin Is a Free Coordinate}\label{sec:origin}
+\noindent\textbf{Proposition.} Let $f:\mathcal{X}\to\mathcal{Z}$ and
+$g:\mathcal{Z}\to\mathcal{X}$ be arbitrary maps and $c=f(0)$ the encoding of
+silence. Define the recentered pair
 \begin{equation}
-  \Ldec=\mathcal{L}_\mathrm{recon}\!\left(g(\bar{z}),\bar{x}\right)
-        +\mathcal{L}_{\mathrm{wave}\text{-}\ell_1}\!\left(g(\bar{z}),\bar{x}\right),
-  \label{eq:ldec}
+  f_c(x)=f(x)-c, \qquad g_c(z)=g(z+c).
+  \label{eq:recenter}
 \end{equation}
-where $\mathcal{L}_\mathrm{recon}$ is the weighted multi-resolution STFT and
-mel loss also used for reconstruction and
-$\mathcal{L}_{\mathrm{wave}\text{-}\ell_1}$ is the unweighted mean absolute
-error over all samples and batch elements. The reconstruction path carries no waveform term. The decode-mixing arm
-therefore changes three things at once against its baseline: supervision
-flows through an interpolated latent, the target is a mixed waveform, and
-the mixed path carries a waveform term the reconstruction path lacks. The
-comparison shows the recipe helps; it does not separate the three. Gradients flow through $g$ and into $f$ via $\bar{z}$. We also study an
-encoder-only variant, $\Lenc=\lVert f(\bar{x})-\bar{z}\rVert^2$, and one
-that additionally applies the discriminator to the mixed path (``$+$disc''). The total objective is
-$\mathcal{L}=\mathcal{L}_\mathrm{recon}+\mathcal{L}_\mathrm{GAN}+\lambda\Ldec
-+\lambda_\mathrm{enc}\Lenc+\lambda_{\ell_2}\lVert z\rVert^2$, and the arms
-are exclusive. The baseline sets $\lambda{=}\lambda_\mathrm{enc}{=}0$; the
-$\Ldec$ arms set $\lambda{=}0.5$ with $\lambda_\mathrm{enc}{=}0$; the
-encoder-only arms set $\lambda{=}0$ and sweep $\lambda_\mathrm{enc}$, written
-$\gamma$ in \tabref{tab:ablation}, over $5$, $10$ and $20$; the discriminator
-reaches the mixed path only in the $+$disc arms and in the $15.3\times$
-recipe; the frozen-encoder arm is $\Ldec$ with $f$ held fixed. Throughout
-$\lambda_{\ell_2}{=}10^{-3}$, the STFT and mel weights are equal, the
-adversarial weight is $0.5$ and feature matching $2$. Training uses Adam at
-$10^{-4}$ ($5{\times}10^{-5}$ for the discriminator), $\beta{=}(0.8,0.99)$,
-weight decay $10^{-3}$, gradient clipping $1.0$, batch $32$ with two
-accumulation steps and $500$ warmup steps.
-
-\subsection{The latent origin is a free coordinate}\label{sec:prop}
-\noindent\textbf{Proposition.} For arbitrary $f,g$ and $c=f(0)$, define
-$f_c(x)=f(x)-c$ and $g_c(z)=g(z+c)$. Then $g_c(f_c(x))=g(f(x))$ for every
-$x$; for any coefficients with $\sum_i a_i=1$,
-$g_c(\sum_i a_i f_c(x_i))=g(\sum_i a_i f(x_i))$; and
+Then (i) $g_c(f_c(x))=g(f(x))$ for every $x$; (ii) for any $x_1,\dots,x_n$
+and coefficients with $\sum_i a_i=1$,
+$g_c(\sum_i a_i f_c(x_i))=g(\sum_i a_i f(x_i))$; and (iii) for the
+coefficients $(1,-1)$,
 \begin{equation}
-  g_c\!\left(f_c(x)-f_c(y)\right)=g\!\left(f(x)-f(y)+c\right).
+  g_c\!\left(f_c(x)-f_c(y)\right)=g\!\left(f(x)-f(y)+f(0)\right).
   \label{eq:sub}
 \end{equation}
-\emph{Proof.} $f_c(x)+c=f(x)$ gives the first. For the second,
-$\sum_i a_i f_c(x_i)=\sum_i a_i f(x_i)-c$ because the coefficients sum to
-one, and $g_c$ adds $c$ back. For the third the coefficients sum to zero, so
-$c$ cancels in the difference and $g_c$ adds it inside $g$. $\square$
+\emph{Proof.} $f_c(x)+c=f(x)$ gives (i). For (ii),
+$\sum_i a_i f_c(x_i)=\sum_i a_i f(x_i)-c\sum_i a_i=\sum_i a_i f(x_i)-c$, and
+$g_c$ adds $c$ back. For (iii) the coefficients sum to zero, so $c$ cancels
+in the latent difference and $g_c$ adds it inside $g$. $\square$
 
-Reconstruction and every unit-sum combination are therefore pointwise
-unchanged by this relabelling, for arbitrary nonlinear networks, while
-subtraction is not. Any difference a subtraction score shows under it is a
-property of the coordinate system rather than of the autoencoder as a
-function. When $f$ is affine, $f(x){-}f(y){+}c=f(x{-}y)$, so
-Eq.~\ref{eq:sub} decodes $g(f(x_\mathrm{res}))$, the model's own
-reconstruction of the residual, and we report the shortfall from that
-reference as the \emph{linearity tax}. The proposition is general, but it concerns re-expressing a \emph{frozen}
-model: it does not make training origin-invariant, and the latent $\ell_2$
-penalty in particular depends on the origin, so the objective can itself
-move $f(0)$. The magnitude of the effect in \secref{sec:origin} is an
-empirical finding about the evaluated checkpoints and corpora, and neither
-it nor improved subtraction quality follows from the algebra for arbitrary
-models.
+Three consequences shape the paper. First, $(f_c,g_c)$ is \emph{the same
+autoencoder} as $(f,g)$ as far as reconstruction and Eq.~\ref{eq:equiv} are
+concerned: by (i) and (ii) those quantities are pointwise identical, for
+arbitrary nonlinear networks, with no retraining and no approximation.
+Second, by (iii) subtraction is not: recentering shifts it by one encode of
+silence, and \secref{sec:subtraction} measures a several-decibel shift. A
+model ranking obtained from raw subtraction can therefore be altered by a
+change of coordinates that provably leaves reconstruction and mixing
+untouched, so such a ranking is not by itself a statement about the
+representation. Third, when $f$ is affine, $f(x)=Ax+b$, we have
+$f(x){-}f(y){+}f(0)=f(x{-}y)$ and Eq.~\ref{eq:sub} decodes exactly
+$g(f(x_\mathrm{res}))$, the model's own reconstruction of the residual,
+whatever the decoder does. That encode--decode reconstruction is the
+reference we report against; the shortfall from it is the \emph{linearity
+tax}. Real encoders depart from affine, so for them any improvement from
+recentering is an empirical finding; homogeneity $f(ax)=af(x)$, if trained
+for, drives $f(0)$ toward zero but need not remove the effect.
+The proposition concerns re-expressing a \emph{frozen} model: it does not
+make training origin-invariant, and a latent $\ell_2$ penalty in particular
+can move $f(0)$.
+
+\section{Experimental Setup}\label{sec:setup}
+
+\subsection{Models}\label{sec:models}
+\textbf{Our checkpoints.} The primary model is a waveform autoencoder
+(DAC-style 1-D convolutional encoder, HiFi-GAN decoder \cite{kong2020hifigan},
+multi-scale-STFT and multi-period discriminators) at 44.1\,kHz on 1-second
+mono chunks, trained on a ${\sim}$950-hour union of FMA-large, MAESTRO and
+MUSDB18-HQ \cite{rafii2017musdb18}.\footnote{Code, configurations, weights,
+every evaluation record and audio examples:
+\url{https://github.com/nurdauletakhanov/musicgen}} Two compression rates are
+used: $7.66\times$ ($d{=}128$) and $15.3\times$ ($d{=}64$). Mixing
+supervision is the explicit-loss form of the additivity principle of
+\cite{torres2026linearity}: pairs $(x_i,x_j)$ from a fixed-point-free
+permutation, $\alpha\sim U[0,1]$,
+$\bar{x}=\alpha x_i{+}(1{-}\alpha)x_j$, $\bar{z}=\alpha f(x_i){+}(1{-}\alpha)f(x_j)$,
+and
+\begin{equation}
+  \Ldec=\mathcal{L}_\mathrm{recon}\!\left(g(\bar{z}),\bar{x}\right)
+        +\lVert g(\bar{z})-\bar{x}\rVert_1 ,
+  \label{eq:ldec}
+\end{equation}
+where $\mathcal{L}_\mathrm{recon}$ is the multi-resolution STFT and mel loss
+also used for reconstruction; the mixed path carries the extra unweighted
+waveform $\ell_1$ term, the reconstruction path does not. Gradients flow
+through $g$ and into $f$. The total objective is
+$\mathcal{L}=\mathcal{L}_\mathrm{recon}+\mathcal{L}_\mathrm{GAN}+\lambda\Ldec
++\lambda_{\ell_2}\lVert z\rVert^2$ with $\lambda{=}0.5$ and
+$\lambda_{\ell_2}{=}10^{-3}$; a variant also applies the discriminator to the
+mixed path (``$+$disc''). At $7.66\times$ the mixing arms are 25k-step
+fine-tunes of a converged reconstruction-only checkpoint against a
+continued-training control; at $15.3\times$ the combined $\Ldec{+}$disc
+recipe and its control are trained from scratch for 250k steps under matched
+configurations. The five resulting checkpoints, plus the reconstruction-only
+ancestor, are frozen for everything below.
+
+\textbf{Third-party autoencoders.} We apply the intervention, unchanged, to
+public models we had no hand in: DAC at 44.1\,kHz \cite{kumar2024dac} and
+EnCodec at 24\,kHz \cite{defossez2023encodec}, using their continuous encoder
+outputs with the quantizer bypassed on every path; the published Music2Latent
+checkpoint \cite{pasini2024music2latent}; and the three public models of
+\cite{torres2026linearity}: their M2L retrained on their corpus, Lin-CAE,
+and Lin-CAE-2. None of these received any change of weights. EnCodec is
+resampled to and from 24\,kHz, which band-limits every route equally.
 
 \subsection{Metrics}\label{sec:metrics}
-We report reconstruction SI-SDR$_\mathrm{rec}=\mathrm{SISDR}(g(f(x)),x)$ and,
-at $\alpha{=}0.5$, two views of Eq.~\ref{eq:equiv}:
-SI-SDR$_\mathrm{lin}=\mathrm{SISDR}(g(\bar{z}),g(f(\bar{x})))$
-(decode-vs-decode, relative to the model's own reconstruction of the mix) and
-SI-SDR$_\mathrm{lin}^\mathrm{gt}=\mathrm{SISDR}(g(\bar{z}),\bar{x})$ (vs.\
-ground truth, comparable across models). We also report MixRate
-$=\mathcal{L}_\mathrm{mix}(g(\bar{z}),\bar{x})/\mathcal{L}_\mathrm{mix}(g(f(\bar{x})),\bar{x})$
-with $\mathcal{L}_\mathrm{mix}$
-the three-term loss of Eq.~\ref{eq:ldec} in both terms, and the latent error
-$r=\bar{z}-f(\bar{x})$. The $\ell_\mathrm{lat}$ column of
-\tabref{tab:ablation} is the customary ratio $\lVert r\rVert^2/\lVert
-f(\bar{x})\rVert^2$, which \secref{sec:training} shows to be
-\emph{translation-sensitive}; every latent quantity is a per-sample mean
-over the evaluated units. SI-SDR fits a gain before scoring, so we report that gain
-separately, on 3{,}000 samples. FAD uses music-finetuned LAION-CLAP
-embeddings of non-overlapping 10\,s windows at 48\,kHz, not VGGish, so values
-are not comparable with VGGish FAD.
+SI-SDR \cite{leroux2019sdr} is the waveform score throughout. Stem removal is
+\emph{oracle}: the removed stem is available and encoded, so the probe tests
+the representation's arithmetic, not blind separation. Raw subtraction
+decodes $f(x_\mathrm{mix}){-}f(x_\mathrm{stem})$; the recentered form adds
+$f(0)$ as in Eq.~\ref{eq:sub}. Both are scored against the true residual,
+and against each model's own reconstruction of it (the reference of
+\secref{sec:origin}); the difference is the linearity tax. For consistency
+decoders, which draw fresh noise per call and never align in phase with a raw
+waveform, we report the decode-versus-decode form with shared noise, as
+\cite{torres2026linearity} do against autoencoded ground truth. For convex
+mixing at $\alpha{=}0.5$ we report
+SI-SDR$_\mathrm{lin}^\mathrm{gt}=\mathrm{SISDR}(g(\bar{z}),\bar{x})$
+(against the true mix), SI-SDR$_\mathrm{lin}=\mathrm{SISDR}(g(\bar{z}),g(f(\bar{x})))$
+(decode versus decode), reconstruction SI-SDR$_\mathrm{rec}$, and MixRate, the
+ratio of the mixed-path loss of Eq.~\ref{eq:ldec} for $g(\bar{z})$ to that
+for $g(f(\bar{x}))$ ($<1$ beats the encode-then-decode path). FAD uses
+music-finetuned LAION-CLAP embeddings of 10\,s windows at 48\,kHz and is not
+comparable with VGGish FAD.
 
-SI-SDR$_\mathrm{lin}$ shares the decode-vs-decode structure of prior
-additivity metrics \cite{torres2026linearity} and is additionally sensitive
-to decoder sampling. A consistency-model decoder
-\cite{pasini2024music2latent} draws fresh noise per call: decoding the
-\emph{same} latent twice is deterministic under shared noise but scores
-$-1.8$\,dB under independent noise, with no latent arithmetic performed. On
-identical pairs the same checkpoints score $-9.1$ and $-7.3$\,dB when the two
-decodes draw independent noise and $+3.6$ and $+5.9$\,dB when they share it,
-a $13$\,dB swing driven by the protocol rather than the model; which protocol
-prior work used is not stated in enough detail for us to determine. We treat
-SI-SDR$_\mathrm{lin}^\mathrm{gt}$ and MixRate as the metrics of record and
-share decode noise everywhere.
-
-\subsection{Experimental setup}\label{sec:setup}
-The primary model is a waveform autoencoder (DAC-style 1-D convolutional
-encoder, HiFi-GAN decoder \cite{kong2020hifigan}, combined multi-scale-STFT
-and multi-period discriminator) at 44.1\,kHz on 1-second mono chunks, trained
-on a ${\sim}$950-hour union of FMA-large, MAESTRO and MUSDB18-HQ
-\cite{rafii2017musdb18}.\footnote{Code, training configurations, pretrained
-weights, every metric reported here, and audio examples:
-\url{https://github.com/nurdauletakhanov/musicgen}} Two compression regimes
-are used: $7.66\times$ ($d{=}128$) and $15.3\times$ ($d{=}64$). Mixing losses
-are added either as a 25k-step fine-tune from a shared converged baseline or
-from scratch over 250k steps, each against a matched control that differs
-only in the mixing terms. \textbf{Checkpoint selection.} The released weights
-are the checkpoint with the lowest validation loss, and the validation loader
-read the test split; for every fine-tune this coincides with the final step,
-while both from-scratch runs were selected at step 240k of 250k. This is why
-\secref{sec:origin} repeats the key measurement on a corpus that took no part
-in selection.
+\subsection{Protocol and what the intervals cover}\label{sec:protocol-setup}
+Subtraction uses 49 of the 50 MUSDB18 test tracks (one is excluded because
+its stems sum to the mixture at only $18.5$\,dB), 30 windows per track, four
+stems: 5{,}880 (track, stem, chunk) units. Window selection is a pure
+function of the seed and the sorted track list, so every model, ours or not,
+sees identical units and every contrast is paired. Held-out evaluation uses
+MoisesDB \cite{pereira2023moisesdb}, 240 recordings absent from the training
+data and from checkpoint selection of every model evaluated on it, under a
+protocol registered before the audio was downloaded, with frozen weights and
+verified hashes; a unit is scored where the removed stem is active
+($24{,}648$ of $28{,}800$). MUSDB18 is training data for DAC and MoisesDB is
+training data for the Lin-CAE family, so each third-party model is reported
+on the corpus it has not seen. Confidence intervals come from a paired
+cluster bootstrap over recordings ($10^4$ resamples); mixing pairs join two
+chunks, so those intervals weight a pair by the multiplicity of each member.
+Intervals are a conditional diagnostic: they cover evaluation variance for
+these checkpoints and cover neither training-seed variance nor checkpoint
+selection. That selection needs disclosure: our released weights are the
+lowest-validation-loss checkpoint and the validation loader read the test
+split. For every $7.66\times$ run this coincides with the final step; both
+$15.3\times$ runs were selected at step 240k of 250k. The origin intervention
+compares a checkpoint with itself, so it is unaffected; between-model
+contrasts are why the held-out corpus exists.
 
 \section{Results}\label{sec:results}
 
-\subsection{Mixing supervision improves ground-truth mixing}\label{sec:mixing}
-\tabref{tab:ablation} compares same-start fine-tunes at $7.66\times$. On the
-ground-truth metric, $\Ldec$ improves SI-SDR$_\mathrm{lin}^\mathrm{gt}$ from
-$8.0$ to $10.2$\,dB and is the only configuration with MixRate $<1$ ($0.97$).
-Reconstruction is similar to the matched control at this rate,
-SDR$_\mathrm{rec}$ spanning $11.2$--$11.4$\,dB and FAD $0.044$--$0.046$;
-these are single runs, so an absence this small is not established beyond
-seed variance.
+\subsection{Recentering removes the subtraction advantage}\label{sec:subtraction}
 
-\begin{table}[tb]
-  \centering\small
-  \setlength{\tabcolsep}{2.2pt}
-  \input{tables/ablation.tex}
-  \caption{Same-start fine-tuning comparison ($7.66\times$, full test set,
-  $\alpha{=}0.5$). SDR$_\mathrm{lin}$ is decode-vs-decode;
-  SDR$_\mathrm{lin}^\mathrm{gt}$ is vs.\ ground truth. Single run each.}
-  \label{tab:ablation}
-\end{table}
-
-The improvement is confirmed on audio that took no part in training or in
-checkpoint selection. On 240 held-out MoisesDB recordings \cite{pereira2023moisesdb}, $\Ldec$
-gains $+1.77$\,dB $[+1.73,+1.81]$ at $7.66\times$ and the combined recipe
-$+1.39$ $[+1.33,+1.45]$ at $15.3\times$. All held-out mixing figures come from one evaluation of $14{,}064$ units,
-since pairing depends on the batching.
-Intervals resample recordings; mixing pairs join two chunks, about $80\%$ of
-them from the same recording. A cross-recording pair enters a resample $m_i
-m_j$ times and a within-recording pair $m_i$ times, $m$ being that
-recording's multiplicity. Across $\alpha$, swept against its matched control, the swing is $1.9$\,dB
-with $\Ldec$ against $3.2$ without, and $\Ldec$ leads at all five
-coefficients. \textbf{The gain largely corresponds to a reduced penalty for decoding
-interpolated latents.} Scoring both routes against the same target on the same units, the direct
-route $g(f(\bar{x}))$ moves by $+0.04$\,dB $[+0.03,+0.05]$ under $\Ldec$
-while the penalty for routing through the interpolated latent decreases by
-$1.73$ $[1.70,1.77]$, from $1.80$ to $0.07$; the two sum to the $+1.77$ gain
-by construction. At $15.3\times$ the direct route changes by $-0.14$
-$[-0.17,-0.10]$ and the penalty decreases by $1.52$ $[1.48,1.58]$, so there
-the reconstruction change is not negligible.
-
-\subsection{What the training comparisons establish}\label{sec:training}
-The encoder-only variant $\Lenc$ drives $\ell_\mathrm{lat}$ lowest
-($0.034$--$0.044$) and leaves MixRate high, and it yields smaller
-improvements in ground-truth waveform mixing than decode-mixing supervision
-($8.4$--$8.7$\,dB against $10.2$, from $8.0$). Training only the decoder under $\Ldec$, with the encoder frozen, retains
-most of the gain ($9.5$\,dB). Joint training is best among the tested
-configurations. Decoder adaptation is therefore largely sufficient here, which does not show
-it is necessary; a decoder-frozen counterpart was not trained. \textbf{Encoder geometry has no normalization-independent answer.} The customary ratio $\lVert r\rVert^2/\lVert f(\bar{x})\rVert^2$ is
-translation-sensitive: the coefficients of $r=\bar{z}-f(\bar{x})$ sum to
-zero, so under \secref{sec:prop}'s relabelling the numerator is unchanged
-while a large $c$ inflates the denominator.
-\tabref{tab:latnorm} re-measures the three contrasts under four
-normalizations on the held-out corpus. The unnormalized residual and the
-ratio to the endpoint distance favour the mixing models throughout; the
-ratio to each encoder's distance from its own $f(0)$ reverses at
-$7.66\times$ and is indistinguishable from zero at $15.3\times$. All three
-are translation-invariant. Recording the numerator and both denominators
-separately is informative: with $D$ the latent element count, write
-$N=\lVert r\rVert^2/D$, $S=\lVert f(x_1){-}f(x_2)\rVert^2/D$ and $O=\lVert
-f(\bar{x}){-}f(0)\rVert^2/D$, each a squared quantity averaged over units.
-Against its control, each mixing model has mean $N$ at $0.64$--$0.67$, mean
-$S$ within $4\%$ at $7.66\times$ and $1.37$ at $15.3\times$, and mean $O$ at
-$0.53$--$0.61$, so the residual falls by about a third while the mixture latents sit some
-$22$--$27\%$ closer to $f(0)$ in RMS distance. These are means
-of the parts, not of the ratio, so they do not by themselves determine the
-mean ratio; the reversal of $N/O$ at $7.66\times$ is consistent with the
-stronger reduction in its denominator. Both normalized ratios, and the customary one, are additionally invariant to
-rescaling $f\!\to\!sf$ with the decoder adjusted, since numerator and
-denominator scale alike; only the unnormalized residual is not. Scale
-invariance therefore cannot decide between the two denominators. We therefore make no claim about
-improved encoder geometry. \begin{table}[tb] \centering\small
-\setlength{\tabcolsep}{3.0pt} \input{tables/latnorm.tex} \caption{Latent error under four normalizations, held-out corpus. Each
-column is a treatment against its \emph{own no-mixing control} at the same
-rate, so the $\Ldec{+}$disc column compares that recipe with no mixing, not
-with $\Ldec$ alone. Values are the paired difference (treatment $-$ control,
-$\times10^{-3}$, negative is better) $\pm$ half the 95\% interval from a
-dyadic bootstrap over 240 recordings; $\dagger$ marks the one interval
-containing zero.} \label{tab:latnorm} \end{table}
-
-\subsection{Decoder consistency can misrepresent mixing quality}\label{sec:consistency}
-Adding an adversarial term to the mixed path does \emph{not} improve
-ground-truth equivariance ($10.2\!\to\!9.9$\,dB, MixRate $0.97\!\to\!1.05$),
-yet it raises the decode-vs-decode SI-SDR$_\mathrm{lin}$ from $12.1$ to
-$16.0$\,dB. The held-out corpus confirms the direction and sharpens it: the
-adversarial term \emph{costs} $0.49$\,dB $[-0.51,-0.48]$ of ground-truth
-equivariance while adding $+4.06$\,dB of decode-consistency. The same divergence shows in the waveform: the adversarial term yields a
-slightly \emph{smaller} latent residual ($0.0045$ against $0.0047$ per
-element) yet a larger interpolation penalty ($0.52$ against $0.07$\,dB). The
-measurements therefore rank the same checkpoints differently and cannot
-serve as interchangeable evidence of mixing capability. We do not identify the
-mechanism; one candidate is that both decodes are driven onto a common
-realistic manifold. Ground-truth SI-SDR for the mixed-input reconstruction route is reported in
-\secref{sec:mixing} for the held-out corpus, and MixRate scores that route
-against $\bar{x}$ under the mixed-path loss; whether the discriminator acts
-alone is untested.
-
-\subsection{Subtraction depends strongly on the latent origin}\label{sec:origin}
-We remove a stem by latent subtraction and measure SI-SDR against the true
-residual on 49 of the 50 MUSDB18 test tracks (one is excluded because its
-stems sum to the mixture at only $18.5$\,dB). This is an \emph{oracle} setting: the removed stem is encoded, so it tests
-arithmetic, not blind separation. By \secref{sec:prop} we also report
-$g(f(x_\mathrm{mix}){-}f(x_\mathrm{stem}){+}f(0))$.
-
-\begin{table}[tb]
+\begin{table}[t]
   \centering\small
   \setlength{\tabcolsep}{2.2pt}
   \input{tables/subtraction.tex}
-  \caption{Stem removal via latent subtraction (SI-SDR, dB; MUSDB18 test).
-  ``gap'' is the linearity tax against each model's own encode--decode
-  reference (lower is better). ``$+f(0)$'' rows read the same checkpoint in
-  recentered coordinates. Aggregates over 5{,}880 units from 49 tracks.}
+  \caption{Stem removal by latent subtraction (SI-SDR, dB; MUSDB18 test,
+  5{,}880 units from 49 tracks). ``$+f(0)$'' rows read the \emph{same}
+  checkpoint in recentered coordinates. ``gap'' is the linearity tax against
+  each model's own encode--decode reconstruction of the residual (lower is
+  better). M2L denotes Music2Latent after mixed-latent fine-tuning.}
   \label{tab:subtraction}
 \end{table}
 
-\textbf{Raw subtraction favours the mixing loss; recentering substantially
-reduces the difference.} Raw, $\Ldec$ raises subtraction quality at
-$7.66\times$ from $+3.4$ to $+5.8$\,dB, and the matched $15.3\times$ pair
-from $+1.2$ to $+5.2$. Adding $f(0)$ gains $+2.0$ to $+6.0$\,dB for every
-evaluated configuration, leaving each within about $0.5$\,dB of its own
-reconstruction reference in aggregate; per track the tail is wider. The
-between-model difference then falls to $-0.03$\,dB (95\% track-cluster CI
-$[-0.15,+0.10]$) and $+0.01$ $([-0.19,+0.21])$.
+\begin{table}[t]
+  \centering\small
+  \setlength{\tabcolsep}{3.0pt}
+  \input{tables/origin.tex}
+  \caption{The intervention on fixed checkpoints. Advantage in
+  stem-subtraction SI-SDR (dB) of each mixing-trained model over its matched
+  no-mixing control, raw and recentered, with the 95\% recording-bootstrap
+  interval of the recentered advantage and the number of tracks on which the
+  gap magnitude shrinks. No retraining, same units, same audio.}
+  \label{tab:origin}
+\end{table}
 
-Because these checkpoints were selected on this same split
-(\secref{sec:setup}), we repeat the intervention on MoisesDB, 240 recordings
-absent from training and from selection, under a protocol registered before
-the audio was downloaded. Raw subtraction again favours the mixing models by $+2.3$ to $+4.5$\,dB and
-recentering removes $87$--$95$\% of that, shrinking the gap on $229$--$236$
-of the 240 recordings; on the rest it overshoots. The residue is resolvable
-there ($+0.29$, $+0.12$ and $+0.42$\,dB, intervals excluding zero), so a
-small training-associated advantage survives. Units are scored where the removed stem is active, at least $-50$\,dBFS and
-within $30$\,dB of the mixture energy ($24{,}648$ of $28{,}800$ retained;
-vocals retain the least, $70.4\%$). The rule excludes silent \emph{targets} and does
-not make the SI-SDR reference nonsilent, that reference being the remaining
-mixture. The protocol was committed before the audio was downloaded and is
-released as \texttt{HOLDOUT\_PROTOCOL.md} with the checkpoint hashes the
-evaluation verifies at run time.
+\textbf{In raw coordinates the supervision looks decisive.} It raises
+subtraction from $+3.4$ to $+5.8$\,dB at $7.66\times$ and from $+1.2$ to
+$+5.2$\,dB at $15.3\times$ (\tabref{tab:subtraction}).
+
+\textbf{Recentering removes most of it.} Adding $f(0)$ gains $+2.0$ to
+$+6.0$\,dB for every configuration and leaves each within $0.4$--$0.5$\,dB of
+its own reconstruction reference; the models that gain most looked worst. The
+between-model advantage falls to $-0.03$, $-0.07$ and $+0.01$\,dB, all three
+intervals containing zero (\tabref{tab:origin}), and the reduction holds on
+$49$ of $49$ tracks in every pair. The no-mixing models
+carry about three times the offset ($\lVert f(0)\rVert$ $18.1$ versus $6.6$
+at $7.66\times$, $14.8$ versus $5.4$ at $15.3\times$): much of what mixing
+supervision did to raw subtraction was to shrink an offset that a change of
+coordinates removes for free.
+
+\textbf{Held-out replication, and a residue.} On MoisesDB, raw subtraction
+again favours the mixing models by $+2.3$ to $+4.5$\,dB and recentering
+removes $87$--$95$\% of that, shrinking the gap on $229$, $231$ and $236$ of
+the 240 recordings (\tabref{tab:origin}); on the rest it overshoots and
+reverses the sign. The residue is resolvable here, $+0.29$, $+0.12$ and
+$+0.42$\,dB with intervals excluding zero, where the 49-track set could not.
+Recentering lifts each held-out score to within $0.5$--$1.0$\,dB of its
+reference.
+
 
 \textbf{Baselines without latent arithmetic.} The unchanged mixture scores
 $+17.1$\,dB against the residual, above every model's reconstruction
-reference, since the removed stem is a small share of the energy: the metric
-certifies arithmetic relative to that reference, not removal. Recentered
-subtraction beats decode-then-subtract by $+0.7$ to $+0.9$\,dB; raw
-subtraction loses to it.
+reference, because the removed stem is a small share of the energy: the
+metric certifies arithmetic relative to that reference, not removal.
+Recentered latent subtraction beats decode-then-subtract,
+$g(f(x_\mathrm{mix})){-}g(f(x_\mathrm{stem}))$, by $+0.7$ to $+0.9$\,dB; raw
+subtraction loses to it everywhere.
 
-\subsection{Scope}\label{sec:scope}
-\textbf{Compression:} trained from scratch at $15.3\times$ against a matched
-control, the combined recipe
-improves SI-SDR$_\mathrm{lin}^\mathrm{gt}$ from $6.8$ to $8.6$\,dB and
-MixRate from $1.19$ to $1.05$ at equal reconstruction, while FAD rises from
-$0.052$ to $0.061$. That pair differs by the whole recipe and, unlike the
-fine-tunes, does not share initial weights, so it is an observation about
-those two runs. The gain appears on all three test domains at both rates
-($+1.2$ to $+3.2$\,dB), and the decoded mix is $1.6$\,dB too quiet without
-the loss against $0.9$ with it. \textbf{Architecture:} applying the same
-mixed-latent supervision to Music2Latent \cite{pasini2024music2latent} under
-its native consistency loss improves mixing SI-SDR against a
-continued-training control ($-9.5\!\to\!-7.8$\,dB), which itself moves
-equivariance by $<0.2$\,dB, while absolute waveform performance stays poor.
-The systems differ in too many respects for this to isolate a cause, and we
-claim nothing about consistency autoencoders in general.
+\subsection{Recentering models we did not train}\label{sec:codecs}
 
+\begin{table}[t]
+  \centering\small
+  \setlength{\tabcolsep}{3.0pt}
+  \input{tables/codecs.tex}
+  \caption{Recentering on autoencoders trained without any linearity
+  objective, and on the public models of \cite{torres2026linearity}. Latent
+  stem subtraction (SI-SDR, dB) in raw and recentered coordinates, the paired
+  change, and the reference: each model's own reconstruction of the residual,
+  scored against the true residual. $^{\ast}$MoisesDB held-out corpus (MUSDB
+  is DAC training data); all others MUSDB18 test. $^{\dagger}$Consistency
+  decoders: raw and recentered scores are decode-versus-decode with shared
+  noise, as in \cite{torres2026linearity}; their near-zero reference shows the
+  phase incoherence that makes the waveform score uninformative.}
+  \label{tab:codecs}
+\end{table}
+
+The proposition is model-agnostic, so we apply the shift to autoencoders with
+no mixing supervision and no relation to our training runs
+(\tabref{tab:codecs}). Our reconstruction-only ancestor gains $+5.0$\,dB
+$[+4.5,+5.6]$ and lands $0.3$\,dB from its reference. The codecs carry large
+offsets ($\lVert f(0)\rVert$ per element $2.9$ for DAC, $3.7$ for EnCodec,
+against $0.09$--$0.28$ for our models) and gain accordingly: on the held-out
+corpus DAC gains TBD\,dB and EnCodec TBD\,dB, and on MUSDB18 test $+5.4$
+$[+4.6,+6.3]$ and $+14.5$ $[+13.9,+15.1]$\,dB. Both remain short of their
+references and, unlike our models, below decode-then-subtract in the
+waveform; recentering removes the offset, not the nonlinearity. For the
+consistency decoders we read the phase-cancelled score. Music2Latent moves
+from $-3.2$ to $+0.3$\,dB ($+3.5$ $[+1.8,+5.2]$) and its mixed-latent
+fine-tune from $+0.4$ to $+8.9$\,dB ($+8.5$ $[+6.9,+10.1]$). The baseline
+retrained by \cite{torres2026linearity} gains $+3.7$\,dB $[+2.1,+5.5]$;
+Lin-CAE and Lin-CAE-2, whose encoding of silence has per-element RMS $0.16$
+against $1.5$ for that baseline, still gain $+7.0$ $[+5.9,+8.3]$ and $+7.6$
+$[+6.4,+9.0]$\,dB and reach $18$\,dB. The linearity training therefore buys
+subtraction quality that the coordinate change does not, and the coordinate
+change buys quality that the training does not: both models improve, and the
+gap between them does not close.
+
+\subsection{Convex mixing tells a different story}\label{sec:mixing}
+By part (ii) of the proposition, recentering cannot change any quantity in
+Eq.~\ref{eq:equiv}. The mixing probe therefore reports on the autoencoder
+itself, and there the supervision does something. On the held-out corpus
+$\Ldec$ improves ground-truth mixing SI-SDR by $+1.77$\,dB $[+1.73,+1.81]$ at
+$7.66\times$ and the combined recipe by $+1.39$\,dB $[+1.33,+1.45]$ at
+$15.3\times$, at reconstruction changes of $+0.04$ and $-0.07$\,dB. On the
+test set $\Ldec$ raises SI-SDR$_\mathrm{lin}^\mathrm{gt}$ from $8.0$ to
+$10.2$\,dB and is the only configuration with MixRate below one ($0.97$
+against $1.20$), with reconstruction SI-SDR spanning $11.2$--$11.4$\,dB and
+FAD $0.044$--$0.046$ across all fine-tunes. An independent re-run of the
+control and of $\Ldec$ from the same ancestor gives $8.1$ and $10.3$\,dB, so
+the $2.2$\,dB test-set gain replicates across training seeds. From scratch at
+$15.3\times$ the combined recipe improves $6.8$ to $8.6$\,dB and MixRate
+$1.19$ to $1.05$ at equal reconstruction, while FAD rises from $0.052$ to
+$0.061$. Across a five-point $\alpha$ sweep the gain holds at every
+coefficient and the SI-SDR range shrinks from $3.2$ to $1.9$\,dB.
+\textbf{Level, not only shape:} the gain SI-SDR discards shows the decoded
+mix $1.6$\,dB too quiet without the loss and $0.9$\,dB with it. Decoder-only
+adaptation with a frozen encoder retains $9.5$ of the $10.2$\,dB, and
+encoder-side supervision $\Lenc=\lVert f(\bar{x})-\bar{z}\rVert^2$ lowers the
+latent error but reaches only $8.4$--$8.7$\,dB: the property lives in the
+decoder's treatment of interpolated latents.
+\textbf{The mixed-path discriminator buys the metric, not the property.} At
+$7.66\times$ it raises decode-versus-decode SI-SDR$_\mathrm{lin}$ from
+$12.1$ to $16.0$\,dB while ground-truth mixing falls from $10.2$ to $9.9$\,dB
+and MixRate rises to $1.05$; held out, agreement rises by $+3.98$\,dB while
+fidelity falls by $0.49$\,dB $[-0.51,-0.48]$. The two measurements rank these
+checkpoints differently and are not interchangeable evidence.
+
+\subsection{Decode-versus-decode scores are protocol-sensitive}\label{sec:protocol}
+For stochastic decoders the decode-versus-decode metric is confounded a
+second way. A consistency-model decoder \cite{pasini2024music2latent} draws
+fresh noise per call: decoding the \emph{same} latent twice is deterministic
+under shared noise but scores $-1.8$\,dB under independent noise, with no
+latent arithmetic at all. On identical pairs the same two checkpoints score
+$-9.1$ and $-7.3$\,dB with independent noise and $+3.6$ and $+5.9$\,dB when
+they share it: a $13$\,dB swing driven by the protocol rather than the model.
+Which protocol prior work used is not stated in enough detail for us to
+determine. We share decode noise everywhere and, for deterministic decoders,
+score against the true waveform.
 
 \section{Conclusion}\label{sec:conclusion}
-Explicit mixing supervision improves ground-truth waveform mixing in the
-evaluated GAN autoencoders, with little change in reconstruction SI-SDR, and
-the improvement holds on a held-out corpus that took no part in training or
-in checkpoint selection. Decoder consistency and stem subtraction report
-different properties of the same checkpoints: an adversarial term raises
-decode-consistency while lowering ground-truth mixing, and most of the raw
-subtraction advantage disappears once each checkpoint is recentered at its
-silence latent. The three measurements are not interchangeable evidence of
-mixing capability.
-\textbf{Limitations.} The mixing arms differ from their controls by a whole
-recipe, so the gain is not attributed to interpolated-latent supervision
-against the mixed target or the waveform term. Runs are single; fine-tunes
-share a starting checkpoint, the from-scratch pair only a configuration.
-Intervals cover evaluation variation conditional on these checkpoints, not
-variation across training runs. Selection used the test split; audio is mono
-and untested by listeners.
+Latent stem subtraction is measured in coordinates that the model never
+fixes. Recentering at the encoded silence leaves the autoencoding function
+and every unit-sum combination pointwise unchanged, for arbitrary nonlinear
+encoders and decoders, yet it moves subtraction scores by several decibels:
+it removes $87$--$95$\% of the advantage mixing supervision appeared to have
+on a pre-registered 240-track corpus, and it improves stem subtraction on
+DAC, EnCodec, Music2Latent and our own reconstruction-only model with no
+retraining. What the supervision buys is convex equivariance, which the
+intervention cannot affect and which improves at both rates and across
+seeds. Two practices follow: report latent arithmetic against a declared
+origin and against the model's own reconstruction of the target, and recentre
+before subtracting, whatever the model.
+\textbf{Limitations.} Recovery is exact only for an affine encoder; for the
+networks here the gain is empirical and leaves a residue. Comparisons use
+single training runs except where stated; intervals cover recording-level
+evaluation variance for fixed checkpoints, not variation across training
+runs. Selection used the test split; audio is mono, subtraction is oracle,
+and no listening test was run.
 
+\clearpage
 \bibliographystyle{IEEEtran}
 \bibliography{references}
 

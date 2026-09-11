@@ -111,6 +111,7 @@ def cluster_ci(vals, clusters, rng, n_boot=N_BOOT):
 
 
 def main():
+    global KEY
     ap = argparse.ArgumentParser()
     ap.add_argument("--per-chunk", nargs="+", required=True)
     ap.add_argument("--activity", default=None,
@@ -121,7 +122,12 @@ def main():
     ap.add_argument("--min-target-to-mix-db", type=float, default=-30.0)
     ap.add_argument("--out", required=True)
     ap.add_argument("--n-boot", type=int, default=N_BOOT)
+    ap.add_argument("--key", default=KEY, choices=["sub", "dd"],
+                    help="sub: SI-SDR vs the true residual (default); dd: vs the "
+                         "model's own reconstruction of it, decoded with shared "
+                         "noise, the right reading for stochastic decoders")
     a = ap.parse_args()
+    KEY = a.key
 
     paths = [p for pat in a.per_chunk for p in sorted(glob.glob(pat))]
     if not paths:
@@ -142,6 +148,12 @@ def main():
               f"({100*after/max(before,1):.1f}%)")
 
     rng = np.random.default_rng(SEED)
+    # Any model evaluated both raw and recentered gets the origin contrast,
+    # including third-party autoencoders that are not in the fixed list above.
+    listed = {(t, c) for t, c, _ in CONTRASTS}
+    for r in sorted(models):
+        if r.endswith("+origin") and r[:-7] in models and (r, r[:-7]) not in listed:
+            CONTRASTS.append((r, r[:-7], f"origin-corrected vs raw: {r[:-7]}"))
 
     out = {"metric": KEY, "n_boot": a.n_boot, "models": {}, "contrasts": {}}
 

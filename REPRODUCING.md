@@ -1,7 +1,6 @@
 # Reproducing the paper
 
-Maps every table and figure in *"What Makes Audio Latents Mixing-Equivariant?
-A Controlled Study of Explicit Supervision"* to the command that produces it.
+Maps every table in *"Latent Arithmetic Measures the Origin: Recentering Audio Autoencoders Without Retraining"* to the command that produces it.
 
 **No number in the paper is hand-typed.** Every table cell is generated from
 the JSONs in [`evaluation/v2_metrics/`](evaluation/v2_metrics/) by
@@ -54,14 +53,15 @@ and set `data.val_split: val` in the config.
 
 | Paper element | Command | Writes |
 |---|---|---|
-| **Table I** (mechanism ablation) | `python -m scripts.run_v2_mixing_metrics`<br>`python -m scripts.run_v2_fad` | `v2.*_mixing.json`, `v2.*_fad.json` |
-| **Table II** (compression + architecture) | same, plus `--only v3.0-baseline-d64 v3.1-decmix-disc-d64` | `v3.*_{mixing,fad}.json` |
+| **Ablation numbers** (Sec. V-C text; `tables/ablation.tex`) | `python -m scripts.run_v2_mixing_metrics`<br>`python -m scripts.run_v2_fad` | `v2.*_mixing.json`, `v2.*_fad.json` |
+| **Compression / Music2Latent numbers** (Sec. V-C text; `tables/crossarch.tex`) | same, plus `--only v3.0-baseline-d64 v3.1-decmix-disc-d64` | `v3.*_{mixing,fad}.json` |
 | _per-domain equivariance_ (in the text; the table was cut for space) | same JSONs as I/II — per-source keys are already in them | — |
-| **Table III** (stem subtraction) | `python -m scripts.run_subtraction` | `*_subtraction.json` |
+| **Table I** (stem subtraction) | `python -m scripts.run_subtraction` | `*_subtraction.json` |
 | **Decode-noise protocol swing** (in the text; the figure was cut for space) | `sbatch scripts/slurm_fig1_rerun.sh` | `_diag_old_vs_new_eval_fixedpairs.log` |
 | **α sweep** (in the text) | `python -m scripts.run_alpha_sweep` | `alpha_sweep/`, `alpha_sweep_summary.json` |
-| **Fig. 1** (origin intervention, `paper_origin`) | `python -m evaluation.origin_effect` then `make_figures.py` | `figures/fig_origin.pdf` |
-| **Table III `+f(0)` rows** (origin correction) | `sbatch scripts/slurm_origin_ablation.sh`<br>or `python -m evaluation.compute_subtraction --origin-correct ...` | `*_subtraction_origin.json`, `per_chunk/*+origin_*.json` |
+| **Table II** (the origin intervention, test set + MoisesDB) | `python -m evaluation.origin_effect` (see the held-out section of the README) | `origin_effect.json`, `holdout_moisesdb/origin_effect.json` |
+| **Table III** (recentering third-party models) | `sbatch scripts/slurm_codec_origin.sh` or `python -m evaluation.codec_run_subtraction --model <dac44k\|encodec24k\|lincae\|lincae2\|lincae-m2l> [--origin-correct]` | `v2_metrics/codecs/`, `holdout_moisesdb/codecs/` |
+| **Table I `+f(0)` rows** (origin correction) | `sbatch scripts/slurm_origin_ablation.sh`<br>or `python -m evaluation.compute_subtraction --origin-correct ...` | `*_subtraction_origin.json`, `per_chunk/*+origin_*.json` |
 | **Confidence intervals** (paired track-cluster bootstrap) | `python -m evaluation.paired_stats --per-chunk 'evaluation/v2_metrics/per_chunk/*.json' --out evaluation/v2_metrics/paired_stats.json` | `paired_stats.json` |
 | **No-arithmetic baselines** (unchanged mix / autoencoded mix / decode-then-subtract) | `sbatch scripts/slurm_comparators.sh` | per-chunk `identity`, `aemix`, `wavsub` fields |
 | **Level preservation** (the gain SI-SDR discards) | `sbatch scripts/slurm_gain_eval.sh` | `gain/*_mixing_gain.json` |
@@ -82,7 +82,7 @@ python -m scripts.run_alpha_sweep       --max-batches 5
 
 ### Music2Latent rows
 
-The M2L rows of Table II and Table III need the **separate, non-public**
+The Music2Latent fine-tune rows (Table I, Sec. V-C) need the **separate, non-public**
 `music2latent-mix` repo. The eval adapter and all resulting JSONs are in this
 repo, so the numbers are inspectable and the protocol is auditable, but the
 fine-tuning runs cannot be repeated from here. Point the scripts at a local

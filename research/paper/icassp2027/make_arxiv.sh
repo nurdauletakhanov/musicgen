@@ -7,6 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+grep -q "TBD" paper.tex && { echo "ERROR: paper.tex still contains TBD placeholders"; grep -n "TBD" paper.tex | head; exit 1; }
 latexmk -g -pdf -interaction=nonstopmode paper.tex > /dev/null   # fresh .bbl
 [ -f paper.bbl ] || { echo "ERROR: paper.bbl missing"; exit 1; }
 

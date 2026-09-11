@@ -17,10 +17,9 @@ license: mit
 tags: [audio, autoencoder, music, representation-learning]
 ---
 
-# Mixing-Equivariant Audio Autoencoder — checkpoints
+# Latent Arithmetic Measures the Origin — checkpoints
 
-Inference weights for **"What Makes Audio Latents Mixing-Equivariant? A Controlled
-Study of Explicit Supervision"** (ICASSP 2027 submission).
+Inference weights for **"Latent Arithmetic Measures the Origin: Recentering Audio Autoencoders Without Retraining"** (ICASSP 2027 submission).
 
 Code, configs, eval scripts, and the paper source:
 **https://github.com/nurdauletakhanov/musicgen** — see its `REPRODUCING.md`
@@ -31,8 +30,7 @@ for the exact command behind every number in the paper.
 - `musicgen/<run>/best.pth` — waveform GAN autoencoder runs (v1/v2/v3 lineage;
   33.5M params, 44.1 kHz mono). Load with the matching config under
   `configs/experiments/` in the code repo.
-- `m2l/<phase>_ema.pt` — EMA-merged Music2Latent fine-tunes (cross-architecture
-  experiments, paper Sec. IV-B).
+- `m2l/<phase>_ema.pt` — EMA-merged Music2Latent fine-tunes (paper Table I and Sec. V-C).
 - `MANIFEST.md` — file-by-file provenance.
 
 ## Quick use
